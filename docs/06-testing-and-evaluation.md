@@ -13,6 +13,18 @@ services. Set `TP_TEST_DB_URL` to a PostgreSQL URL to run the same suite against
 PostgreSQL; the fixture resets the schema before each test so isolation matches
 the SQLite path. CI runs both engines on every push and pull request.
 
+The browser test is the only one that needs a built dashboard and Playwright:
+
+```bash
+cd frontend && npm run build
+cd ../backend && pip install -r requirements-browser.txt
+python -m playwright install chromium
+python -m pytest tests/test_browser.py -q
+```
+
+It starts the API on a free port, which also serves `frontend/dist`, and skips
+when the bundle is missing, stale or Playwright is absent.
+
 ## Suite structure
 
 | File | Covers |
@@ -27,11 +39,12 @@ the SQLite path. CI runs both engines on every push and pull request.
 | `test_pipeline.py` | Ingestion idempotency, quarantine, attribution, modules sharing one contract |
 | `test_end_to_end.py` | Login → ingest → correlate → campaign → response → audit over HTTP |
 | `test_security.py` | Auth bypass attempts, injection strings, oversized payloads, token tampering |
-| `test_advanced.py` | Non-finite and unencodable payloads, hostile feature shapes, request-body bounds, login spraying, session revocation on password change, concurrent duplicate ingestion, redirect scope bypass, decoy request framing |
+| `test_advanced.py` | Non-finite and unencodable payloads, hostile feature shapes, request-body bounds, login spraying, session revocation on password change, session history states, concurrent duplicate ingestion, redirect scope bypass, decoy request framing |
+| `test_browser.py` | Chrome-driven dashboard flow against a live API: every view renders without console errors, the duplicate-resolution note shows on the Deception page, the Account page changes the password, the replacement token survives a reload and an earlier token is refused |
 
 ## Measured behaviour
 
-Latest full run: **102 passed on SQLite and 102 passed on PostgreSQL 16.2**
+Latest full run: **107 passed on SQLite and 107 passed on PostgreSQL 16.2**
 (a temporary PostgreSQL 16 server on the development host). CI runs the same
 suite against both engines.
 Static checks: the frontend builds with `tsc -b` and `vite build`; the backend
@@ -46,6 +59,7 @@ passes Ruff and compiles with `compileall`.
 | Backend tests (SQLite) | Ruff `F,E9`; full pytest suite |
 | Backend tests (PostgreSQL) | Full pytest suite against a PostgreSQL 16 service |
 | Dashboard build | `npm ci`; TypeScript build and Vite bundle |
+| Dashboard end-to-end | Builds the bundle, installs Playwright, drives the password flow in Chromium against a live API |
 | Container image | Multi-stage Docker build |
 
 Benchmark, 63 sessions / 1953 pairs, two seeds, algorithm `corr-1.1.0`:

@@ -20,8 +20,12 @@ Initial release.
 - Digital-asset risk with a provider adapter, provenance and freshness.
 - Policy-gated response engine with approval, expiry, rollback and audit.
 - React/TypeScript analyst dashboard with a strict Content-Security-Policy.
-- Account page for password rotation, and an administrator action that revokes
-  every session of an account without changing its password.
+- Account page for password rotation and recent session history, and an
+  administrator action that revokes every session of an account without
+  changing its password.
+- `GET /auth/sessions` reports an account's sign-ins, password changes and
+  revocations with client, address and whether each sign-in is still usable,
+  derived from the audit trail rather than per-request logging.
 - Docker/Compose deployment, CLI, schema migrations, backup and recovery
   runbooks.
 - CI pipeline covering lint, the full suite on SQLite and PostgreSQL 16, the
@@ -76,7 +80,8 @@ Initial release.
 - Duplicate investigation planning is decided by partial unique indexes on the
   open rows, so two concurrent requests for the same campaign or edge can no
   longer both create an investigation and activate two decoys. Existing
-  duplicates are marked `superseded` by migration 7.
+  duplicates are marked `superseded` by migration 7, and the Deception page
+  names the investigation that replaced each closed duplicate.
 
 ### Security
 

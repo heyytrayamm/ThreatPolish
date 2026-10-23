@@ -5,6 +5,8 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Request
 
 from ..auth.rbac import Principal, all_roles
+from ..auth.sessions import NOTE as SESSION_NOTE
+from ..auth.sessions import session_history
 from ..auth.users import (
     authenticate,
     change_password,
@@ -29,6 +31,14 @@ from ..schemas.api import (
 from .deps import client_ip, get_principal, login_ip_limiter, login_limiter, require
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+def _client_label(user_agent: str | None) -> str:
+    """Short printable description of the signing-in client for the history."""
+    if not user_agent:
+        return "unknown"
+    printable = "".join(char for char in user_agent if char.isprintable())
+    return " ".join(printable.split())[:120] or "unknown"
 
 
 @router.post("/login")
@@ -57,12 +67,13 @@ def login(payload: LoginRequest, request: Request) -> dict[str, object]:
             request_ip=ip,
         )
         raise
+    session_version = get_user_with_session(user["id"])[1]
     token, expires_at = create_access_token(
         subject=user["id"],
         role=user["role"],
         secret=get_settings().jwt_secret,
         ttl_minutes=get_settings().jwt_ttl_minutes,
-        token_version=get_user_with_session(user["id"])[1],
+        token_version=session_version,
     )
     audit_standalone(
         action="auth.login",
@@ -72,6 +83,10 @@ def login(payload: LoginRequest, request: Request) -> dict[str, object]:
         object_type="user",
         object_id=user["id"],
         request_ip=ip,
+        detail={
+            "session_version": session_version,
+            "client": _client_label(request.headers.get("user-agent")),
+        },
     )
     return {
         "access_token": token,
@@ -89,6 +104,25 @@ def me(principal: Principal = Depends(get_principal)) -> dict[str, object]:
         "email": principal.email,
         "role": principal.role,
         "via": principal.via,
+    }
+
+
+@router.get("/sessions")
+def own_sessions(
+    limit: int = 20, principal: Principal = Depends(get_principal)
+) -> dict[str, object]:
+    if principal.is_agent:
+        raise AuthenticationFailure("agent tokens have no session history")
+    _, current_version = get_user_with_session(principal.user_id)
+    return {
+        "sessions": session_history(
+            principal.user_id,
+            current_version=current_version,
+            ttl_minutes=get_settings().jwt_ttl_minutes,
+            limit=limit,
+        ),
+        "current_session_version": current_version,
+        "note": SESSION_NOTE,
     }
 
 
@@ -142,7 +176,7 @@ def update_password(
         actor_role=principal.role,
         object_type="user",
         object_id=principal.user_id,
-        detail={"other_sessions_revoked": True},
+        detail={"other_sessions_revoked": True, "session_version": session_version},
     )
     return {
         "status": "changed",

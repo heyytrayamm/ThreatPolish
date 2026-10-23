@@ -254,6 +254,90 @@ def test_an_admin_can_revoke_every_session_of_an_account(client, admin_headers):
     assert any(entry["action"] == "auth.sessions.revoke" for entry in audit)
 
 
+def test_session_history_lists_sign_ins_with_their_client(client, admin_headers):
+    credentials = {"email": "admin@threatpolish.test", "password": ADMIN_PASSWORD}
+    for agent in ("analyst-laptop/1.0", "analyst-phone/2.0"):
+        assert client.post(
+            "/api/v1/auth/login", json=credentials, headers={"User-Agent": agent}
+        ).status_code == 200
+
+    history = client.get("/api/v1/auth/sessions", headers=admin_headers)
+    assert history.status_code == 200, history.text
+    body = history.json()
+    sign_ins = [item for item in body["sessions"] if item["event"] == "sign_in"]
+    clients = {item["client"] for item in sign_ins}
+    assert {"analyst-laptop/1.0", "analyst-phone/2.0"} <= clients
+    assert all(item["state"] == "active" for item in sign_ins), sign_ins
+    assert all(item["ip"] for item in sign_ins)
+    assert all(item["session_version"] == body["current_session_version"] for item in sign_ins)
+    assert "not logged" in body["note"]
+
+
+def test_session_history_marks_earlier_sign_ins_revoked_after_a_password_change(
+    client, admin_headers
+):
+    credentials = {"email": "admin@threatpolish.test", "password": ADMIN_PASSWORD}
+    assert client.post(
+        "/api/v1/auth/login", json=credentials, headers={"User-Agent": "shared-terminal/1.0"}
+    ).status_code == 200
+
+    changed = client.post(
+        "/api/v1/auth/password",
+        headers=admin_headers,
+        json={
+            "current_password": ADMIN_PASSWORD,
+            "new_password": "another-long-password",
+        },
+    )
+    assert changed.status_code == 200, changed.text
+    replacement = {"Authorization": f"Bearer {changed.json()['access_token']}"}
+
+    body = client.get("/api/v1/auth/sessions", headers=replacement).json()
+    sign_ins = [item for item in body["sessions"] if item["event"] == "sign_in"]
+    assert sign_ins and all(item["state"] == "revoked" for item in sign_ins), sign_ins
+    changes = [item for item in body["sessions"] if item["event"] == "password_changed"]
+    assert changes, body["sessions"]
+    assert changes[0]["session_version"] == body["current_session_version"]
+
+
+def test_session_history_reports_expired_sign_ins(client, admin_headers):
+    import json
+
+    from sqlalchemy import text
+
+    from app.db.database import connection
+
+    body = client.get("/api/v1/auth/sessions", headers=admin_headers).json()
+    me = client.get("/api/v1/auth/me", headers=admin_headers).json()
+    past = (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat()
+    with connection() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO audit_log (id, ts, actor_id, actor_role, action, object_type, "
+                "object_id, outcome, detail, request_ip) VALUES ('aud_expired_sign_in', "
+                ":ts, :actor, 'admin', 'auth.login', 'user', :actor, 'success', :detail, "
+                "'203.0.113.9')"
+            ),
+            {
+                "ts": past,
+                "actor": me["id"],
+                "detail": json.dumps(
+                    {"session_version": body["current_session_version"], "client": "old-tablet/1.0"}
+                ),
+            },
+        )
+
+    refreshed = client.get("/api/v1/auth/sessions", headers=admin_headers).json()
+    entry = next(item for item in refreshed["sessions"] if item["id"] == "aud_expired_sign_in")
+    assert entry["state"] == "expired"
+    assert entry["expires_at"]
+
+
+def test_agent_tokens_have_no_session_history(client, sensor_headers):
+    response = client.get("/api/v1/auth/sessions", headers=sensor_headers)
+    assert response.status_code == 401, response.text
+
+
 def test_session_revocation_is_admin_only_and_reports_unknown_accounts(
     client, viewer_headers, admin_headers
 ):

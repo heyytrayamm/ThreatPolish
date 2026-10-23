@@ -27,6 +27,7 @@ recorded in the audit log.
 | POST | `/auth/login` | public | Obtain a bearer token |
 | GET | `/auth/me` | any | Current identity and role |
 | POST | `/auth/password` | any | Rotate own password; revokes every other session and returns a replacement token |
+| GET | `/auth/sessions` | any | Recent sign-ins and credential events for the caller, with client, address and whether each sign-in is still usable |
 | GET/POST | `/auth/users` | admin | List and create users |
 | POST | `/auth/users/{id}/revoke-sessions` | admin | Invalidate every token issued to an account |
 | GET/POST/DELETE | `/auth/tokens` | admin | Service token management |

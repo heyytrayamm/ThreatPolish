@@ -142,6 +142,11 @@ rows, so the limit holds even when two requests are planned at the same moment.
   every redirect.
 - The dashboard is a static build; the token lives in `sessionStorage`, is
   cleared on logout, and the CSP forbids inline script and external origins.
+- Sign-ins, password changes and administrative revocations are recorded in the
+  audit trail with the client address, the user agent and the session version in
+  force. The account's session history is derived from those records rather than
+  from per-request logging, so an analyst can see where an account was used
+  without the platform keeping a browsing record of every API call.
 
 ## Failure behaviour
 

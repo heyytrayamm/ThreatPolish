@@ -428,8 +428,11 @@ tbody tr:hover td { color: #f1f5f9; }
 .status-hypothesis, .status-candidate, .status-pending_approval, .status-planned, .status-open {
   background: rgba(251, 191, 36, 0.12); color: #fcd34d; border-color: rgba(251, 191, 36, 0.26);
 }
-.status-expired, .status-rolled_back, .status-rejected {
+.status-expired, .status-rolled_back, .status-rejected, .status-revoked {
   background: rgba(251, 113, 133, 0.12); color: #fda4af; border-color: rgba(251, 113, 133, 0.26);
+}
+.status-superseded {
+  background: rgba(148, 163, 184, 0.1); color: #cbd5e1; border-color: rgba(148, 163, 184, 0.22);
 }
 .status-uncertain, .status-disabled {
   background: rgba(167, 139, 250, 0.12); color: #c4b5fd; border-color: rgba(167, 139, 250, 0.28);

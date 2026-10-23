@@ -83,6 +83,12 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ current_password, new_password }),
     }),
+  sessions: (limit = 20) =>
+    request<{
+      sessions: SessionRecord[];
+      current_session_version: number;
+      note: string;
+    }>(`/api/v1/auth/sessions?limit=${limit}`),
   revokeSessions: (userId: string) =>
     request<{ status: string; user_id: string; session_version: number }>(
       `/api/v1/auth/users/${userId}/revoke-sessions`,
@@ -340,6 +346,18 @@ export interface Investigation {
   missing_evidence: string[];
   outcome: string | null;
   notes: string;
+}
+
+export interface SessionRecord {
+  id: string;
+  occurred_at: string;
+  event: "sign_in" | "password_changed" | "sessions_revoked" | string;
+  ip: string | null;
+  client: string | null;
+  outcome: string;
+  session_version: number | null;
+  state?: "active" | "expired" | "revoked" | "unknown";
+  expires_at?: string | null;
 }
 
 export interface QuarantineRecord {
