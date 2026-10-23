@@ -376,3 +376,48 @@ class TestDBSessionModule:
     def test_dispose_engine_is_callable(self):
         from app.db.session import dispose_engine
         assert callable(dispose_engine)
+
+
+# ===================================================================
+# 6. Database URL Resolution (Local Windows vs Docker Container)
+# ===================================================================
+
+class TestDatabaseUrlConfiguration:
+    """Verify that DATABASE_URL is correctly resolved for both local development and Docker."""
+
+    def test_local_default_uses_localhost(self, monkeypatch):
+        from app.core.config import Settings
+        monkeypatch.delenv("POSTGRES_HOST", raising=False)
+        monkeypatch.delenv("DATABASE_URL", raising=False)
+        s = Settings(_env_file=None)
+        assert s.POSTGRES_HOST == "127.0.0.1"
+        assert "@127.0.0.1:5432" in s.DATABASE_URL
+
+    def test_docker_postgres_host_updates_database_url(self, monkeypatch):
+        from app.core.config import Settings
+        monkeypatch.setenv("POSTGRES_HOST", "db")
+        monkeypatch.delenv("DATABASE_URL", raising=False)
+        s = Settings(_env_file=None)
+        assert s.POSTGRES_HOST == "db"
+        assert "@db:5432" in s.DATABASE_URL
+
+    def test_docker_host_overrides_localhost_database_url_from_env(self, monkeypatch):
+        """If a shared .env provides localhost DATABASE_URL, POSTGRES_HOST=db must not be ignored."""
+        from app.core.config import Settings
+        monkeypatch.setenv("POSTGRES_HOST", "db")
+        monkeypatch.setenv(
+            "DATABASE_URL",
+            "postgresql+psycopg://user:pass@127.0.0.1:5432/threatpolish_db",
+        )
+        s = Settings(_env_file=None)
+        assert s.POSTGRES_HOST == "db"
+        assert "@db:5432" in s.DATABASE_URL
+
+    def test_custom_remote_database_url_preserved(self, monkeypatch):
+        """Custom non-localhost URLs (e.g. AWS RDS) should be preserved as-is."""
+        from app.core.config import Settings
+        remote_url = "postgresql+psycopg://user:pass@rds.us-east-1.amazonaws.com:5432/proddb"
+        monkeypatch.setenv("DATABASE_URL", remote_url)
+        s = Settings(_env_file=None)
+        assert s.DATABASE_URL == remote_url
+
