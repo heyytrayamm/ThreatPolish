@@ -1,0 +1,69 @@
+# ==============================================================================
+# ThreatPolish Platform - Docker Compose Development Setup
+#
+# DEFENSIVE SAFETY NOTE:
+# All port mappings are bound strictly to 127.0.0.1 (localhost) to prevent
+# accidental exposure to local networks or public interfaces during development.
+# ==============================================================================
+
+services:
+  # Database Service (PostgreSQL 16)
+  db:
+    image: postgres:16-alpine
+    container_name: threatpolish-db
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5432:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-threatpolish_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-threatpolish_dev_secret_change_in_prod}
+      POSTGRES_DB: ${POSTGRES_DB:-threatpolish_db}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-threatpolish_user} -d ${POSTGRES_DB:-threatpolish_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend Service (FastAPI on Python 3.12-slim)
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: threatpolish-backend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8000:8000"
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_HOST=db
+      - HOST=0.0.0.0
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/api/v1/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # Frontend Service (React + Vite)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: threatpolish-frontend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5173:5173"
+    env_file:
+      - .env
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+    driver: local
