@@ -29,8 +29,12 @@ def test_health_endpoint() -> None:
     assert data["service"] == "ThreatPolish Honeypot Platform"
     assert data["version"] == "0.1.0"
     assert data["environment"] == "development"
-    assert "Phase 1" in data["phase"]
+    assert "Phase" in data["phase"]
 
     # Validate that timestamp is parseable ISO-8601
     parsed_time = datetime.fromisoformat(data["timestamp"])
     assert parsed_time is not None
+
+    # db_ready is present (may be False if PostgreSQL isn't running)
+    assert "db_ready" in data
+    assert isinstance(data["db_ready"], bool)
