@@ -112,9 +112,81 @@ def _migration_002_events_retention_index(conn: Connection) -> None:
     conn.execute(text("CREATE INDEX IF NOT EXISTS ix_events_retention ON events (retention_until)"))
 
 
+def _migration_003_investigation_activation(conn: Connection) -> None:
+    """Persist the decoy override so the separate decoy process can see it."""
+    from sqlalchemy import inspect
+
+    existing = {column["name"] for column in inspect(conn).get_columns("investigations")}
+    if "source_ip" not in existing:
+        conn.execute(text("ALTER TABLE investigations ADD COLUMN source_ip VARCHAR(64)"))
+    if "expires_at" not in existing:
+        conn.execute(text("ALTER TABLE investigations ADD COLUMN expires_at VARCHAR(40)"))
+    conn.execute(
+        text(
+            "CREATE INDEX IF NOT EXISTS ix_investigations_active "
+            "ON investigations (status, source_ip)"
+        )
+    )
+
+
+def _migration_004_widen_graph_identifiers(conn: Connection) -> None:
+    """Graph IDs carry prefixes, so they need more room than the raw fields.
+
+    SQLite does not enforce declared VARCHAR lengths, so this only needs to run
+    on PostgreSQL where a value longer than the column would raise.
+    """
+    if conn.dialect.name != "postgresql":
+        return
+    conn.execute(text("ALTER TABLE events ALTER COLUMN id TYPE VARCHAR(120)"))
+    conn.execute(text("ALTER TABLE graph_nodes ALTER COLUMN id TYPE VARCHAR(255)"))
+    conn.execute(text("ALTER TABLE graph_edges ALTER COLUMN src_id TYPE VARCHAR(255)"))
+    conn.execute(text("ALTER TABLE graph_edges ALTER COLUMN dst_id TYPE VARCHAR(255)"))
+
+
+def _migration_005_rekey_session_pairs(conn: Connection) -> None:
+    """Rebuild legacy pair identifiers after the separator changed.
+
+    Pair keys used to join session IDs with ``::``; a session ID may contain
+    that sequence, which made two different pairs hash to the same edge. The
+    current key uses a unit separator. Existing rows are re-keyed from their
+    endpoint columns so an upgraded graph does not keep orphaned edges or
+    duplicate campaigns.
+    """
+    import hashlib
+
+    from ..correlation.scoring import pair_key
+
+    rows = conn.execute(
+        text(
+            "SELECT id, src_id, dst_id FROM graph_edges "
+            "WHERE kind = 'session_similarity'"
+        )
+    ).fetchall()
+    for edge_id, src, dst in rows:
+        left = str(src).removeprefix("session:")
+        right = str(dst).removeprefix("session:")
+        digest = hashlib.sha256(pair_key(left, right).encode("utf-8")).hexdigest()[:24]
+        expected = f"edg_{digest}"
+        if expected == edge_id:
+            continue
+        exists = conn.execute(
+            text("SELECT 1 FROM graph_edges WHERE id = :id"), {"id": expected}
+        ).fetchone()
+        if exists:
+            conn.execute(text("DELETE FROM graph_edges WHERE id = :id"), {"id": edge_id})
+        else:
+            conn.execute(
+                text("UPDATE graph_edges SET id = :new WHERE id = :old"),
+                {"new": expected, "old": edge_id},
+            )
+
+
 MIGRATIONS: list[tuple[int, str, Any]] = [
     (1, "initial schema", _migration_001_initial),
     (2, "event retention index", _migration_002_events_retention_index),
+    (3, "persisted investigation activation", _migration_003_investigation_activation),
+    (4, "graph identifier widths", _migration_004_widen_graph_identifiers),
+    (5, "session pair identifier rekey", _migration_005_rekey_session_pairs),
 ]
 
 

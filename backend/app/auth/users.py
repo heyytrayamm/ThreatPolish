@@ -9,7 +9,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
-from ..core.errors import AuthenticationFailure, Conflict, NotFound
+from ..core.errors import AuthenticationFailure, Conflict, NotFound, ValidationFailure
 from ..core.security import (
     hash_agent_token,
     hash_password,
@@ -41,9 +41,9 @@ def _public_user(row: dict[str, Any]) -> dict[str, Any]:
 def create_user(*, email: str, name: str, role: str, password: str) -> dict[str, Any]:
     email = email.strip().lower()
     if not _EMAIL_RE.match(email):
-        raise AuthenticationFailure("a valid email address is required")
+        raise ValidationFailure("a valid email address is required")
     if len(password) < 10:
-        raise AuthenticationFailure("password must be at least 10 characters")
+        raise ValidationFailure("password must be at least 10 characters")
     validate_role(role)
     user_id = new_id("usr")
     created = iso(utcnow())
@@ -102,7 +102,7 @@ def authenticate(email: str, password: str) -> dict[str, Any]:
 
 def change_password(user_id: str, new_password: str) -> None:
     if len(new_password) < 10:
-        raise AuthenticationFailure("password must be at least 10 characters")
+        raise ValidationFailure("password must be at least 10 characters")
     with connection() as conn:
         result = conn.execute(
             users.update()

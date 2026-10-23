@@ -5,12 +5,12 @@ from __future__ import annotations
 from datetime import timedelta
 from typing import Any
 
-from sqlalchemy import text
+from sqlalchemy import select, text
 
 from ..core.errors import NotFound
 from ..core.security import iso, new_id, utcnow
 from ..db.database import connection, loads, query_one
-from ..db.schema import campaigns, feedback
+from ..db.schema import campaigns, feedback, findings, graph_edges
 from ..risk.scoring import explain_finding, score_risk
 from .scoring import ALGORITHM_VERSION, LINK_CONFIDENCE
 
@@ -153,13 +153,24 @@ def get_campaign(campaign_id: str) -> dict[str, Any]:
             ),
             {"id": campaign_id},
         ).fetchall()
-        session_rows = conn.execute(
-            text(
-                "SELECT id, label, props, first_seen, last_seen FROM graph_nodes "
-                "WHERE id LIKE 'session:%' AND last_seen >= :since"
-            ),
-            {"since": iso(utcnow() - timedelta(days=14))},
-        ).fetchall()
+        evidence = loads(row["evidence"], {})
+        member_ids = set(evidence.get("sessions", []))
+        session_rows = []
+        if member_ids:
+            placeholders = ", ".join(f":m{index}" for index in range(len(member_ids)))
+            session_params = {
+                f"m{index}": f"session:{session_id}"
+                for index, session_id in enumerate(sorted(member_ids))
+            }
+            # Do not apply a time cutoff here: a campaign remains readable even
+            # when its member sessions predate the graph view window.
+            session_rows = conn.execute(
+                text(
+                    "SELECT id, label, props, first_seen, last_seen FROM graph_nodes "
+                    f"WHERE id IN ({placeholders})"
+                ),
+                session_params,
+            ).fetchall()
 
     evidence = loads(row["evidence"], {})
     member_ids = set(evidence.get("sessions", []))
@@ -199,7 +210,8 @@ def get_campaign(campaign_id: str) -> dict[str, Any]:
     ]
 
     severity = _max_severity([session["severity_max"] for session in sessions] or ["info"])
-    targets = sorted({target for session in sessions for target in _targets_for(session["id"])})
+    targets_by_session = _targets_for_sessions([session["id"] for session in sessions])
+    targets = sorted({target for values in targets_by_session.values() for target in values})
     criticality = _asset_criticality(targets)
     timeline = [
         {"at": session["first_seen"], "session": session["id"], "event": "session started"}
@@ -303,6 +315,7 @@ def get_edge(edge_id: str) -> dict[str, Any]:
 def add_feedback(
     *, actor_id: str, object_type: str, object_id: str, label: str, note: str
 ) -> dict[str, Any]:
+    _assert_feedback_target(object_type, object_id)
     feedback_id = new_id("fbk")
     with connection() as conn:
         conn.execute(
@@ -323,6 +336,22 @@ def add_feedback(
                 campaigns.update().where(campaigns.c.id == object_id).values(status=status)
             )
     return {"id": feedback_id, "status": "recorded", "label": label}
+
+
+def _assert_feedback_target(object_type: str, object_id: str) -> None:
+    """Reject feedback that points at an object this platform does not store."""
+    tables = {
+        "campaign": campaigns,
+        "edge": graph_edges,
+        "finding": findings,
+    }
+    table = tables.get(object_type)
+    if table is None:
+        return
+    with connection() as conn:
+        found = conn.execute(select(table.c.id).where(table.c.id == object_id)).fetchone()
+    if not found:
+        raise NotFound(f"{object_type} not found")
 
 
 def feedback_summary() -> dict[str, Any]:
@@ -363,15 +392,25 @@ def feedback_summary() -> dict[str, Any]:
     }
 
 
-def _targets_for(session_id: str) -> list[str]:
+def _targets_for_sessions(session_ids: list[str]) -> dict[str, list[str]]:
+    """Load all targeted assets in one query instead of one query per session."""
+    if not session_ids:
+        return {}
+    placeholders = ", ".join(f":s{index}" for index in range(len(session_ids)))
+    params = {f"s{index}": f"session:{session_id}" for index, session_id in enumerate(session_ids)}
     with connection() as conn:
         rows = conn.execute(
             text(
-                "SELECT dst_id FROM graph_edges WHERE kind = 'targeted_asset' AND src_id = :src"
+                "SELECT src_id, dst_id FROM graph_edges "
+                f"WHERE kind = 'targeted_asset' AND src_id IN ({placeholders})"
             ),
-            {"src": f"session:{session_id}"},
+            params,
         ).fetchall()
-    return [row[0].removeprefix("asset:") for row in rows]
+    targets: dict[str, list[str]] = {}
+    for source, target in rows:
+        session_id = str(source).removeprefix("session:")
+        targets.setdefault(session_id, []).append(str(target).removeprefix("asset:"))
+    return targets
 
 
 def _asset_criticality(targets: list[str]) -> str:

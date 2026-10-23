@@ -72,7 +72,19 @@ def ingest_limiter() -> SlidingWindowLimiter:
 
 @lru_cache(maxsize=1)
 def login_limiter() -> SlidingWindowLimiter:
+    """Per-account attempt budget, independent of the client address."""
     return SlidingWindowLimiter(10, 60.0, max_keys=10_000)
+
+
+@lru_cache(maxsize=1)
+def login_ip_limiter() -> SlidingWindowLimiter:
+    """Per-address attempt budget.
+
+    Without this, an attacker can rotate the email address on every attempt and
+    never hit the per-account bucket, which turns the login endpoint into an
+    unlimited password-spraying oracle.
+    """
+    return SlidingWindowLimiter(30, 60.0, max_keys=10_000)
 
 
 @lru_cache(maxsize=1)

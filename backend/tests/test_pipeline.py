@@ -125,6 +125,37 @@ def test_sliding_window_limiter_enforces_bounds():
     assert limiter.allow("other-key")[0] is True
 
 
+def test_limiter_caps_distinct_keys_without_evicting_active_buckets():
+    from app.core.limits import SlidingWindowLimiter
+
+    limiter = SlidingWindowLimiter(10, 60, max_keys=2)
+    assert limiter.allow("a")[0] is True
+    assert limiter.allow("b")[0] is True
+    assert limiter.allow("c")[0] is False
+    assert limiter.allow("a")[0] is True
+
+
+def test_ingestion_rate_limit_counts_batch_records(client, sensor_headers, monkeypatch):
+    from app.api import deps
+    from app.core.config import reset_settings_cache
+
+    monkeypatch.setenv("TP_INGEST_RATE_LIMIT_PER_MINUTE", "2")
+    reset_settings_cache()
+    deps.ingest_limiter.cache_clear()
+
+    batch = [make_event(session_id=f"rate-batch-{index}") for index in range(3)]
+    response = client.post("/api/v1/ingest/events", json=batch, headers=sensor_headers)
+    assert response.status_code == 429
+    assert response.json()["error"]["code"] == "rate_limited"
+
+    single = client.post(
+        "/api/v1/ingest/events",
+        json=[make_event(session_id="rate-single-1")],
+        headers=sensor_headers,
+    )
+    assert single.status_code == 202
+
+
 def test_normalization_is_deterministic_and_bounded():
     from app.telemetry.normalize import normalize_event, normalize_path_template
     from app.schemas.event import EventIn

@@ -48,11 +48,13 @@ def _environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     reset_settings_cache()
     deps.ingest_limiter.cache_clear()
     deps.login_limiter.cache_clear()
+    deps.login_ip_limiter.cache_clear()
     deps.decoy_limiter.cache_clear()
     database.dispose_engine()
     yield
     deps.ingest_limiter.cache_clear()
     deps.login_limiter.cache_clear()
+    deps.login_ip_limiter.cache_clear()
     deps.decoy_limiter.cache_clear()
     database.dispose_engine()
     reset_settings_cache()

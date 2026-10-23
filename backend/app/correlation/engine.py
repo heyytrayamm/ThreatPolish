@@ -18,7 +18,7 @@ from ..db.database import connection, dumps, loads
 from ..db.schema import campaigns, correlation_runs, graph_edges, graph_nodes
 from ..telemetry.repository import events_in_window
 from .features import CorrelationContext, Session, build_sessions
-from .scoring import ALGORITHM_VERSION, MIN_SCORE_TO_STORE, compare, pair_key
+from .scoring import ALGORITHM_VERSION, MIN_SCORE_TO_STORE, PAIR_SEPARATOR, compare, pair_key
 
 log = get_logger(__name__)
 MAX_SESSIONS_PER_RUN = 400
@@ -107,7 +107,7 @@ def correlate(
         persistable = persistable[:MAX_EDGES_PER_RUN]
         persisted_keys = {key for key, _ in persistable}
 
-        for key, item in persistable:
+        for _, item in persistable:
             was_created = _upsert_edge(
                 conn, item["left"], item["right"], item["result"], hours, started_at
             )
@@ -138,7 +138,7 @@ def correlate(
             internal = [
                 (key, confidence)
                 for key, confidence in edge_confidence.items()
-                if set(key.split("::")) <= member_set
+                if set(key.split(PAIR_SEPARATOR)) <= member_set
             ]
             if not internal:
                 continue
@@ -152,7 +152,7 @@ def correlate(
             )
             campaign_ids.append(campaign_id)
             for key, _ in internal:
-                first, second = key.split("::")
+                first, second = key.split(PAIR_SEPARATOR)
                 conn.execute(
                     text(
                         "UPDATE graph_edges SET campaign_id = :campaign "
@@ -486,7 +486,7 @@ def _upsert_campaign(
     ips: set[str],
     now: datetime,
 ) -> tuple[str, str]:
-    signature = ",".join(sorted(members))
+    signature = "\x1f".join(sorted(members))
     campaign_id = f"cmp_{_digest(signature)}"
     confidence = min(value for _, value in internal)
     categories: dict[str, int] = defaultdict(int)

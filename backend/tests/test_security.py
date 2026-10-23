@@ -129,7 +129,8 @@ def test_decoy_refuses_traversal_and_unknown_methods(client):
         assert traversal.status_code in {400, 404}
         assert "root:x:0:0" not in traversal.text
 
-        unknown = httpx.request("PUT", f"{base}/login", timeout=5.0)
+        unknown = httpx.request("PUT", f"{base}/login", content=b"unread-body", timeout=5.0)
         assert unknown.status_code == 405
+        assert unknown.headers["connection"].lower() == "close"
     finally:
         decoy.stop()

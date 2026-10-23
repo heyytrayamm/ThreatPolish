@@ -84,7 +84,12 @@ class DecoyHandler(BaseHTTPRequestHandler):
 
     # ------------------------------------------------------------------ #
     def _reject_method(self) -> None:
-        self._respond(HTTPStatus.METHOD_NOT_ALLOWED, "Method Not Allowed", "text/plain")
+        self._respond(
+            HTTPStatus.METHOD_NOT_ALLOWED,
+            "Method Not Allowed",
+            "text/plain",
+            close=True,
+        )
 
     def _handle(self, method: str) -> None:
         if method not in SAFE_METHODS:
@@ -104,9 +109,13 @@ class DecoyHandler(BaseHTTPRequestHandler):
                     severity="low",
                     extra={"throttled": True},
                 )
+            # Any unread request body would be parsed as the next request on
+            # this keep-alive socket, so close instead of reusing it.
+            self.close_connection = True
             self.send_response(HTTPStatus.TOO_MANY_REQUESTS)
             self.send_header("Retry-After", str(int(retry_after) + 1))
             self.send_header("Content-Length", "0")
+            self.send_header("Connection", "close")
             self.end_headers()
             return
 
@@ -122,15 +131,42 @@ class DecoyHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         raw_path = parsed.path or "/"
         if "\x00" in raw_path or ".." in raw_path:
-            self._respond(HTTPStatus.BAD_REQUEST, "Bad Request", "text/plain")
+            self._respond(HTTPStatus.BAD_REQUEST, "Bad Request", "text/plain", close=True)
+            return
+
+        # Reject ambiguous message framing.  A request that declares both a
+        # Transfer-Encoding and a Content-Length (or two different lengths) can
+        # be interpreted differently by a proxy and by this server, which is
+        # the classic request-smuggling setup.  There is no legitimate client
+        # for the decoy that needs chunked uploads.
+        lengths = self.headers.get_all("Content-Length") or []
+        if self.headers.get("Transfer-Encoding") or len(lengths) > 1:
+            self._respond(HTTPStatus.BAD_REQUEST, "Bad Request", "text/plain", close=True)
+            return
+        try:
+            length = int(lengths[0]) if lengths else 0
+        except (TypeError, ValueError):
+            self._respond(HTTPStatus.BAD_REQUEST, "Bad Request", "text/plain", close=True)
+            return
+        if length < 0:
+            self._respond(HTTPStatus.BAD_REQUEST, "Bad Request", "text/plain", close=True)
             return
 
         session_id, cookie_needed = self._session()
         body = b""
-        if method == "POST":
-            length = int(self.headers.get("Content-Length") or 0)
+        if method != "POST":
+            if length:
+                # The body is deliberately not read; the connection must not be
+                # reused, otherwise the unread bytes become the next request.
+                self.close_connection = True
+        else:
             if length > MAX_BODY_BYTES:
-                self._respond(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "Payload Too Large", "text/plain")
+                self._respond(
+                    HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+                    "Payload Too Large",
+                    "text/plain",
+                    close=True,
+                )
                 return
             body = self.rfile.read(length) if length > 0 else b""
 
@@ -138,7 +174,11 @@ class DecoyHandler(BaseHTTPRequestHandler):
             method, raw_path, body, session_id
         )
 
-        if method == "POST" and path_matches(raw_path, self.decoy.profile["config"].get("login_path", "/login")):
+        # Use the profile that actually routed the request: an active
+        # investigation can override it, and the credential path belongs to the
+        # active profile, not to the default one.
+        login_path = self._current_profile["config"].get("login_path", "/login")
+        if method == "POST" and path_matches(raw_path, login_path):
             self._emit_credentials(body, session_id, raw_path)
 
         self._emit(
@@ -215,13 +255,18 @@ class DecoyHandler(BaseHTTPRequestHandler):
         *,
         cookie_needed: bool = False,
         session_id: str | None = None,
+        close: bool = False,
     ) -> None:
         encoded = content.encode("utf-8", "replace")
+        if close:
+            self.close_connection = True
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(encoded)))
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Cache-Control", "no-store")
+        if close:
+            self.send_header("Connection", "close")
         if cookie_needed and session_id:
             self.send_header(
                 "Set-Cookie", f"{SESSION_COOKIE}={session_id}; Path=/; HttpOnly; SameSite=Lax"

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import math
 import re
 import unicodedata
 from datetime import datetime, timedelta, timezone
@@ -36,6 +37,14 @@ _MAX_STRING = 4000
 def _clean(value: str, *, limit: int = _MAX_STRING) -> str:
     normalized = unicodedata.normalize("NFC", value)
     normalized = _CONTROL_RE.sub("", normalized)
+    # Lone surrogates can arrive through a JSON escape (``\ud800``).  Python's
+    # stdlib JSON parser accepts them, but they cannot be encoded back to UTF-8,
+    # so a stored value would break every later response that contains it.
+    if any(0xD800 <= ord(character) <= 0xDFFF for character in normalized):
+        normalized = "".join(
+            "\ufffd" if 0xD800 <= ord(character) <= 0xDFFF else character
+            for character in normalized
+        )
     return normalized.strip()[:limit]
 
 
@@ -53,7 +62,17 @@ def _clean_obj(value: Any, depth: int = 0) -> Any:
         if len(value) > 500:
             raise ValueError("feature array too long")
         return [_clean_obj(v, depth + 1) for v in value]
-    if isinstance(value, (int, float, bool)) or value is None:
+    if isinstance(value, bool) or value is None:
+        return value
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        # JSON parsers commonly accept ``NaN`` and ``Infinity`` even though they
+        # are not valid JSON.  Persisting them would make the stored payload and
+        # the API response unparseable for strict clients, so they are rejected
+        # at the contract boundary.
+        if not math.isfinite(value):
+            raise ValueError("non-finite numbers are not supported")
         return value
     raise ValueError(f"unsupported feature value type: {type(value).__name__}")
 

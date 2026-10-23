@@ -114,13 +114,23 @@ def _purge(args: argparse.Namespace) -> int:
     return 0
 
 
+def _display_db_url(url: str) -> str:
+    """Never print a password embedded in a database URL."""
+    from sqlalchemy.engine import make_url
+
+    try:
+        return make_url(url).render_as_string(hide_password=True)
+    except Exception:
+        return "<configured database>"
+
+
 def _status(_: argparse.Namespace) -> int:
     from .db.database import schema_version
 
     init_db()
     settings = get_settings()
     print(f"environment:   {settings.env}")
-    print(f"database:      {settings.db_url}")
+    print(f"database:      {_display_db_url(settings.db_url)}")
     print(f"schema:        {schema_version()}")
     print(f"retention:     {settings.retention_days} days")
     print(f"decoy enabled: {settings.decoy_enabled}")

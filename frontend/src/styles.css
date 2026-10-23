@@ -170,6 +170,12 @@ input:focus, select:focus, button:focus-visible {
   letter-spacing: -0.02em;
   box-shadow: 0 0 26px -6px rgba(56, 189, 248, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.5);
 }
+.brand-logo {
+  object-fit: cover;
+  background: #05080f;
+  border: 1px solid rgba(94, 234, 212, 0.28);
+  box-shadow: 0 0 0 1px rgba(3, 8, 15, 0.9), 0 6px 22px rgba(56, 189, 248, 0.16);
+}
 .brand div { display: flex; flex-direction: column; line-height: 1.25; }
 .brand strong { font-size: 0.98rem; letter-spacing: -0.01em; }
 .brand .brand-sub {

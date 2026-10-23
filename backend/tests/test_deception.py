@@ -86,6 +86,66 @@ def test_cowrie_tailer_is_incremental_and_rotation_safe(tmp_path):
     assert fourth["accepted"] == 1
 
 
+def test_cowrie_tailer_waits_for_complete_lines(tmp_path):
+    from app.core.config import get_settings
+    from app.db.database import init_db
+    from app.telemetry.ingest import Ingestor
+
+    init_db()
+    log_path = tmp_path / "cowrie.json"
+    line = json.dumps(
+        {
+            "eventid": "cowrie.command.input",
+            "session": "partial-1",
+            "src_ip": "203.0.113.91",
+            "timestamp": "2026-10-20T10:00:00Z",
+            "input": "uname -a",
+        }
+    )
+    midpoint = len(line) // 2
+    log_path.write_text(line[:midpoint], encoding="utf-8")
+    tailer = CowrieTailer(
+        log_path, state_path=tmp_path / "cowrie.offset", ingestor=Ingestor(get_settings())
+    )
+    assert tailer.poll()["read"] == 0
+
+    with log_path.open("a", encoding="utf-8") as handle:
+        handle.write(line[midpoint:] + "\n")
+    complete = tailer.poll()
+    assert complete["read"] == 1
+    assert complete["accepted"] == 1
+
+
+def test_cowrie_tailer_skips_a_permanently_oversized_line(tmp_path):
+    from app.core.config import get_settings
+    from app.db.database import init_db
+    from app.telemetry.ingest import Ingestor
+
+    init_db()
+    log_path = tmp_path / "cowrie.json"
+    oversized = b"x" * 1_000_100 + b"\n"
+    valid = json.dumps(
+        {
+            "eventid": "cowrie.login.failed",
+            "session": "after-oversize",
+            "src_ip": "203.0.113.92",
+            "timestamp": "2026-10-20T10:00:00Z",
+            "username": "root",
+            "password": "hunter2",
+        }
+    ).encode() + b"\n"
+    log_path.write_bytes(oversized + valid)
+    tailer = CowrieTailer(
+        log_path, state_path=tmp_path / "cowrie.offset", ingestor=Ingestor(get_settings())
+    )
+
+    skipped = tailer.poll(max_bytes=1_000_000)
+    assert skipped["read"] == 0
+    assert skipped["offset"] == len(oversized)
+    after = tailer.poll(max_bytes=1_000_000)
+    assert after["accepted"] == 1
+
+
 def test_http_decoy_captures_requests_and_credentials(client, admin_headers):
     from app.deception.http_decoy import start_decoy
 
@@ -118,6 +178,7 @@ def test_http_decoy_captures_requests_and_credentials(client, admin_headers):
 
             big = http.post(f"{base}/wp-login.php", content=b"x" * 20000)
             assert big.status_code == 413
+            assert big.headers["connection"].lower() == "close"
     finally:
         decoy.stop()
 

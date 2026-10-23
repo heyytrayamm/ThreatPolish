@@ -80,7 +80,7 @@ export default function App() {
           </div>
           <form onSubmit={signIn} className="login-card" aria-label="sign in">
             <div className="login-card-head">
-              <span className="brand-mark">TP</span>
+              <img className="brand-mark brand-logo" src="/logo-mark.png" alt="" width={44} height={44} />
               <div>
                 <strong>ThreatPolish</strong>
                 <span className="muted small">Analyst access</span>
@@ -125,7 +125,7 @@ export default function App() {
       <a className="skip-link" href="#main">Skip to content</a>
       <aside className="sidebar">
         <div className="brand">
-          <span className="brand-mark">TP</span>
+          <img className="brand-mark brand-logo" src="/logo-mark.png" alt="" width={40} height={40} />
           <div>
             <strong>ThreatPolish</strong>
             <span className="brand-sub">Security workspace</span>

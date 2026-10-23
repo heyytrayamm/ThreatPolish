@@ -25,16 +25,26 @@ from ..db.schema import watch_scopes
 def normalize_domain(value: str) -> str:
     raw = value.strip().lower()
     if "://" in raw:
-        parts = urlsplit(raw)
-        raw = parts.hostname or ""
-    raw = raw.split("/", 1)[0].split(":", 1)[0].strip(".")
-    if not raw or len(raw) > 253:
-        raise ValidationFailure("invalid domain")
+        raw = urlsplit(raw).hostname or ""
+    raw = raw.split("/", 1)[0].strip(".")
+    if raw.startswith("["):
+        close = raw.find("]")
+        if close == -1:
+            raise ValidationFailure("invalid IPv6 host")
+        raw = raw[1:close]
     try:
-        ipaddress.ip_address(raw)
-        return raw
+        return str(ipaddress.ip_address(raw))
     except ValueError:
         pass
+    # Only a hostname may still carry a port here; a bare IPv6 address above
+    # has already been parsed and would otherwise be truncated at its first
+    # colon.
+    if raw.count(":") == 1:
+        host, _, port = raw.partition(":")
+        if port.isdigit():
+            raw = host
+    if not raw or len(raw) > 253:
+        raise ValidationFailure("invalid domain")
     allowed = set("abcdefghijklmnopqrstuvwxyz0123456789-.")
     if not set(raw) <= allowed or ".." in raw or raw.startswith("-") or raw.endswith("-"):
         raise ValidationFailure("invalid domain")
@@ -147,7 +157,8 @@ def validate_target(target: str, *, allow_active: bool) -> tuple[str, str, str]:
             details={"scope_id": scope["id"]},
         )
     _assert_public_host(host)
-    url = f"{parsed.scheme}://{host}" + (f":{port}" if port else "") + (parsed.path or "/")
+    netloc = f"[{host}]" if ":" in host else host
+    url = f"{parsed.scheme}://{netloc}" + (f":{port}" if port else "") + (parsed.path or "/")
     return host, url, parsed.scheme
 
 

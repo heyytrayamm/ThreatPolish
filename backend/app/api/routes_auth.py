@@ -24,7 +24,7 @@ from ..schemas.api import (
     PasswordChangeRequest,
     UserCreateRequest,
 )
-from .deps import client_ip, get_principal, login_limiter, require
+from .deps import client_ip, get_principal, login_ip_limiter, login_limiter, require
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -32,7 +32,15 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 @router.post("/login")
 def login(payload: LoginRequest, request: Request) -> dict[str, object]:
     ip = client_ip(request)
-    allowed, retry_after = login_limiter().allow(f"login:{ip}:{payload.email.lower()}")
+    # Check the address budget first: it is the only bucket an attacker cannot
+    # avoid by choosing a new email address for every attempt.
+    allowed, retry_after = login_ip_limiter().allow(f"ip:{ip}")
+    if not allowed:
+        raise RateLimited(
+            "too many login attempts from this address",
+            details={"retry_after_seconds": retry_after},
+        )
+    allowed, retry_after = login_limiter().allow(f"login:{ip}:{payload.email.strip().lower()}")
     if not allowed:
         raise RateLimited("too many login attempts", details={"retry_after_seconds": retry_after})
     try:

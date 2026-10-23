@@ -15,7 +15,7 @@ def _session_events(session_id: str, ip: str, start: datetime, shared_indicator:
     ]
     events = []
     cursor = start
-    for command in ["deploy", "backup"]:
+    for _command in ["deploy", "backup"]:
         cursor += timedelta(seconds=20)
         events.append(
             {

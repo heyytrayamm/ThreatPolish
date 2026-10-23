@@ -26,9 +26,15 @@ class SlidingWindowLimiter:
         now = time.monotonic()
         cutoff = now - self.window
         with self._lock:
-            if len(self._events) > self.max_keys:
-                self._prune(cutoff)
-            bucket = self._events.setdefault(key, deque())
+            bucket = self._events.get(key)
+            if bucket is None:
+                if len(self._events) >= self.max_keys:
+                    self._prune(cutoff)
+                if len(self._events) >= self.max_keys:
+                    # Refuse new keys rather than evict active buckets, which
+                    # would let an attacker bypass the limit by rotating keys.
+                    return False, self.window
+                bucket = self._events[key] = deque()
             while bucket and bucket[0] < cutoff:
                 bucket.popleft()
             if len(bucket) + cost > self.limit:

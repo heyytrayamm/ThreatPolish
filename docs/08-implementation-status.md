@@ -12,10 +12,10 @@ why.
 | Configuration from environment | Done | `app/core/config.py`, `.env.example` |
 | Database models for all modules | Done | `app/db/` |
 | Event contract and validation | Done | `app/schemas/event.py`, `test_foundation.py` |
-| Ingestion with hashing, dedup, quarantine | Done | `app/services/ingestion.py`, `test_pipeline.py` |
+| Ingestion with hashing, dedup, quarantine | Done | `app/telemetry/ingest.py`, `test_pipeline.py` |
 | Auth, RBAC, audit trail | Done | `app/auth/`, `test_foundation.py`, `test_security.py` |
 | Dashboard shell and navigation | Done | `frontend/` builds cleanly |
-| Test harness | Done | 66 tests, SQLite, isolated per test, plus container smoke checks |
+| Test harness | Done | 97 tests on SQLite, isolated per test; the same suite runs against PostgreSQL 16 in CI, plus container smoke checks |
 | Reproducible benchmark | Done | `backend/scripts/evaluate.py` |
 | Audit, novelty review, architecture, threat model | Done | `docs/00`–`docs/03` |
 | License | Done | Proprietary notice, all rights reserved by the project team |
@@ -28,7 +28,7 @@ why.
 | HTTP decoy service | Done | `http_decoy.py`, exercised over HTTP |
 | Cowrie log adapter | Done | ran against a real Cowrie container; offset persisted outside the read-only log volume |
 | Password capture as hashes | Done | `test_deception.py` |
-| Uncertainty-directed investigation | Partial | real before/after records, but the *benefit* is measured with a simulated observation in the benchmark; field measurement pending |
+| Uncertainty-directed investigation | Partial | persisted activation shared with the decoy process and real before/after records; the *benefit* is measured with a simulated observation in the benchmark, field measurement pending |
 | Automatic decoy rotation from attacker tooling | Not done | the investigation mutates profile choice and records it, but there is no live adaptive server reconfiguration |
 
 ## Correlation and risk
@@ -39,7 +39,7 @@ why.
 | Corpus-relative token weighting | Done | `scoring.py`, unit tested |
 | Six-family evidence scoring | Done | weights sum to 1.0, tested |
 | Specificity anchors and contradiction penalty | Done | `test_correlation.py` |
-| Edge persistence with full evidence | Done | `correlation_edges` |
+| Edge persistence with full evidence | Done | `graph_edges`, `test_correlation.py` |
 | Campaign construction | Done | `engine.py` |
 | Risk, severity, journey escalation | Done | `app/risk/scoring.py` |
 | Interactive graph and campaign views | Done | `frontend/src/components/EvidenceGraph.tsx` |
@@ -75,7 +75,8 @@ why.
 | Dockerfile and Compose stack | Done | built and run on this host; API healthy as non-root; restart, backup/restore and database-outage behaviour verified |
 | PostgreSQL production path | Done | migrations, all module flows and recovery verified against PostgreSQL 16 |
 | Backup, restore, retention, runbooks | Done | `docs/07-operations.md` |
-| Health and readiness probes | Done | `/health`, `/health/ready` |
+| Health and readiness probes | Done | `/api/v1/health`, `/api/v1/health/ready` |
+| Schema migrations and upgrade path | Done | v3 PostgreSQL database upgraded to v5 on a restorable copy |
 | CI pipeline | Done | `.github/workflows/ci.yml` runs backend lint and tests on SQLite and PostgreSQL 16, the dashboard build and a container image build |
 | Dependency scanning | Not done | commands documented, not automated |
 

@@ -47,14 +47,22 @@ def sessions(
             ),
             {"since": since, "limit": limit},
         ).fetchall()
-        ip_rows = conn.execute(
-            text(
-                "SELECT session_id, source_ip FROM events "
-                "WHERE source_module = 'honeypot' AND occurred_at >= :since "
-                "AND source_ip IS NOT NULL"
-            ),
-            {"since": since},
-        ).fetchall()
+        session_ids = [row[0] for row in rows]
+        ip_rows = []
+        if session_ids:
+            placeholders = ", ".join(f":s{index}" for index in range(len(session_ids)))
+            ip_params = {
+                f"s{index}": session_id for index, session_id in enumerate(session_ids)
+            }
+            ip_params["since"] = since
+            ip_rows = conn.execute(
+                text(
+                    "SELECT session_id, source_ip FROM events "
+                    "WHERE source_module = 'honeypot' AND occurred_at >= :since "
+                    f"AND session_id IN ({placeholders}) AND source_ip IS NOT NULL"
+                ),
+                ip_params,
+            ).fetchall()
     by_session: dict[str, set[str]] = {}
     for session_id, ip in ip_rows:
         by_session.setdefault(session_id, set()).add(ip)

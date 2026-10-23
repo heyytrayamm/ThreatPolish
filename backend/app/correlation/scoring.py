@@ -586,6 +586,9 @@ def _explain(
     )
 
 
+PAIR_SEPARATOR = "\x1f"
+
+
 def pair_key(left_id: str, right_id: str) -> str:
     first, second = sorted((left_id, right_id))
-    return f"{first}::{second}"
+    return f"{first}{PAIR_SEPARATOR}{second}"

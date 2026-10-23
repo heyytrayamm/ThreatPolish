@@ -34,12 +34,13 @@ from ..db.database import connection, dumps, loads
 from ..db.schema import findings as findings_table
 from ..db.schema import scans
 from ..telemetry.ingest import Ingestor
-from .scope import find_active_scope, validate_target
+from .scope import _assert_public_host, find_active_scope, validate_target
 
 log = get_logger(__name__)
 
 USER_AGENT = "ThreatPolish-Assessor/1.0 (+authorized-assessment)"
 ACTIVE_PATHS = ("/.git/HEAD", "/.env", "/server-status", "/actuator/env")
+MAX_RESPONSE_BYTES = 1_000_000
 _host_limiters: dict[str, SlidingWindowLimiter] = {}
 
 
@@ -104,10 +105,22 @@ def assess(
             collected.extend(_tls_checks(host, urlsplit(url).port or 443))
         response, final_url = _fetch(url)
         status_code = response.status_code
-        collected.extend(_passive_checks(response, final_url, scheme))
+        final_scheme = urlsplit(final_url).scheme or scheme
+        collected.extend(_passive_checks(response, final_url, final_scheme))
         if active_checks:
-            origin = f"{urlsplit(final_url).scheme}://{urlsplit(final_url).netloc}"
-            collected.extend(_active_checks(origin))
+            # Authorization is per host.  A redirect may land on a host whose
+            # scope only permits passive observation, so re-check the final
+            # host before sending any active probe.
+            final_host = urlsplit(final_url).hostname or host
+            final_scope = find_active_scope(final_host)
+            if final_scope["allow_active"]:
+                origin = f"{urlsplit(final_url).scheme}://{urlsplit(final_url).netloc}"
+                collected.extend(_active_checks(origin))
+            else:
+                limitations.append(
+                    "active path probes were skipped: the final host's scope does not "
+                    "authorize them"
+                )
     except (AuthorizationFailure, UpstreamFailure) as exc:
         error = exc.message
         limitations.append(error)
@@ -130,8 +143,6 @@ def assess(
 
     if not active_checks:
         limitations.append("active path probes were not requested")
-    elif not scope["allow_active"]:
-        limitations.append("active path probes are not authorized for this scope")
 
     event_ids: list[str] = []
     ingestor = Ingestor(settings)
@@ -222,13 +233,20 @@ def _fetch(url: str) -> tuple[httpx.Response, str]:
             host = urlsplit(current).hostname or ""
             find_active_scope(host)
             _rate_limit(host)
-            response = client.get(current)
+            response = _bounded_request(client, current)
             if response.is_redirect and response.headers.get("location"):
                 target = urljoin(current, response.headers["location"])
                 parsed = urlsplit(target)
                 if parsed.scheme not in {"http", "https"}:
                     raise AuthorizationFailure("redirect left the http(s) scheme")
-                find_active_scope(parsed.hostname or "")
+                if parsed.username or parsed.password:
+                    raise AuthorizationFailure("redirect contained URL credentials")
+                redirect_host = parsed.hostname or ""
+                find_active_scope(redirect_host)
+                # Re-check the destination address: authorization is per host,
+                # and a redirect must not turn an authorized name into an SSRF
+                # path to a private or link-local address.
+                _assert_public_host(redirect_host)
                 if parsed.scheme == "http" and urlsplit(current).scheme == "https":
                     # Downgrade is reported by the passive checks when observed.
                     pass
@@ -236,6 +254,29 @@ def _fetch(url: str) -> tuple[httpx.Response, str]:
                 continue
             return response, str(response.url)
     raise UpstreamFailure("too many redirects while assessing the target")
+
+
+def _bounded_request(client: httpx.Client, url: str) -> httpx.Response:
+    """Read at most ``MAX_RESPONSE_BYTES`` so a hostile target cannot exhaust memory."""
+    with client.stream("GET", url) as streamed:
+        body = bytearray()
+        for chunk in streamed.iter_bytes():
+            body.extend(chunk)
+            if len(body) > MAX_RESPONSE_BYTES:
+                raise UpstreamFailure(
+                    f"target response exceeded the {MAX_RESPONSE_BYTES}-byte assessment limit"
+                )
+        headers = [
+            (key, value)
+            for key, value in streamed.headers.multi_items()
+            if key.lower() not in {"content-encoding", "content-length", "transfer-encoding"}
+        ]
+        return httpx.Response(
+            status_code=streamed.status_code,
+            headers=headers,
+            content=bytes(body),
+            request=streamed.request,
+        )
 
 
 def _rate_limit(host: str) -> None:
@@ -444,8 +485,8 @@ def _active_checks(base: str) -> list[Finding]:
         for path in ACTIVE_PATHS:
             _rate_limit(host)
             try:
-                response = client.get(base + path)
-            except httpx.HTTPError:
+                response = _bounded_request(client, base + path)
+            except (httpx.HTTPError, UpstreamFailure):
                 continue
             if response.status_code != 200:
                 continue

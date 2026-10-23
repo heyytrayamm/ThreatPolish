@@ -335,7 +335,7 @@ def histogram_similarity(left: list[float], right: list[float]) -> float:
     """1 - total variation distance between two normalized histograms."""
     if len(left) != len(right) or not left:
         return 0.0
-    distance = 0.5 * sum(abs(a - b) for a, b in zip(left, right))
+    distance = 0.5 * sum(abs(a - b) for a, b in zip(left, right, strict=True))
     return max(0.0, min(1.0, 1.0 - distance))
 
 

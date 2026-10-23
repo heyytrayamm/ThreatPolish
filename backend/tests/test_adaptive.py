@@ -126,6 +126,76 @@ def test_plan_activate_and_evaluate_investigation(client, sensor_headers, admin_
     assert stored["hypothesis_before"]["confidence"] == result["confidence_before"]
 
 
+def test_activation_is_visible_to_a_separate_decoy_process(client, sensor_headers, admin_headers):
+    campaign = _build_campaign(client, sensor_headers, admin_headers)
+    plan = client.post(
+        "/api/v1/investigations", json={"campaign_id": campaign["id"]}, headers=admin_headers
+    ).json()
+    activated = client.post(
+        f"/api/v1/investigations/{plan['id']}/activate",
+        json={"source_ip": "203.0.113.77"},
+        headers=admin_headers,
+    )
+    assert activated.status_code == 200, activated.text
+
+    from app.deception.adaptive import active_override
+
+    override = active_override("203.0.113.77")
+    assert override is not None
+    assert override["investigation_id"] == plan["id"]
+    assert active_override("203.0.113.78") is None
+
+
+def test_expired_activation_releases_the_subject(client, sensor_headers, admin_headers):
+    campaign = _build_campaign(client, sensor_headers, admin_headers)
+    plan = client.post(
+        "/api/v1/investigations", json={"campaign_id": campaign["id"]}, headers=admin_headers
+    ).json()
+    activated = client.post(
+        f"/api/v1/investigations/{plan['id']}/activate",
+        json={"source_ip": "203.0.113.79"},
+        headers=admin_headers,
+    )
+    assert activated.status_code == 200, activated.text
+
+    from sqlalchemy import text
+
+    from app.db.database import connection
+
+    past = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
+    with connection() as conn:
+        conn.execute(
+            text("UPDATE investigations SET expires_at = :past WHERE id = :id"),
+            {"past": past, "id": plan["id"]},
+        )
+
+    listed = client.get("/api/v1/investigations", headers=admin_headers).json()["items"]
+    assert next(item for item in listed if item["id"] == plan["id"])["status"] == "expired"
+    assert client.get(
+        f"/api/v1/investigations/{plan['id']}", headers=admin_headers
+    ).json()["status"] == "expired"
+
+    replacement = client.post(
+        "/api/v1/investigations", json={"campaign_id": campaign["id"]}, headers=admin_headers
+    )
+    assert replacement.status_code == 201, replacement.text
+
+    activated = client.post(
+        f"/api/v1/investigations/{replacement.json()['id']}/activate",
+        json={"source_ip": "203.0.113.80"},
+        headers=admin_headers,
+    )
+    assert activated.status_code == 200, activated.text
+    with connection() as conn:
+        conn.execute(
+            text("UPDATE investigations SET expires_at = NULL WHERE id = :id"),
+            {"id": replacement.json()["id"]},
+        )
+    listed = client.get("/api/v1/investigations", headers=admin_headers).json()["items"]
+    legacy = next(item for item in listed if item["id"] == replacement.json()["id"])
+    assert legacy["status"] == "expired"
+
+
 def test_unknown_profile_is_rejected(client, sensor_headers, admin_headers):
     campaign = _build_campaign(client, sensor_headers, admin_headers)
     response = client.post(

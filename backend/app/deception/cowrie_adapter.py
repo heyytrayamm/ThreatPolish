@@ -133,6 +133,17 @@ def parse_cowrie_line(line: str) -> dict[str, Any] | None:
     }
 
 
+def _find_next_line(handle: Any) -> int | None:
+    """Return the offset after the next newline, or None if none is available."""
+    while True:
+        block = handle.read(65_536)
+        if not block:
+            return None
+        index = block.find(b"\n")
+        if index != -1:
+            return handle.tell() - len(block) + index + 1
+
+
 def _parse_timestamp(value: Any) -> datetime:
     if isinstance(value, str) and value:
         try:
@@ -178,13 +189,24 @@ class CowrieTailer:
             handle.seek(offset)
             chunk = handle.read(max_bytes)
             consumed = offset + len(chunk)
-            if size > consumed:
-                # Only advance to the last complete line; leave the partial tail.
-                last_newline = chunk.rfind(b"\n")
-                if last_newline == -1:
+            last_newline = chunk.rfind(b"\n")
+            if last_newline == -1:
+                if size <= consumed:
+                    # The writer has not terminated the line yet; do not
+                    # advance over a partial record.
                     return {"read": 0, "accepted": 0, "duplicates": 0, "rejected": 0, "offset": offset}
-                chunk = chunk[: last_newline + 1]
-                consumed = offset + len(chunk)
+                next_offset = _find_next_line(handle)
+                if next_offset is None:
+                    return {"read": 0, "accepted": 0, "duplicates": 0, "rejected": 0, "offset": offset}
+                log.warning(
+                    "cowrie skipped an oversized log line",
+                    extra={"path": str(self.path), "bytes": next_offset - offset},
+                )
+                self._save_offset(next_offset)
+                return {"read": 0, "accepted": 0, "duplicates": 0, "rejected": 0, "offset": next_offset}
+            # Only advance to the last complete line; leave the partial tail.
+            chunk = chunk[: last_newline + 1]
+            consumed = offset + len(chunk)
 
         payloads = []
         for raw_line in chunk.decode("utf-8", "replace").splitlines():

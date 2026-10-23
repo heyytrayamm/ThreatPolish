@@ -85,7 +85,7 @@ reverse proxy on the management network and never publish 5432.
    `python -m app.cli create-user --email ... --name ... --role analyst`).
 4. Remove the bootstrap variables and restart.
 5. Add authorised web-assessment scopes with an authorization reference.
-6. Confirm `GET /health/ready` and `GET /events/summary` return data.
+6. Confirm `GET /api/v1/health/ready` and `GET /api/v1/events/summary` return data.
 
 ## Sensors
 
@@ -134,7 +134,7 @@ telemetry and must be encrypted at rest.
 
 1. Take a backup.
 2. Pull the new image, `docker compose up -d app`.
-3. Verify `/health/ready` and one authenticated read.
+3. Verify `/api/v1/health/ready` and one authenticated read.
 4. Keep the previous image tag for 7 days.
 
 Schema changes are applied at startup. The container runs a single API worker

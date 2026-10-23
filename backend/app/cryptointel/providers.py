@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Protocol
@@ -218,6 +219,11 @@ def get_provider(settings: Settings | None = None) -> MarketProvider:
 
 def _number(value: Any) -> float | None:
     try:
-        return float(value)  # type: ignore[arg-type]
+        number = float(value)  # type: ignore[arg-type]
     except (TypeError, ValueError):
         return None
+    # A provider (or a proxy in front of it) can return ``NaN``/``Infinity``,
+    # which Python's JSON parser accepts.  They cannot be stored or served as
+    # valid JSON, and comparing against them silently distorts the risk score,
+    # so an unusable value is treated as missing data.
+    return number if math.isfinite(number) else None

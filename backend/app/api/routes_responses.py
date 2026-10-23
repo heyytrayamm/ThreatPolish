@@ -8,7 +8,6 @@ from fastapi import APIRouter, Depends, Query
 
 from ..auth.rbac import Principal
 from ..core.audit import audit_standalone
-from ..core.errors import NotFound
 from ..correlation.repository import get_campaign
 from ..response.engine import (
     approve_response,
@@ -59,17 +58,13 @@ def request_response(
     target = payload.target
 
     if payload.campaign_id:
-        try:
-            campaign = get_campaign(payload.campaign_id)
-        except NotFound:
-            campaign = None
-        if campaign:
-            explanation = campaign["explanation"]
-            severity = explanation["severity"]
-            risk_level = explanation["risk"]["risk_level"]
-            risk_score = explanation["risk"]["risk_score"]
-            confidence = max(confidence, float(campaign["campaign"]["confidence"]))
-            target = target or (campaign["ips"][0] if campaign["ips"] else target)
+        campaign = get_campaign(payload.campaign_id)
+        explanation = campaign["explanation"]
+        severity = explanation["severity"]
+        risk_level = explanation["risk"]["risk_level"]
+        risk_score = explanation["risk"]["risk_score"]
+        confidence = max(confidence, float(campaign["campaign"]["confidence"]))
+        target = target or (campaign["ips"][0] if campaign["ips"] else target)
 
     if risk_score == 0.0 and confidence > 0:
         risk_score = score_risk(

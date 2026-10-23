@@ -133,7 +133,7 @@ export const api = {
   disableResponses: () =>
     request<{ rolled_back: number }>("/api/v1/responses/emergency-disable", { method: "POST" }),
   sources: () => request<{ sources: SourceHealth[] }>("/api/v1/sources"),
-  profiles: () => request<{ items: DecoyProfile[] }>("/api/v1/honeypot/profiles").catch(() => ({ items: [] })),
+  profiles: () => request<{ items: DecoyProfile[] }>("/api/v1/honeypot/profiles"),
   investigations: () => request<{ items: Investigation[] }>("/api/v1/investigations"),
   planInvestigation: (body: Record<string, unknown>) =>
     request<Record<string, unknown>>("/api/v1/investigations", {

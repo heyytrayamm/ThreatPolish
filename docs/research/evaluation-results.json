@@ -1,9 +1,9 @@
 {
-  "generated_at": "2026-10-23T09:51:36.116699+00:00",
+  "generated_at": "2026-10-23T12:04:14.713212+00:00",
   "runs": [
     {
       "adaptive": {
-        "ambiguous_pairs": 199,
+        "ambiguous_pairs": 197,
         "candidate_components": 7,
         "components_investigated": 7,
         "note": "Additional observation is simulated by appending one decoy interaction to sessions in the largest uncertain clusters only. Production adaptation records real decoy traffic and cannot create evidence.",
@@ -129,17 +129,17 @@
       "positives": 38,
       "resources": {
         "method_seconds": {
-          "ablation_no_intel": 1.208,
-          "ablation_no_timing": 1.09,
-          "ablation_no_toolchain": 1.072,
-          "ip_only": 0.003,
-          "proposed": 1.432,
-          "proposed_adaptive": 1.365,
+          "ablation_no_intel": 1.11,
+          "ablation_no_timing": 1.066,
+          "ablation_no_toolchain": 1.066,
+          "ip_only": 0.006,
+          "proposed": 1.354,
+          "proposed_adaptive": 1.353,
           "rule_based": 0.004
         },
-        "peak_memory_mb": 16.39,
-        "sessions_per_second": 10.0,
-        "total_seconds": 6.288
+        "peak_memory_mb": 16.4,
+        "sessions_per_second": 10.4,
+        "total_seconds": 6.075
       },
       "results": {
         "ablation_no_intel": {
@@ -430,17 +430,17 @@
       "positives": 38,
       "resources": {
         "method_seconds": {
-          "ablation_no_intel": 1.129,
-          "ablation_no_timing": 1.084,
-          "ablation_no_toolchain": 1.122,
+          "ablation_no_intel": 1.161,
+          "ablation_no_timing": 1.078,
+          "ablation_no_toolchain": 1.071,
           "ip_only": 0.003,
-          "proposed": 1.288,
-          "proposed_adaptive": 1.222,
+          "proposed": 1.327,
+          "proposed_adaptive": 1.173,
           "rule_based": 0.004
         },
-        "peak_memory_mb": 16.28,
+        "peak_memory_mb": 16.27,
         "sessions_per_second": 10.6,
-        "total_seconds": 5.965
+        "total_seconds": 5.926
       },
       "results": {
         "ablation_no_intel": {
@@ -606,7 +606,7 @@
   ],
   "volume_run": {
     "adaptive": {
-      "ambiguous_pairs": 1423,
+      "ambiguous_pairs": 1428,
       "candidate_components": 8,
       "components_investigated": 8,
       "note": "Additional observation is simulated by appending one decoy interaction to sessions in the largest uncertain clusters only. Production adaptation records real decoy traffic and cannot create evidence.",
@@ -697,13 +697,13 @@
     "resources": {
       "method_seconds": {
         "ip_only": 0.024,
-        "proposed": 9.679,
-        "proposed_adaptive": 8.531,
-        "rule_based": 0.038
+        "proposed": 9.531,
+        "proposed_adaptive": 8.373,
+        "rule_based": 0.035
       },
-      "peak_memory_mb": 111.83,
-      "sessions_per_second": 8.8,
-      "total_seconds": 18.68
+      "peak_memory_mb": 111.8,
+      "sessions_per_second": 9.0,
+      "total_seconds": 18.339
     },
     "results": {
       "ip_only": {

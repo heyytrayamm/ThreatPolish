@@ -7,6 +7,7 @@ from typing import Any
 
 from sqlalchemy import text
 
+from ..core.errors import ValidationFailure
 from ..db.database import connection, loads, query_one
 from ..schemas.event import SEVERITY_ORDER
 
@@ -60,6 +61,10 @@ def _filters(
         clauses.append("severity = :severity")
         params["severity"] = severity
     if min_severity:
+        if min_severity not in SEVERITY_ORDER:
+            raise ValidationFailure(
+                "min_severity must be one of info, low, medium, high or critical"
+            )
         allowed = [name for name, rank in SEVERITY_ORDER.items() if rank >= SEVERITY_ORDER[min_severity]]
         placeholders = ", ".join(f":sev_{index}" for index in range(len(allowed)))
         clauses.append(f"severity IN ({placeholders})")

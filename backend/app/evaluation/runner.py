@@ -15,7 +15,7 @@ import tracemalloc
 from typing import Any
 
 from ..correlation.features import CorrelationContext, Session, build_sessions
-from ..correlation.scoring import ALGORITHM_VERSION, compare, pair_key
+from ..correlation.scoring import ALGORITHM_VERSION, PAIR_SEPARATOR, compare, pair_key
 from ..schemas.event import EventIn
 from ..telemetry.normalize import normalize_event
 from .scenarios import adaptive_probe_events, generate_dataset
@@ -214,7 +214,7 @@ def _hypothesis_components(pairs: list[str]) -> list[list[str]]:
         return item
 
     for key in pairs:
-        left, right = key.split("::")
+        left, right = key.split(PAIR_SEPARATOR)
         parent[find(left)] = find(right)
     grouped: dict[str, list[str]] = {}
     for item in list(parent):
@@ -363,7 +363,7 @@ def _campaign_analysis(
         return item
 
     for key in linked:
-        left, right = key.split("::")
+        left, right = key.split(PAIR_SEPARATOR)
         if left in parent and right in parent:
             parent[find(left)] = find(right)
 

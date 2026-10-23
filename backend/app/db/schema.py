@@ -52,7 +52,7 @@ agent_tokens = Table(
 events = Table(
     "events",
     metadata,
-    Column("id", String(64), primary_key=True),
+    Column("id", String(120), primary_key=True),
     Column("schema_version", String(12), nullable=False),
     Column("occurred_at", String(40), nullable=False),
     Column("received_at", String(40), nullable=False),
@@ -202,7 +202,7 @@ crypto_risk = Table(
 graph_nodes = Table(
     "graph_nodes",
     metadata,
-    Column("id", String(120), primary_key=True),
+    Column("id", String(255), primary_key=True),
     Column("kind", String(24), nullable=False),
     Column("label", String(255), nullable=False),
     Column("props", Text, nullable=False, default="{}"),
@@ -216,8 +216,8 @@ graph_edges = Table(
     metadata,
     Column("id", String(80), primary_key=True),
     Column("kind", String(40), nullable=False),
-    Column("src_id", String(120), nullable=False),
-    Column("dst_id", String(120), nullable=False),
+    Column("src_id", String(255), nullable=False),
+    Column("dst_id", String(255), nullable=False),
     Column("confidence", Float, nullable=False),
     Column("score", Float, nullable=False),
     Column("evidence", Text, nullable=False),
@@ -314,7 +314,10 @@ investigations = Table(
     Column("outcome", String(24), nullable=True),
     Column("notes", Text, nullable=False, default=""),
     Column("algorithm_version", String(24), nullable=False),
+    Column("source_ip", String(64), nullable=True),
+    Column("expires_at", String(40), nullable=True),
     Index("ix_investigations_campaign", "campaign_id"),
+    Index("ix_investigations_active", "status", "source_ip"),
 )
 
 source_health = Table(

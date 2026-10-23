@@ -15,7 +15,7 @@ class LoginRequest(BaseModel):
 
 class UserCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    email: str
+    email: str = Field(min_length=3, max_length=255)
     name: str = Field(min_length=1, max_length=120)
     role: Literal["admin", "analyst", "viewer", "sensor"]
     password: str = Field(min_length=10, max_length=256)
@@ -36,7 +36,7 @@ class AgentTokenCreateRequest(BaseModel):
 class FeedbackRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     object_type: Literal["campaign", "edge", "finding", "risk"]
-    object_id: str
+    object_id: str = Field(min_length=1, max_length=64)
     label: Literal["supported", "rejected", "uncertain"]
     note: str = Field(default="", max_length=2000)
 
@@ -70,7 +70,7 @@ class ResponseRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     action: Literal["alert", "request_evidence", "recommend_rate_limit", "apply_rate_limit", "escalate"]
     target: str = Field(min_length=1, max_length=200)
-    campaign_id: str | None = None
+    campaign_id: str | None = Field(default=None, max_length=40)
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     severity: Literal["info", "low", "medium", "high", "critical"] = "medium"
     risk_level: Literal["info", "low", "medium", "high", "critical"] = "medium"
@@ -81,9 +81,9 @@ class ResponseRequest(BaseModel):
 
 class InvestigationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    campaign_id: str | None = None
-    edge_id: str | None = None
-    profile: str | None = None
+    campaign_id: str | None = Field(default=None, max_length=40)
+    edge_id: str | None = Field(default=None, max_length=80)
+    profile: str | None = Field(default=None, max_length=80)
 
 
 class ApiError(BaseModel):
