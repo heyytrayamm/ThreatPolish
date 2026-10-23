@@ -119,13 +119,19 @@ loads that row for each request, so an activation made through the API reaches
 the listener without shared memory. Evaluation marks the investigation
 `evaluated` and clears the expiry. Activations past their TTL are marked
 `expired` on the next read or write, release their subject for a new
-investigation and stop overriding the decoy profile.
+investigation and stop overriding the decoy profile. At most one investigation
+is open per subject: partial unique indexes cover the `planned` and `active`
+rows, so the limit holds even when two requests are planned at the same moment.
 
 ## Security boundaries
 
 - The API is split into public (`/api/v1/health`, `/api/v1/health/ready`,
   `/api/v1/auth/login`), sensor (`X-Agent-Token`, hashed and revocable), and
   analyst (bearer token + RBAC) surfaces.
+- Bearer tokens carry a per-account session version that is checked on every
+  request. Changing a password increments the version, which revokes all
+  tokens issued earlier; the caller receives a replacement token so the
+  session performing the change continues without a re-login.
 - Decoy listeners share the database but not an event loop or request context
   with the API. The HTTP decoy writes events directly and spools to disk if the
   pipeline is unavailable; Cowrie logs are tailed with a persisted offset.

@@ -19,6 +19,7 @@ from sqlalchemy import (
     Table,
     Text,
     UniqueConstraint,
+    text,
 )
 
 metadata = MetaData()
@@ -32,6 +33,7 @@ users = Table(
     Column("role", String(20), nullable=False),
     Column("password_hash", Text, nullable=False),
     Column("is_active", Integer, nullable=False, default=1),
+    Column("token_version", Integer, nullable=False, default=0),
     Column("created_at", String(40), nullable=False),
     Column("last_login_at", String(40), nullable=True),
 )
@@ -318,6 +320,23 @@ investigations = Table(
     Column("expires_at", String(40), nullable=True),
     Index("ix_investigations_campaign", "campaign_id"),
     Index("ix_investigations_active", "status", "source_ip"),
+    # At most one open investigation per subject.  A partial index makes the
+    # check atomic: of two concurrent planners only one insert commits, and the
+    # loser is rejected by the database instead of by a read that saw no row.
+    Index(
+        "uq_investigations_active_edge",
+        "edge_id",
+        unique=True,
+        sqlite_where=text("status IN ('planned', 'active') AND edge_id IS NOT NULL"),
+        postgresql_where=text("status IN ('planned', 'active') AND edge_id IS NOT NULL"),
+    ),
+    Index(
+        "uq_investigations_active_campaign",
+        "campaign_id",
+        unique=True,
+        sqlite_where=text("status IN ('planned', 'active') AND campaign_id IS NOT NULL"),
+        postgresql_where=text("status IN ('planned', 'active') AND campaign_id IS NOT NULL"),
+    ),
 )
 
 source_health = Table(

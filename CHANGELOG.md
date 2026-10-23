@@ -68,12 +68,21 @@ Initial release.
   investigation profile for credential capture.
 - Event `since`/`until` filters are validated as timestamps instead of being
   compared as raw strings.
+- Changing a password now revokes every token issued before the change, and
+  tokens that carry no session version are refused. The caller receives a
+  replacement token so the session making the change is not logged out.
+- Duplicate investigation planning is decided by partial unique indexes on the
+  open rows, so two concurrent requests for the same campaign or edge can no
+  longer both create an investigation and activate two decoys. Existing
+  duplicates are marked `superseded` by migration 7.
 
 ### Security
 
 - Bearer tokens are kept in tab-scoped storage.
 - The dashboard CSP is sent by the API and scoped to dashboard responses.
 - Agent tokens are stored as hashes and can be revoked.
+- Bearer tokens are bound to an account session version that is checked on
+  every request; rotating a password invalidates tokens already issued.
 - Untrusted numeric and Unicode input is bounded at the event and provider
   boundaries before it reaches storage or a JSON response.
 - Login endpoints enforce both account-level and address-level attempt budgets.

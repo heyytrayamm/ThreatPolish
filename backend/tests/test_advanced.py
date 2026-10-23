@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import socket
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
-from .conftest import make_event
+from .conftest import ADMIN_PASSWORD, make_event
 
 
 def _post_raw(client, headers: dict[str, str], payload: Any):
@@ -202,6 +205,66 @@ def test_login_spraying_across_accounts_is_limited_by_address(client):
     assert blocked is not None, "address-level limit never engaged"
     assert "address" in blocked.json()["error"]["message"]
     assert blocked.headers.get("Retry-After")
+
+
+def test_a_token_without_a_session_version_is_refused():
+    """Tokens minted before revocation support must not be trusted."""
+    import pytest
+
+    from app.core.errors import AuthenticationFailure
+    from app.core.security import _b64e, _json_b64, decode_access_token
+
+    now = int(time.time())
+    header = _json_b64({"alg": "HS256", "typ": "JWT"})
+    payload = _json_b64(
+        {
+            "iss": "threatpolish",
+            "ver": 1,
+            "sub": "usr_1",
+            "role": "admin",
+            "iat": now,
+            "exp": now + 600,
+        }
+    )
+    signature = _b64e(
+        hmac.new(b"a" * 40, f"{header}.{payload}".encode("ascii"), hashlib.sha256).digest()
+    )
+    with pytest.raises(AuthenticationFailure, match="session version"):
+        decode_access_token(f"{header}.{payload}.{signature}", secret="a" * 40)
+
+
+def test_a_pre_change_token_is_rejected_after_a_password_change(
+    client, admin_headers, admin_token
+):
+    """A session stolen before the password change must not outlive it."""
+    other_device = "Bearer " + admin_token
+    changed = client.post(
+        "/api/v1/auth/password",
+        headers=admin_headers,
+        json={
+            "current_password": ADMIN_PASSWORD,
+            "new_password": "a-brand-new-long-password",
+        },
+    )
+    assert changed.status_code == 200, changed.text
+    body = changed.json()
+    assert body["other_sessions_revoked"] is True
+
+    revoked = client.get("/api/v1/events", headers={"Authorization": other_device})
+    assert revoked.status_code == 401
+    assert "revoked" in revoked.json()["error"]["message"]
+
+    # The caller is handed a replacement token so the change does not log out
+    # the session that performed it.
+    replacement = {"Authorization": f"Bearer {body['access_token']}"}
+    assert client.get("/api/v1/events", headers=replacement).status_code == 200
+
+    # And the old password no longer authenticates.
+    stale_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "admin@threatpolish.test", "password": ADMIN_PASSWORD},
+    )
+    assert stale_login.status_code == 401
 
 
 # --------------------------------------------------------------------------- #

@@ -10,6 +10,7 @@ from ..auth.users import (
     change_password,
     create_agent_token,
     create_user,
+    get_user_with_session,
     list_agent_tokens,
     list_users,
     revoke_agent_token,
@@ -60,6 +61,7 @@ def login(payload: LoginRequest, request: Request) -> dict[str, object]:
         role=user["role"],
         secret=get_settings().jwt_secret,
         ttl_minutes=get_settings().jwt_ttl_minutes,
+        token_version=get_user_with_session(user["id"])[1],
     )
     audit_standalone(
         action="auth.login",
@@ -118,19 +120,36 @@ def add_user(payload: UserCreateRequest, principal: Principal = Depends(require(
 @router.post("/password")
 def update_password(
     payload: PasswordChangeRequest, principal: Principal = Depends(get_principal)
-) -> dict[str, str]:
+) -> dict[str, object]:
     if principal.is_agent:
         raise AuthenticationFailure("agent tokens cannot change passwords")
     current = authenticate(principal.email, payload.current_password)
-    change_password(current["id"], payload.new_password)
+    # Every token minted before this call carries the old session version and
+    # is rejected on its next use.  The caller receives a replacement token so
+    # the session performing the change is not logged out mid-action.
+    session_version = change_password(current["id"], payload.new_password)
+    token, expires_at = create_access_token(
+        subject=current["id"],
+        role=current["role"],
+        secret=get_settings().jwt_secret,
+        ttl_minutes=get_settings().jwt_ttl_minutes,
+        token_version=session_version,
+    )
     audit_standalone(
         action="auth.password.change",
         actor_id=principal.user_id,
         actor_role=principal.role,
         object_type="user",
         object_id=principal.user_id,
+        detail={"other_sessions_revoked": True},
     )
-    return {"status": "changed"}
+    return {
+        "status": "changed",
+        "access_token": token,
+        "token_type": "bearer",
+        "expires_at": expires_at.isoformat(),
+        "other_sessions_revoked": True,
+    }
 
 
 @router.get("/tokens")

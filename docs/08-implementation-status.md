@@ -13,9 +13,9 @@ why.
 | Database models for all modules | Done | `app/db/` |
 | Event contract and validation | Done | `app/schemas/event.py`, `test_foundation.py` |
 | Ingestion with hashing, dedup, quarantine | Done | `app/telemetry/ingest.py`, `test_pipeline.py` |
-| Auth, RBAC, audit trail | Done | `app/auth/`, `test_foundation.py`, `test_security.py` |
+| Auth, RBAC, audit trail | Done | `app/auth/`, `test_foundation.py`, `test_security.py`; password change revokes earlier sessions through the account session version |
 | Dashboard shell and navigation | Done | `frontend/` builds cleanly |
-| Test harness | Done | 97 tests on SQLite, isolated per test; the same suite runs against PostgreSQL 16 in CI, plus container smoke checks |
+| Test harness | Done | 100 tests on SQLite and on PostgreSQL 16.2, isolated per test; the same suite runs against both engines in CI, plus container smoke checks |
 | Reproducible benchmark | Done | `backend/scripts/evaluate.py` |
 | Audit, novelty review, architecture, threat model | Done | `docs/00`–`docs/03` |
 | License | Done | Proprietary notice, all rights reserved by the project team |
@@ -76,7 +76,7 @@ why.
 | PostgreSQL production path | Done | migrations, all module flows and recovery verified against PostgreSQL 16 |
 | Backup, restore, retention, runbooks | Done | `docs/07-operations.md` |
 | Health and readiness probes | Done | `/api/v1/health`, `/api/v1/health/ready` |
-| Schema migrations and upgrade path | Done | v3 PostgreSQL database upgraded to v5 on a restorable copy |
+| Schema migrations and upgrade path | Done | v3 PostgreSQL database upgraded to v5 on a restorable copy; v5 upgraded to v7 on SQLite and PostgreSQL 16, including a copy seeded with duplicate open investigations |
 | CI pipeline | Done | `.github/workflows/ci.yml` runs backend lint and tests on SQLite and PostgreSQL 16, the dashboard build and a container image build |
 | Dependency scanning | Not done | commands documented, not automated |
 

@@ -26,7 +26,7 @@ recorded in the audit log.
 | GET | `/health/ready` | public | Readiness, including database check |
 | POST | `/auth/login` | public | Obtain a bearer token |
 | GET | `/auth/me` | any | Current identity and role |
-| POST | `/auth/password` | any | Rotate own password |
+| POST | `/auth/password` | any | Rotate own password; revokes every other session and returns a replacement token |
 | GET/POST | `/auth/users` | admin | List and create users |
 | GET/POST/DELETE | `/auth/tokens` | admin | Service token management |
 | GET | `/auth/roles` | any | Role capability matrix |

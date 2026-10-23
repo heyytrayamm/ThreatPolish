@@ -80,6 +80,7 @@ def create_access_token(
     role: str,
     secret: str,
     ttl_minutes: int,
+    token_version: int = 0,
     now: datetime | None = None,
     token_id: str | None = None,
 ) -> tuple[str, datetime]:
@@ -91,6 +92,7 @@ def create_access_token(
         "ver": _TOKEN_VERSION,
         "sub": subject,
         "role": role,
+        "tv": int(token_version),
         "iat": int(issued.timestamp()),
         "exp": int(expires.timestamp()),
         "jti": token_id or secrets.token_hex(12),
@@ -125,6 +127,12 @@ def decode_access_token(token: str, *, secret: str, now: datetime | None = None)
         raise AuthenticationFailure("unsupported token algorithm")
     if payload.get("iss") != _TOKEN_ISSUER or payload.get("ver") != _TOKEN_VERSION:
         raise AuthenticationFailure("unexpected token issuer")
+    # The session version is what lets a credential change revoke tokens that
+    # are still correctly signed and unexpired.  A token without it predates
+    # revocation support and must not be trusted.
+    version = payload.get("tv")
+    if not isinstance(version, int) or isinstance(version, bool) or version < 0:
+        raise AuthenticationFailure("token is missing a session version")
     current = int((now or utcnow()).timestamp())
     if int(payload.get("exp", 0)) <= current:
         raise AuthenticationFailure("token expired")

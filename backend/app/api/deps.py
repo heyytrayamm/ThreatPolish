@@ -8,7 +8,7 @@ from typing import Callable
 from fastapi import Depends, Header, Request
 
 from ..auth.rbac import Principal, require_permission
-from ..auth.users import get_user, resolve_agent_token
+from ..auth.users import get_user_with_session, resolve_agent_token
 from ..core.config import get_settings
 from ..core.errors import AuthenticationFailure
 from ..core.limits import SlidingWindowLimiter
@@ -30,9 +30,11 @@ def get_principal(
             raise AuthenticationFailure("expected 'Authorization: Bearer <token>'")
         payload = decode_access_token(token.strip(), secret=get_settings().jwt_secret)
         user_id = str(payload.get("sub", ""))
-        user = get_user(user_id)
+        user, session_version = get_user_with_session(user_id)
         if not user["is_active"]:
             raise AuthenticationFailure("account is disabled")
+        if int(payload.get("tv", -1)) != session_version:
+            raise AuthenticationFailure("session has been revoked; sign in again")
         return Principal(
             user_id=user["id"],
             role=user["role"],

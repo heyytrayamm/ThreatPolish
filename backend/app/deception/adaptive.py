@@ -21,7 +21,7 @@ from datetime import timedelta
 from typing import Any
 
 from sqlalchemy import or_, select, text
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from ..core.errors import Conflict, NotFound, PolicyDenied, ValidationFailure
 from ..core.logging import get_logger
@@ -163,46 +163,35 @@ def plan_investigation(
 
     investigation_id = new_id("inv")
     now = utcnow()
-    # Build predicates only for the identifiers present. PostgreSQL cannot
-    # infer the type of a NULL parameter used as ``:value IS NOT NULL``.
-    subject_clauses: list[str] = []
-    subject_params: dict[str, Any] = {}
-    if edge_id:
-        subject_clauses.append("edge_id = :edge")
-        subject_params["edge"] = edge_id
-    if campaign_id:
-        subject_clauses.append("campaign_id = :campaign")
-        subject_params["campaign"] = campaign_id
-    with connection() as conn:
-        existing = conn.execute(
-            text(
-                "SELECT id FROM investigations WHERE status IN ('planned', 'active') "
-                f"AND ({' OR '.join(subject_clauses)}) LIMIT 1"
-            ),
-            subject_params,
-        ).fetchone()
-        if existing:
-            raise Conflict(
-                "an investigation is already planned or active for this subject",
-                details={"investigation_id": existing[0]},
+    try:
+        with connection() as conn:
+            conn.execute(
+                investigations.insert().values(
+                    id=investigation_id,
+                    created_at=iso(now),
+                    updated_at=iso(now),
+                    campaign_id=campaign_id,
+                    edge_id=edge_id,
+                    status="planned",
+                    missing_evidence=dumps(missing),
+                    chosen_profile=chosen["name"] if chosen else None,
+                    hypothesis_before=dumps(hypothesis_before),
+                    hypothesis_after=None,
+                    outcome=None,
+                    notes=notes,
+                    algorithm_version=ALGORITHM_VERSION,
+                )
             )
-        conn.execute(
-            investigations.insert().values(
-                id=investigation_id,
-                created_at=iso(now),
-                updated_at=iso(now),
-                campaign_id=campaign_id,
-                edge_id=edge_id,
-                status="planned",
-                missing_evidence=dumps(missing),
-                chosen_profile=chosen["name"] if chosen else None,
-                hypothesis_before=dumps(hypothesis_before),
-                hypothesis_after=None,
-                outcome=None,
-                notes=notes,
-                algorithm_version=ALGORITHM_VERSION,
-            )
-        )
+    except IntegrityError as exc:
+        # The partial unique indexes on edge_id and campaign_id decide the
+        # conflict atomically.  A read-then-insert check could let two
+        # concurrent planners both pass, leaving duplicate investigations and
+        # two decoy activations for the same campaign.
+        existing = _open_investigation_id(edge_id=edge_id, campaign_id=campaign_id)
+        raise Conflict(
+            "an investigation is already planned or active for this subject",
+            details={"investigation_id": existing} if existing else {},
+        ) from exc
 
     return {
         "id": investigation_id,
@@ -384,6 +373,29 @@ def list_investigations(limit: int = 50) -> list[dict[str, Any]]:
         data["hypothesis_after"] = loads(data.get("hypothesis_after"), None)
         result.append(data)
     return result
+
+
+def _open_investigation_id(*, edge_id: str | None, campaign_id: str | None) -> str | None:
+    """Find the open investigation that blocked an insert, for the error detail."""
+    clauses: list[str] = []
+    params: dict[str, Any] = {}
+    if edge_id:
+        clauses.append("edge_id = :edge")
+        params["edge"] = edge_id
+    if campaign_id:
+        clauses.append("campaign_id = :campaign")
+        params["campaign"] = campaign_id
+    if not clauses:
+        return None
+    with connection() as conn:
+        row = conn.execute(
+            text(
+                "SELECT id FROM investigations WHERE status IN ('planned', 'active') "
+                f"AND ({' OR '.join(clauses)}) ORDER BY updated_at DESC LIMIT 1"
+            ),
+            params,
+        ).fetchone()
+    return str(row[0]) if row else None
 
 
 def _select_profile(requested: str | None, observable: list[str]) -> dict[str, Any] | None:

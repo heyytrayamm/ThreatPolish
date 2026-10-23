@@ -181,12 +181,80 @@ def _migration_005_rekey_session_pairs(conn: Connection) -> None:
             )
 
 
+def _migration_006_session_versions(conn: Connection) -> None:
+    """Track a per-account session version so credentials can revoke tokens.
+
+    Existing accounts start at version 0.  Tokens issued before this column
+    existed carry no version and are refused, so each session signs in once
+    after the upgrade and revocation works from then on.
+    """
+    from sqlalchemy import inspect
+
+    existing = {column["name"] for column in inspect(conn).get_columns("users")}
+    if "token_version" not in existing:
+        conn.execute(
+            text("ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0")
+        )
+
+
+def _migration_007_unique_open_investigations(conn: Connection) -> None:
+    """Enforce one open investigation per subject in the database.
+
+    The planner used to SELECT for an existing row and then INSERT.  Two
+    requests could both see an empty result and both insert, so the campaign
+    ended up with duplicate investigations and two decoy activations.  A
+    partial unique index moves the decision into the database, where it is
+    atomic.  Any duplicates already present are closed first so the index can
+    be built.
+    """
+    rows = conn.execute(
+        text(
+            "SELECT id, edge_id, campaign_id FROM investigations "
+            "WHERE status IN ('planned', 'active') "
+            "ORDER BY updated_at DESC, id"
+        )
+    ).fetchall()
+    seen_edges: set[str] = set()
+    seen_campaigns: set[str] = set()
+    for investigation_id, edge_id, campaign_id in rows:
+        conflicted = (edge_id is not None and edge_id in seen_edges) or (
+            campaign_id is not None and campaign_id in seen_campaigns
+        )
+        if conflicted:
+            conn.execute(
+                text("UPDATE investigations SET status = 'superseded' WHERE id = :id"),
+                {"id": investigation_id},
+            )
+            continue
+        if edge_id is not None:
+            seen_edges.add(edge_id)
+        if campaign_id is not None:
+            seen_campaigns.add(campaign_id)
+
+    conn.execute(
+        text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_investigations_active_edge "
+            "ON investigations (edge_id) "
+            "WHERE status IN ('planned', 'active') AND edge_id IS NOT NULL"
+        )
+    )
+    conn.execute(
+        text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_investigations_active_campaign "
+            "ON investigations (campaign_id) "
+            "WHERE status IN ('planned', 'active') AND campaign_id IS NOT NULL"
+        )
+    )
+
+
 MIGRATIONS: list[tuple[int, str, Any]] = [
     (1, "initial schema", _migration_001_initial),
     (2, "event retention index", _migration_002_events_retention_index),
     (3, "persisted investigation activation", _migration_003_investigation_activation),
     (4, "graph identifier widths", _migration_004_widen_graph_identifiers),
     (5, "session pair identifier rekey", _migration_005_rekey_session_pairs),
+    (6, "account session versions", _migration_006_session_versions),
+    (7, "unique open investigations", _migration_007_unique_open_investigations),
 ]
 
 

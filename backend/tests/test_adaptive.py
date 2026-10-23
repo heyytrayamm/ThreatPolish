@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
 import httpx
@@ -205,6 +206,58 @@ def test_unknown_profile_is_rejected(client, sensor_headers, admin_headers):
     )
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "validation_failed"
+
+
+def test_concurrent_planning_keeps_one_open_investigation_per_subject(
+    client, sensor_headers, admin_headers
+):
+    """The duplicate check must hold when requests overlap, not just in series."""
+    from app.core.errors import Conflict
+    from app.deception.adaptive import plan_investigation
+
+    campaign = _build_campaign(client, sensor_headers, admin_headers)
+    workers = 5
+
+    def attempt(_: int) -> str:
+        try:
+            plan_investigation(campaign_id=campaign["id"], actor="test:race")
+        except Conflict:
+            return "conflict"
+        return "planned"
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        outcomes = list(pool.map(attempt, range(workers)))
+
+    assert outcomes.count("planned") == 1, outcomes
+    assert outcomes.count("conflict") == workers - 1, outcomes
+
+    listed = client.get("/api/v1/investigations", headers=admin_headers).json()["items"]
+    open_for_campaign = [
+        item
+        for item in listed
+        if item["campaign_id"] == campaign["id"] and item["status"] in {"planned", "active"}
+    ]
+    assert len(open_for_campaign) == 1, open_for_campaign
+
+    # The guarantee comes from the database, not from the planner's own check:
+    # a second open row for the same campaign is refused outright.
+    import pytest
+    from sqlalchemy import text
+    from sqlalchemy.exc import IntegrityError
+
+    from app.db.database import connection
+
+    with pytest.raises(IntegrityError):
+        with connection() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO investigations (id, created_at, updated_at, campaign_id, "
+                    "edge_id, status, missing_evidence, hypothesis_before, notes, "
+                    "algorithm_version) VALUES ('inv_manual', :now, :now, :campaign, NULL, "
+                    "'planned', '[]', '{}', '', 'test')"
+                ),
+                {"now": datetime.now(timezone.utc).isoformat(), "campaign": campaign["id"]},
+            )
 
 
 def test_activation_requires_valid_ip_and_permission(client, sensor_headers, admin_headers):

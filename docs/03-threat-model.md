@@ -40,7 +40,7 @@ claims the system is unattackable.
 
 | # | Threat | Control | Residual risk |
 | --- | --- | --- | --- |
-| T1 | Unauthenticated access to telemetry or response endpoints | Bearer token + role check on every route; RBAC matrix tested | Stolen token valid until expiry (default 60 min); no revocation list |
+| T1 | Unauthenticated access to telemetry or response endpoints | Bearer token + role check on every route; RBAC matrix tested. Tokens carry a per-account session version that is compared with the stored account on every request, so changing a password revokes all tokens issued before it, and disabling an account rejects its tokens at once | A stolen token stays usable until the victim rotates credentials, an administrator disables the account, or it expires (default 60 min) |
 | T2 | Weak operator passwords | Minimum length enforced, PBKDF2-HMAC-SHA256 with per-user salt and high iteration count; login audit records failures; attempts are limited per account and per client address so rotating the email does not reset the budget | Password strength policy is minimal by design for a lab tool; address-level limits need care behind a shared NAT |
 | T3 | Forged sensor submissions | Per-sensor agent tokens (`X-Agent-Token`); only a hash of each token is stored, tokens are revocable, and a revoked token stops ingesting immediately | Anyone holding a live agent token can inject events; rotate it |
 | T4 | Log/evidence poisoning via decoy | Stored as observation with source and sensor id; correlation treats single-source tokens as low evidence; injection strings stored verbatim, never evaluated | A patient attacker can still create plausible false trails |

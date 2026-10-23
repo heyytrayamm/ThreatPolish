@@ -66,11 +66,20 @@ def create_user(*, email: str, name: str, role: str, password: str) -> dict[str,
 
 
 def get_user(user_id: str) -> dict[str, Any]:
+    return get_user_with_session(user_id)[0]
+
+
+def get_user_with_session(user_id: str) -> tuple[dict[str, Any], int]:
+    """Return the public record and its session version in one query.
+
+    The session version increments whenever the account's credentials change,
+    which is what makes previously issued tokens stop working.
+    """
     with connection() as conn:
         row = query_one(conn, "SELECT * FROM users WHERE id = :id", {"id": user_id})
     if not row:
         raise NotFound("user not found")
-    return _public_user(row)
+    return _public_user(row), int(row.get("token_version") or 0)
 
 
 def list_users() -> list[dict[str, Any]]:
@@ -100,17 +109,29 @@ def authenticate(email: str, password: str) -> dict[str, Any]:
     return _public_user({**row, "last_login_at": iso(utcnow())})
 
 
-def change_password(user_id: str, new_password: str) -> None:
+def change_password(user_id: str, new_password: str) -> int:
+    """Store a new password and revoke every token issued before it.
+
+    Returns the new session version.  Tokens carrying an older version are
+    rejected on use, so a session stolen before the change cannot outlive it.
+    """
     if len(new_password) < 10:
         raise ValidationFailure("password must be at least 10 characters")
     with connection() as conn:
         result = conn.execute(
             users.update()
             .where(users.c.id == user_id)
-            .values(password_hash=hash_password(new_password))
+            .values(
+                password_hash=hash_password(new_password),
+                token_version=users.c.token_version + 1,
+            )
         )
         if result.rowcount == 0:
             raise NotFound("user not found")
+        row = conn.execute(
+            select(users.c.token_version).where(users.c.id == user_id)
+        ).fetchone()
+    return int(row[0]) if row else 0
 
 
 # --------------------------------------------------------------------------- #

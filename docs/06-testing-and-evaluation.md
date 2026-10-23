@@ -20,19 +20,20 @@ the SQLite path. CI runs both engines on every push and pull request.
 | `test_foundation.py` | Health, auth, tokens, RBAC, audit, event contract validation, migration re-keying |
 | `test_correlation.py` | Feature extraction, corpus weighting, thresholds, anchors, contradictions, campaign construction |
 | `test_deception.py` | Decoy profiles, HTTP decoy responses, Cowrie adaptation, password hashing |
-| `test_adaptive.py` | Investigation lifecycle, eligibility limits, before/after recording, no evidence creation |
+| `test_adaptive.py` | Investigation lifecycle, eligibility limits, before/after recording, no evidence creation, concurrent planning against the one-open-investigation constraint |
 | `test_websec.py` | Scope authorization, SSRF refusal, redirect targets, response bounds, finding persistence |
 | `test_crypto.py` | Provider abstraction, fixture provider, signal scoring, caching |
 | `test_responses.py` | Policy matrix, approval requirement, expiry, rollback, state machine |
 | `test_pipeline.py` | Ingestion idempotency, quarantine, attribution, modules sharing one contract |
 | `test_end_to_end.py` | Login → ingest → correlate → campaign → response → audit over HTTP |
 | `test_security.py` | Auth bypass attempts, injection strings, oversized payloads, token tampering |
-| `test_advanced.py` | Non-finite and unencodable payloads, hostile feature shapes, request-body bounds, login spraying, concurrent duplicate ingestion, redirect scope bypass, decoy request framing |
+| `test_advanced.py` | Non-finite and unencodable payloads, hostile feature shapes, request-body bounds, login spraying, session revocation on password change, concurrent duplicate ingestion, redirect scope bypass, decoy request framing |
 
 ## Measured behaviour
 
-Latest full run: **97 passed on SQLite**; CI runs the same suite against
-PostgreSQL 16.
+Latest full run: **100 passed on SQLite and 100 passed on PostgreSQL 16.2**
+(a temporary PostgreSQL 16 server on the development host). CI runs the same
+suite against both engines.
 Static checks: the frontend builds with `tsc -b` and `vite build`; the backend
 passes Ruff and compiles with `compileall`.
 
