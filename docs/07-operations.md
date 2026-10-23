@@ -189,7 +189,9 @@ it the alert says "new network", which is what the platform can observe. Any
 geolocation endpoint you configure receives analyst addresses — choose it with
 that in mind. Lookups are cached per process and bounded by
 `TP_GEO_TIMEOUT_SECONDS`, so a slow provider adds latency to sign-in but cannot
-block it.
+block it. The platform does not trust `X-Forwarded-For`, so behind a reverse
+proxy every sign-in appears to come from the proxy address and no alert fires;
+this detection suits deployments where clients reach the API directly.
 
 ## Retention
 
