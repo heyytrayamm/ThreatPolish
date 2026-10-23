@@ -20,17 +20,6 @@ services:
   app:
     build: .
     restart: unless-stopped
-<<<<<<< HEAD
-    ports:
-      - "127.0.0.1:8000:8000"
-    env_file:
-      - .env
-    environment:
-      - POSTGRES_HOST=db
-      - DATABASE_URL=postgresql+psycopg://${POSTGRES_USER:-threatpolish_user}:${POSTGRES_PASSWORD:-threatpolish_dev_secret_change_in_prod}@db:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-threatpolish_db}
-      - HOST=0.0.0.0
-=======
->>>>>>> origin/main
     depends_on:
       db:
         condition: service_healthy

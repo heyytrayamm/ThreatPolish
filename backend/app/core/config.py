@@ -8,11 +8,6 @@ refuses to start in production without an explicitly supplied signing secret.
 from __future__ import annotations
 
 import os
-<<<<<<< HEAD
-from typing import List
-from pydantic import Field, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
-=======
 import secrets
 from dataclasses import dataclass, field
 from functools import lru_cache
@@ -24,7 +19,6 @@ _TRUE = {"1", "true", "yes", "on"}
 _FALSE = {"0", "false", "no", "off"}
 
 DEFAULT_ORIGINS = ("http://localhost:5173", "http://127.0.0.1:5173")
->>>>>>> origin/main
 
 
 def _bool(name: str, default: bool) -> bool:
@@ -54,15 +48,6 @@ def _int(name: str, default: int, minimum: int | None = None, maximum: int | Non
     return value
 
 
-<<<<<<< HEAD
-    # Database Configuration (PostgreSQL)
-    POSTGRES_USER: str = "threatpolish_user"
-    POSTGRES_PASSWORD: str = "threatpolish_dev_secret_change_in_prod"
-    POSTGRES_DB: str = "threatpolish_db"
-    POSTGRES_HOST: str = "127.0.0.1"
-    POSTGRES_PORT: int = 5432
-    DATABASE_URL: str | None = None
-=======
 def _float(name: str, default: float, minimum: float | None = None, maximum: float | None = None) -> float:
     raw = os.environ.get(name)
     if raw is None:
@@ -76,7 +61,6 @@ def _float(name: str, default: float, minimum: float | None = None, maximum: flo
     if maximum is not None and value > maximum:
         raise ConfigurationError(f"{name} must be <= {maximum}")
     return value
->>>>>>> origin/main
 
 
 def _origins() -> tuple[str, ...]:
@@ -111,28 +95,6 @@ class Settings:
     crypto_min_refresh_seconds: int
     data_dir: Path
     generated_secret: bool = field(default=False)
-
-    @model_validator(mode="after")
-    def assemble_database_url(self) -> "Settings":
-        """
-        Dynamically assemble DATABASE_URL from components when omitted,
-        and ensure that an explicit POSTGRES_HOST (e.g. 'db' in Docker Compose)
-        is not silently overridden by a localhost default in DATABASE_URL.
-        """
-        constructed = (
-            f"postgresql+psycopg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
-            f"@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
-        )
-        if not self.DATABASE_URL:
-            self.DATABASE_URL = constructed
-        elif self.POSTGRES_HOST != "127.0.0.1" and (
-            "@127.0.0.1:" in self.DATABASE_URL or "@localhost:" in self.DATABASE_URL
-        ):
-            # POSTGRES_HOST was explicitly configured (e.g. 'db' in Docker), but
-            # DATABASE_URL still pointed to localhost (e.g. inherited from .env).
-            # Reconstruct to respect the container network topology.
-            self.DATABASE_URL = constructed
-        return self
 
     @property
     def is_production(self) -> bool:
