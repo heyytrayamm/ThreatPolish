@@ -25,7 +25,16 @@ Initial release.
   changing its password.
 - `GET /auth/sessions` reports an account's sign-ins, password changes and
   revocations with client, address and whether each sign-in is still usable,
-  derived from the audit trail rather than per-request logging.
+  derived from the audit trail rather than per-request logging. Administrators
+  can open any account's history from the Administration page or
+  `GET /auth/users/{id}/sessions`.
+- Sign-in anomaly alerts: a second live session from a different network inside
+  `TP_SIGNIN_ALERT_WINDOW_MINUTES` is recorded as `auth.signin.anomaly` and shown
+  on the account and admin session views. An optional geolocation endpoint adds
+  measured distance and the `TP_SIGNIN_ALERT_DISTANCE_KM` threshold; without one
+  the alert reports the network change rather than inventing a location.
+- The dashboard end-to-end job now also plans and activates an investigation
+  through the Campaigns and Deception pages.
 - Docker/Compose deployment, CLI, schema migrations, backup and recovery
   runbooks.
 - CI pipeline covering lint, the full suite on SQLite and PostgreSQL 16, the

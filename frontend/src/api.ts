@@ -84,11 +84,9 @@ export const api = {
       body: JSON.stringify({ current_password, new_password }),
     }),
   sessions: (limit = 20) =>
-    request<{
-      sessions: SessionRecord[];
-      current_session_version: number;
-      note: string;
-    }>(`/api/v1/auth/sessions?limit=${limit}`),
+    request<SessionHistory>(`/api/v1/auth/sessions?limit=${limit}`),
+  userSessions: (userId: string, limit = 20) =>
+    request<SessionHistory>(`/api/v1/auth/users/${userId}/sessions?limit=${limit}`),
   revokeSessions: (userId: string) =>
     request<{ status: string; user_id: string; session_version: number }>(
       `/api/v1/auth/users/${userId}/revoke-sessions`,
@@ -348,6 +346,17 @@ export interface Investigation {
   notes: string;
 }
 
+export interface SignInAnomaly {
+  kind: "new_network" | "distant_signin";
+  previous_ip: string | null;
+  previous_at: string;
+  detected_at: string;
+  network?: string | null;
+  distance_km?: number;
+  threshold_km?: number;
+  window_minutes?: number;
+}
+
 export interface SessionRecord {
   id: string;
   occurred_at: string;
@@ -358,6 +367,14 @@ export interface SessionRecord {
   session_version: number | null;
   state?: "active" | "expired" | "revoked" | "unknown";
   expires_at?: string | null;
+  anomaly?: SignInAnomaly | null;
+}
+
+export interface SessionHistory {
+  user_id: string;
+  sessions: SessionRecord[];
+  current_session_version: number;
+  note: string;
 }
 
 export interface QuarantineRecord {

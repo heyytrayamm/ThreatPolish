@@ -73,6 +73,8 @@ def session_history(
         }
         if action == SIGN_IN:
             entry["state"] = _sign_in_state(ts, version, current_version, ttl_minutes, now)
+            anomaly = detail.get("anomaly")
+            entry["anomaly"] = anomaly if isinstance(anomaly, dict) else None
             entry["expires_at"] = (
                 expiry_for(ts, ttl_minutes)
                 if entry["state"] in {"active", "expired"}

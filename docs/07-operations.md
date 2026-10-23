@@ -34,6 +34,10 @@ normally change.
 | `TP_WEB_SEC_ALLOW_LOOPBACK` | `false` | Must stay `false` in production |
 | `TP_WEB_SEC_TIMEOUT_SECONDS`, `TP_WEB_SEC_MAX_REQUESTS_PER_HOST` | `10`, `10` | Assessment bounds |
 | `TP_CRYPTO_PROVIDER`, `TP_CRYPTO_API_BASE` | `coingecko`, public API | Market-data source; `fixture` is available for offline use |
+| `TP_SIGNIN_ALERT_WINDOW_MINUTES` | `30` | Two live sign-ins from different networks inside this window are reported |
+| `TP_SIGNIN_ALERT_DISTANCE_KM` | `500` | Minimum measured distance for a `distant_signin` alert |
+| `TP_GEO_API_URL` | empty | Optional geolocation endpoint; `{ip}` is replaced with the address. Empty means alerts report a network change only and no address leaves the deployment |
+| `TP_GEO_API_TOKEN`, `TP_GEO_TIMEOUT_SECONDS` | empty, `3` | Credential and timeout for that endpoint |
 | `TP_LOG_LEVEL` | `INFO` | Log verbosity |
 
 Generate secrets with `python3 -c "import secrets;print(secrets.token_urlsafe(48))"`.
@@ -171,9 +175,21 @@ reversion in the audit log, then review who approved it and why.
 service before retrying ingestion; replay is safe because ingestion is
 idempotent.
 
-**Suspected token compromise.** Rotate `TP_JWT_SECRET` (invalidates all
-sessions), revoke agent tokens, rotate the affected user's password, and review
-`/audit`.
+**Suspected token compromise.** Revoke the account's sessions
+(`POST /auth/users/{id}/revoke-sessions`) or have the user rotate their
+password; both act on the account session version and take effect on the next
+request. Rotate `TP_JWT_SECRET` to invalidate every session in the deployment,
+revoke agent tokens, and review `/audit` and the account's session history.
+
+A sign-in from a different network while an earlier session is still live is
+recorded as `auth.signin.anomaly` and shown on the account page and in the
+admin session view. With `TP_GEO_API_URL` set, the alert also reports the
+measured distance and only fires beyond `TP_SIGNIN_ALERT_DISTANCE_KM`; without
+it the alert says "new network", which is what the platform can observe. Any
+geolocation endpoint you configure receives analyst addresses — choose it with
+that in mind. Lookups are cached per process and bounded by
+`TP_GEO_TIMEOUT_SECONDS`, so a slow provider adds latency to sign-in but cannot
+block it.
 
 ## Retention
 

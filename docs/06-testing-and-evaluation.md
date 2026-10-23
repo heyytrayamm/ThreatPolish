@@ -40,11 +40,12 @@ when the bundle is missing, stale or Playwright is absent.
 | `test_end_to_end.py` | Login → ingest → correlate → campaign → response → audit over HTTP |
 | `test_security.py` | Auth bypass attempts, injection strings, oversized payloads, token tampering |
 | `test_advanced.py` | Non-finite and unencodable payloads, hostile feature shapes, request-body bounds, login spraying, session revocation on password change, session history states, concurrent duplicate ingestion, redirect scope bypass, decoy request framing |
-| `test_browser.py` | Chrome-driven dashboard flow against a live API: every view renders without console errors, the duplicate-resolution note shows on the Deception page, the Account page changes the password, the replacement token survives a reload and an earlier token is refused |
+| `test_signin_alerts.py` | Network-change and distance alerts: same-network silence, window and revoked-session suppression, distant and nearby geolocation, unlocatable fallback |
+| `test_browser.py` | Chrome-driven dashboard flow against a live API: every view renders without console errors, the duplicate-resolution note shows on the Deception page, the Account page changes the password, the replacement token survives a reload and an earlier token is refused; a second run plans and activates an investigation through the Campaigns and Deception pages |
 
 ## Measured behaviour
 
-Latest full run: **107 passed on SQLite and 107 passed on PostgreSQL 16.2**
+Latest full run: **117 passed on SQLite and 117 passed on PostgreSQL 16.2**
 (a temporary PostgreSQL 16 server on the development host). CI runs the same
 suite against both engines.
 Static checks: the frontend builds with `tsc -b` and `vite build`; the backend

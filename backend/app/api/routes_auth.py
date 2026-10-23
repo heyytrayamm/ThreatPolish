@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Request
 from ..auth.rbac import Principal, all_roles
 from ..auth.sessions import NOTE as SESSION_NOTE
 from ..auth.sessions import session_history
+from ..auth.signin import detect_signin_anomaly
 from ..auth.users import (
     authenticate,
     change_password,
@@ -68,6 +69,9 @@ def login(payload: LoginRequest, request: Request) -> dict[str, object]:
         )
         raise
     session_version = get_user_with_session(user["id"])[1]
+    anomaly = detect_signin_anomaly(
+        user_id=user["id"], ip=ip, session_version=session_version
+    )
     token, expires_at = create_access_token(
         subject=user["id"],
         role=user["role"],
@@ -86,8 +90,22 @@ def login(payload: LoginRequest, request: Request) -> dict[str, object]:
         detail={
             "session_version": session_version,
             "client": _client_label(request.headers.get("user-agent")),
+            **({"anomaly": anomaly} if anomaly else {}),
         },
     )
+    if anomaly:
+        # A separate entry makes the alert findable in the audit trail without
+        # changing the meaning of the sign-in record itself.
+        audit_standalone(
+            action="auth.signin.anomaly",
+            outcome="alert",
+            actor_id=user["id"],
+            actor_role=user["role"],
+            object_type="user",
+            object_id=user["id"],
+            request_ip=ip,
+            detail=anomaly,
+        )
     return {
         "access_token": token,
         "token_type": "bearer",
@@ -107,16 +125,12 @@ def me(principal: Principal = Depends(get_principal)) -> dict[str, object]:
     }
 
 
-@router.get("/sessions")
-def own_sessions(
-    limit: int = 20, principal: Principal = Depends(get_principal)
-) -> dict[str, object]:
-    if principal.is_agent:
-        raise AuthenticationFailure("agent tokens have no session history")
-    _, current_version = get_user_with_session(principal.user_id)
+def _session_payload(user_id: str, limit: int) -> dict[str, object]:
+    _, current_version = get_user_with_session(user_id)
     return {
+        "user_id": user_id,
         "sessions": session_history(
-            principal.user_id,
+            user_id,
             current_version=current_version,
             ttl_minutes=get_settings().jwt_ttl_minutes,
             limit=limit,
@@ -124,6 +138,24 @@ def own_sessions(
         "current_session_version": current_version,
         "note": SESSION_NOTE,
     }
+
+
+@router.get("/sessions")
+def own_sessions(
+    limit: int = 20, principal: Principal = Depends(get_principal)
+) -> dict[str, object]:
+    if principal.is_agent:
+        raise AuthenticationFailure("agent tokens have no session history")
+    return _session_payload(principal.user_id, limit)
+
+
+@router.get("/users/{user_id}/sessions")
+def user_sessions(
+    user_id: str,
+    limit: int = 20,
+    principal: Principal = Depends(require("users:manage")),
+) -> dict[str, object]:
+    return _session_payload(user_id, limit)
 
 
 @router.get("/roles")

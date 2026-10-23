@@ -1,12 +1,7 @@
 import { FormEvent, useState } from "react";
 import { api, setToken, User } from "../api";
-import { Badge, Card, Empty, ErrorBox, Field, formatTime, Loading, useAsync } from "../ui";
-
-const EVENT_LABEL: Record<string, string> = {
-  sign_in: "Sign-in",
-  password_changed: "Password changed",
-  sessions_revoked: "Sessions revoked",
-};
+import { SessionTable } from "../components/SessionTable";
+import { Card, ErrorBox, Field, Loading, useAsync } from "../ui";
 
 export default function Account({ user }: { user: User }) {
   const [current, setCurrent] = useState("");
@@ -114,34 +109,7 @@ export default function Account({ user }: { user: User }) {
 
       <Card title="Recent sessions">
         {sessions.loading && <Loading />}
-        {sessions.data && sessions.data.sessions.length === 0 && (
-          <Empty>No credential activity recorded for this account.</Empty>
-        )}
-        {sessions.data && sessions.data.sessions.length > 0 && (
-          <table>
-            <thead>
-              <tr><th>When</th><th>Event</th><th>Client</th><th>Address</th><th>State</th></tr>
-            </thead>
-            <tbody>
-              {sessions.data.sessions.map((entry) => (
-                <tr key={entry.id}>
-                  <td>{formatTime(entry.occurred_at)}</td>
-                  <td>{EVENT_LABEL[entry.event] ?? entry.event}</td>
-                  <td className="small">{entry.client ?? "—"}</td>
-                  <td className="mono small">{entry.ip ?? "—"}</td>
-                  <td>
-                    {entry.state ? (
-                      <Badge value={entry.state} kind="status" />
-                    ) : (
-                      <span className="muted small">{entry.outcome}</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-        {sessions.data && <p className="muted small">{sessions.data.note}</p>}
+        {sessions.data && <SessionTable history={sessions.data} />}
       </Card>
     </div>
   );

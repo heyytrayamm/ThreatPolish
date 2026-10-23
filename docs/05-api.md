@@ -30,6 +30,7 @@ recorded in the audit log.
 | GET | `/auth/sessions` | any | Recent sign-ins and credential events for the caller, with client, address and whether each sign-in is still usable |
 | GET/POST | `/auth/users` | admin | List and create users |
 | POST | `/auth/users/{id}/revoke-sessions` | admin | Invalidate every token issued to an account |
+| GET | `/auth/users/{id}/sessions` | admin | Any account's session history, including flagged sign-ins |
 | GET/POST/DELETE | `/auth/tokens` | admin | Service token management |
 | GET | `/auth/roles` | any | Role capability matrix |
 | POST | `/ingest/events` | sensor | Batch ingestion |

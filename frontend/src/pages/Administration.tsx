@@ -1,16 +1,35 @@
 import { useState } from "react";
-import { api } from "../api";
+import { api, SessionHistory, User } from "../api";
+import { SessionTable } from "../components/SessionTable";
 import { Card, Empty, ErrorBox, formatTime, Loading, useAsync } from "../ui";
 
 export default function Administration() {
   const [tick, setTick] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
   const [busyUser, setBusyUser] = useState<string | null>(null);
+  const [audited, setAudited] = useState<User | null>(null);
+  const [auditedHistory, setAuditedHistory] = useState<SessionHistory | null>(null);
+  const [auditError, setAuditError] = useState<string | null>(null);
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
   const sources = useAsync(() => api.sources(), []);
   const quarantine = useAsync(() => api.quarantine(), []);
   const users = useAsync(() => api.users(), [tick]);
   const audit = useAsync(() => api.audit(), [tick]);
+
+  async function inspect(user: User) {
+    setAudited(user);
+    setAuditedHistory(null);
+    setAuditError(null);
+    setLoadingHistory(true);
+    try {
+      setAuditedHistory(await api.userSessions(user.id));
+    } catch (error) {
+      setAuditError((error as Error).message);
+    } finally {
+      setLoadingHistory(false);
+    }
+  }
 
   async function revoke(userId: string, email: string) {
     setBusyUser(userId);
@@ -19,6 +38,7 @@ export default function Administration() {
       await api.revokeSessions(userId);
       setNotice(`Every session for ${email} was revoked. The account keeps its password.`);
       setTick((value) => value + 1);
+      if (audited?.id === userId) await inspect(audited);
     } catch (error) {
       setNotice((error as Error).message);
     } finally {
@@ -71,14 +91,23 @@ export default function Administration() {
                     <td>{user.email}</td>
                     <td>{user.role}</td>
                     <td>
-                      <button
-                        type="button"
-                        className="secondary small"
-                        disabled={busyUser === user.id}
-                        onClick={() => revoke(user.id, user.email)}
-                      >
-                        {busyUser === user.id ? "Revoking…" : "Revoke sessions"}
-                      </button>
+                      <div className="row">
+                        <button
+                          type="button"
+                          className="secondary small"
+                          onClick={() => inspect(user)}
+                        >
+                          Sessions
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary small"
+                          disabled={busyUser === user.id}
+                          onClick={() => revoke(user.id, user.email)}
+                        >
+                          {busyUser === user.id ? "Revoking…" : "Revoke sessions"}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -87,6 +116,21 @@ export default function Administration() {
           )}
         </Card>
       </div>
+
+      {audited && (
+        <Card
+          title={`Sessions — ${audited.name}`}
+          actions={
+            <button type="button" className="link" onClick={() => setAudited(null)}>
+              Close
+            </button>
+          }
+        >
+          {loadingHistory && <Loading />}
+          <ErrorBox message={auditError} />
+          {auditedHistory && <SessionTable history={auditedHistory} />}
+        </Card>
+      )}
 
       <Card title="Audit trail">
         {audit.loading && <Loading />}

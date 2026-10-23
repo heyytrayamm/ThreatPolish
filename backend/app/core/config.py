@@ -89,6 +89,11 @@ class Settings:
     websec_max_requests_per_host: int
     websec_allow_loopback: bool
     websec_timeout_seconds: float
+    signin_alert_window_minutes: int
+    signin_alert_distance_km: int
+    geo_api_url: str
+    geo_api_token: str
+    geo_timeout_seconds: float
     crypto_provider: str
     crypto_api_base: str
     crypto_timeout_seconds: float
@@ -144,6 +149,11 @@ def build_settings() -> Settings:
         websec_max_requests_per_host=_int("TP_WEB_SEC_MAX_REQUESTS_PER_HOST", 10, 1, 100),
         websec_allow_loopback=_bool("TP_WEB_SEC_ALLOW_LOOPBACK", False),
         websec_timeout_seconds=_float("TP_WEB_SEC_TIMEOUT_SECONDS", 10.0, 1.0, 60.0),
+        signin_alert_window_minutes=_int("TP_SIGNIN_ALERT_WINDOW_MINUTES", 30, 1, 1440),
+        signin_alert_distance_km=_int("TP_SIGNIN_ALERT_DISTANCE_KM", 500, 1, 20_000),
+        geo_api_url=os.environ.get("TP_GEO_API_URL", "").strip(),
+        geo_api_token=os.environ.get("TP_GEO_API_TOKEN", "").strip(),
+        geo_timeout_seconds=_float("TP_GEO_TIMEOUT_SECONDS", 3.0, 0.5, 30.0),
         crypto_provider=os.environ.get("TP_CRYPTO_PROVIDER", "coingecko").strip().lower(),
         crypto_api_base=os.environ.get("TP_CRYPTO_API_BASE", "https://api.coingecko.com/api/v3").rstrip("/"),
         crypto_timeout_seconds=_float("TP_CRYPTO_TIMEOUT_SECONDS", 8.0, 0.5, 60.0),

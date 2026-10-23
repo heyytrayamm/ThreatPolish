@@ -147,6 +147,11 @@ rows, so the limit holds even when two requests are planned at the same moment.
   force. The account's session history is derived from those records rather than
   from per-request logging, so an analyst can see where an account was used
   without the platform keeping a browsing record of every API call.
+- A sign-in from a different network while an earlier session is still live is
+  flagged as `auth.signin.anomaly` on the sign-in and as its own audit entry,
+  and is shown on the account page and in the admin session view. Distance is
+  measured only when an operator supplies a geolocation endpoint; otherwise the
+  alert states the network change the platform can actually observe.
 
 ## Failure behaviour
 

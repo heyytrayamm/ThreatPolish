@@ -333,6 +333,51 @@ def test_session_history_reports_expired_sign_ins(client, admin_headers):
     assert entry["expires_at"]
 
 
+def test_an_admins_reading_of_another_accounts_sessions_is_authorised_and_recorded(
+    client, admin_headers, viewer_headers
+):
+    viewer_id = client.get("/api/v1/auth/me", headers=viewer_headers).json()["id"]
+    response = client.get(f"/api/v1/auth/users/{viewer_id}/sessions", headers=admin_headers)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["user_id"] == viewer_id
+    assert [item["event"] for item in body["sessions"]] == ["sign_in"]
+
+    denied = client.get(f"/api/v1/auth/users/{viewer_id}/sessions", headers=viewer_headers)
+    assert denied.status_code == 403
+
+    missing = client.get("/api/v1/auth/users/usr_does_not_exist/sessions", headers=admin_headers)
+    assert missing.status_code == 404
+
+
+def test_a_flagged_sign_in_is_written_to_the_audit_trail(client, admin_headers, monkeypatch):
+    from app.api import routes_auth
+
+    alert = {
+        "kind": "new_network",
+        "network": "198.51.100.0/24",
+        "previous_ip": "203.0.113.10",
+        "previous_at": "2026-10-23T10:00:00+00:00",
+        "detected_at": "2026-10-23T10:04:00+00:00",
+        "window_minutes": 30,
+    }
+    monkeypatch.setattr(routes_auth, "detect_signin_anomaly", lambda **kwargs: alert)
+
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "admin@threatpolish.test", "password": ADMIN_PASSWORD},
+    )
+    assert login.status_code == 200, login.text
+
+    audit = client.get("/api/v1/audit?limit=100", headers=admin_headers).json()["items"]
+    assert any(entry["action"] == "auth.signin.anomaly" for entry in audit)
+
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    history = client.get("/api/v1/auth/sessions", headers=headers).json()["sessions"]
+    flagged = [item for item in history if item.get("anomaly")]
+    assert flagged and flagged[0]["anomaly"]["kind"] == "new_network"
+
+
 def test_agent_tokens_have_no_session_history(client, sensor_headers):
     response = client.get("/api/v1/auth/sessions", headers=sensor_headers)
     assert response.status_code == 401, response.text

@@ -13,8 +13,8 @@ why.
 | Database models for all modules | Done | `app/db/` |
 | Event contract and validation | Done | `app/schemas/event.py`, `test_foundation.py` |
 | Ingestion with hashing, dedup, quarantine | Done | `app/telemetry/ingest.py`, `test_pipeline.py` |
-| Auth, RBAC, audit trail | Done | `app/auth/`, `test_foundation.py`, `test_security.py`; password change and the admin session revocation both act on the account session version, and the account's session history is derived from the audit trail with client, address and validity |
-| Dashboard shell and navigation | Done | `frontend/` builds cleanly; the account page rotates the password, keeps the replacement token and lists recent sign-ins, and `test_browser.py` drives that flow in Chrome |
+| Auth, RBAC, audit trail | Done | `app/auth/`, `test_foundation.py`, `test_security.py`; password change and the admin session revocation both act on the account session version, the session history is derived from the audit trail with client, address and validity, and a second live session from another network raises `auth.signin.anomaly` (`test_signin_alerts.py`) |
+| Dashboard shell and navigation | Done | `frontend/` builds cleanly; the account page rotates the password, keeps the replacement token and lists recent sign-ins, administration opens any account's session history, and `test_browser.py` drives both the password flow and the investigation plan/activate flow in Chrome |
 | Test harness | Done | 100 tests on SQLite and on PostgreSQL 16.2, isolated per test; the same suite runs against both engines in CI, plus container smoke checks |
 | Reproducible benchmark | Done | `backend/scripts/evaluate.py` |
 | Audit, novelty review, architecture, threat model | Done | `docs/00`–`docs/03` |

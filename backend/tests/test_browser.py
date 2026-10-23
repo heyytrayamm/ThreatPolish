@@ -54,9 +54,9 @@ def _free_port() -> int:
         return int(sock.getsockname()[1])
 
 
-@pytest.fixture(scope="module")
-def live_server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
-    data_dir = tmp_path_factory.mktemp("browser")
+@pytest.fixture()
+def live_server(tmp_path: Path) -> Iterator[str]:
+    data_dir = tmp_path
     port = _free_port()
     env = {
         **os.environ,
@@ -120,6 +120,69 @@ def _launch(browser_type):
         except playwright_api.Error as exc:  # pragma: no cover - environment dependent
             failures.append(str(exc).splitlines()[0])
     raise RuntimeError("no usable Chromium build: " + " | ".join(failures))
+
+
+_HTTP_PATHS = ["/admin", "/console", "/config", "/backup"]
+
+
+def _seed_campaign(base: str) -> str:
+    """Create telemetry that correlates into one campaign, as a sensor would."""
+    from datetime import datetime, timedelta, timezone
+
+    login = httpx.post(
+        f"{base}/api/v1/auth/login",
+        json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD},
+    )
+    assert login.status_code == 200, login.text
+    admin = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    token = httpx.post(
+        f"{base}/api/v1/auth/tokens",
+        headers=admin,
+        json={"name": "browser-sensor", "role": "sensor"},
+    )
+    assert token.status_code == 201, token.text
+    sensor = token.json()["token"]
+
+    now = datetime.now(timezone.utc)
+    events = []
+    for index in range(2):
+        for offset, path in enumerate(_HTTP_PATHS):
+            events.append(
+                {
+                    "schema_version": "1.0",
+                    "occurred_at": (now - timedelta(minutes=40 - offset - index)).isoformat(),
+                    "source_module": "honeypot",
+                    "event_type": "honeypot.http.request",
+                    "source_ip": f"203.0.113.{31 + index}",
+                    "session_id": f"sess-browser-{index}",
+                    "target_id": "decoy-http-1",
+                    "severity": "medium",
+                    "provenance": {
+                        "collector": "browser-test",
+                        "source": "http-decoy",
+                        "reliability": 0.8,
+                        "synthetic": True,
+                        "indicators": ["ja3:browser-test"],
+                    },
+                    "features": {
+                        "method": "GET",
+                        "path": path,
+                        "status": 200,
+                        "user_agent": "curl/8.4.0",
+                    },
+                }
+            )
+
+    ingested = httpx.post(
+        f"{base}/api/v1/ingest/events", json=events, headers={"X-Agent-Token": sensor}
+    )
+    assert ingested.status_code == 202, ingested.text
+    assert ingested.json()["rejected"] == 0, ingested.text
+    run = httpx.post(f"{base}/api/v1/correlate", headers=admin, json={})
+    assert run.status_code == 200, run.text
+    campaigns = httpx.get(f"{base}/api/v1/campaigns", headers=admin).json()["items"]
+    assert campaigns, "seeded telemetry did not produce a campaign"
+    return campaigns[0]["id"]
 
 
 def test_dashboard_password_change_keeps_this_tab_and_revokes_the_others(live_server: str):
@@ -239,3 +302,41 @@ def test_dashboard_password_change_keeps_this_tab_and_revokes_the_others(live_se
         f"{live_server}/api/v1/auth/login",
         json={"email": ADMIN_EMAIL, "password": NEW_PASSWORD},
     ).status_code == 200
+
+
+def test_dashboard_plans_and_activates_an_investigation(live_server: str):
+    _seed_campaign(live_server)
+
+    with playwright_api.sync_playwright() as p:
+        browser = _launch(p.chromium)
+        try:
+            page = browser.new_page()
+            page.goto(live_server, wait_until="domcontentloaded")
+            page.get_by_label("Email").fill(ADMIN_EMAIL)
+            page.get_by_label("Password", exact=True).fill(ADMIN_PASSWORD)
+            page.get_by_role("button", name="Sign in").click()
+            page.wait_for_selector(".sidebar")
+
+            page.get_by_role("button", name="Campaigns").click()
+            page.locator(".list-item").first.wait_for()
+            page.locator(".list-item").first.click()
+            page.get_by_role("button", name="Plan investigation").click()
+            page.wait_for_selector("text=planned with profile")
+
+            notice = page.locator(".notice").first.inner_text()
+            investigation_id = notice.split("Investigation ")[1].split(" ")[0]
+            assert investigation_id.startswith("inv_"), notice
+
+            page.get_by_role("button", name="Deception").click()
+            row = page.locator(".list-item", has_text=investigation_id[:16]).first
+            row.wait_for()
+            assert "planned" in row.inner_text()
+
+            row.locator("input[placeholder='source IP']").fill("203.0.113.50")
+            row.get_by_role("button", name="Activate").click()
+            page.wait_for_selector("text=active for 203.0.113.50")
+            page.wait_for_selector(
+                f".list-item:has-text('{investigation_id[:16]}') .badge:has-text('active')"
+            )
+        finally:
+            browser.close()
