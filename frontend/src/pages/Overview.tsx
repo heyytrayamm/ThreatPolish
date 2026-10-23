@@ -78,19 +78,27 @@ export default function Overview({ user }: { user: User }) {
           {data && data.hourly.length === 0 && <Empty>No events have been ingested in this window.</Empty>}
           {data && data.hourly.length > 0 && (
             <svg className="bars" viewBox="0 0 620 120" role="img" aria-label="Hourly event counts">
+              <line x1={10} y1={100} x2={610} y2={100} className="bar-axis" />
               {data.hourly.map((point, index) => {
-                const width = 600 / Math.max(1, data.hourly.length);
+                const slot = 600 / Math.max(1, data.hourly.length);
+                const width = Math.max(2, Math.min(44, slot - 4));
                 const height = (point.count / maxHour) * 90;
+                const x = 10 + index * slot + (slot - width) / 2;
                 return (
                   <g key={point.hour}>
                     <rect
-                      x={10 + index * width}
+                      x={x}
                       y={100 - height}
-                      width={Math.max(2, width - 3)}
+                      width={width}
                       height={height}
                       rx={2}
                       className="bar"
                     />
+                    {data.hourly.length <= 8 && (
+                      <text x={x + width / 2} y={Math.max(10, 94 - height)} className="bar-label">
+                        {point.count}
+                      </text>
+                    )}
                     <title>{`${point.hour}:00 — ${point.count} events`}</title>
                   </g>
                 );
