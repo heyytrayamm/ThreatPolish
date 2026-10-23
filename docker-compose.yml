@@ -1,0 +1,61 @@
+name: threatpolish
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: threatpolish
+      POSTGRES_USER: threatpolish
+      POSTGRES_PASSWORD: ${TP_DB_PASSWORD:?set TP_DB_PASSWORD in .env}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U threatpolish -d threatpolish"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [backend]
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      TP_DB_URL: postgresql+psycopg://threatpolish:${TP_DB_PASSWORD}@db:5432/threatpolish
+      TP_DATA_DIR: /data
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - app-data:/data
+      - ./data/cowrie:/var/log/cowrie:ro
+    networks: [backend, decoy]
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health/ready', timeout=4).status == 200 else 1)\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  cowrie:
+    image: cowrie/cowrie:latest
+    profiles: ["honeypot"]
+    restart: unless-stopped
+    ports:
+      - "2222:2222"
+    volumes:
+      - ./deploy/cowrie/cowrie.cfg:/cowrie/cowrie-git/etc/cowrie.cfg:ro
+      - ./data/cowrie:/cowrie/cowrie-git/var/log/cowrie
+    networks: [decoy]
+
+networks:
+  backend:
+    internal: true
+  decoy:
+
+volumes:
+  db-data:
+  app-data:

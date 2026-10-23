@@ -1,21 +1,72 @@
-MIT License
+Copyright (c) 2026 ThreatPolish Team. All rights reserved.
 
-Copyright (c) 2026 Trayam Roy
+PROPRIETARY AND CONFIDENTIAL
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+This software, including its source code, documentation, designs, schemas,
+algorithms, evaluation methodology and all accompanying materials (together,
+the "Software"), is the exclusive property of the ThreatPolish Team (the
+"Team").
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+1. OWNERSHIP
+
+All right, title and interest in and to the Software, including all
+intellectual property rights, belong solely to the Team. No title to or
+ownership of the Software is transferred to any other party. Nothing in this
+notice grants any licence, by implication, estoppel or otherwise, except as
+expressly stated below.
+
+2. NO PERMISSION
+
+No person or entity may copy, reproduce, publish, distribute, sublicense, sell,
+rent, lease, modify, translate, reverse engineer, decompile, disassemble, create
+derivative works from, or otherwise use the Software, in whole or in part, for
+any purpose, without the prior written permission of the Team.
+
+3. AUTHORISED ACCESS
+
+Access to the Software, whether by repository invitation, deployment or
+otherwise, is granted for the specific purpose authorised by the Team. Access
+does not constitute a licence to use the Software beyond that purpose, and it
+may be revoked at any time without notice.
+
+4. CONTRIBUTIONS
+
+Any contribution submitted to the Software becomes the property of the Team,
+and the contributor assigns to the Team all rights necessary to use, modify,
+license and distribute that contribution. Contributors must have the right to
+make that assignment.
+
+5. THIRD-PARTY COMPONENTS
+
+Third-party libraries and tools referenced or depended upon by the Software
+remain subject to their own licences. This notice does not alter those terms
+and does not grant rights to any third-party component.
+
+6. NO WARRANTY
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+FITNESS FOR A PARTICULAR PURPOSE, ACCURACY AND NON-INFRINGEMENT. THE TEAM DOES
+NOT WARRANT THAT THE SOFTWARE WILL BE ERROR-FREE, UNINTERRUPTED OR SUITABLE FOR
+ANY PARTICULAR OPERATIONAL OR LEGAL PURPOSE.
+
+7. LIMITATION OF LIABILITY
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL THE TEAM
+BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
+CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+8. LAWFUL USE
+
+The Software includes deception and security-assessment capability. It must be
+used only on systems and networks for which the operator has explicit
+authorisation. The Team accepts no responsibility for unauthorised use.
+
+9. TERMINATION
+
+Any breach of this notice terminates all access and any permission granted,
+immediately and without notice. Sections 1, 2, 4, 6, 7 and 8 survive
+termination.
+
+For permission requests, contact the ThreatPolish Team.
