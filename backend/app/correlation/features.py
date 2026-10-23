@@ -21,6 +21,7 @@ from ..core.security import parse_iso
 
 MAX_INTERARRIVALS = 200
 MAX_SEQUENCE = 500
+CORPUS_MIN_SESSIONS = 10
 
 
 @dataclass
@@ -64,10 +65,16 @@ class CorrelationContext:
                 "indicator": session.indicators,
                 "client": session.clients,
             }
-            for field, values in tokens.items():
+            for family, values in tokens.items():
                 for token in values:
-                    fields[field][token] = fields[field].get(token, 0) + 1
-        threshold = max(3, int(0.25 * max(1, len(items))))
+                    fields[family][token] = fields[family].get(token, 0) + 1
+        # Document frequency is unreliable on a handful of sessions: with fewer
+        # than CORPUS_MIN_SESSIONS, every token in the window would look
+        # ubiquitous and the corpus filter would erase all evidence.
+        if len(items) < CORPUS_MIN_SESSIONS:
+            threshold = len(items)
+        else:
+            threshold = max(3, int(0.25 * len(items)))
         return cls(
             n_sessions=len(items),
             document_frequency=fields,

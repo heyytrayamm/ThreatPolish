@@ -199,7 +199,7 @@ class CowrieTailer:
         while True:
             try:
                 yield self.poll()
-            except Exception as exc:  # noqa: BLE001 - a tailer must keep running
+            except Exception as exc:
                 log.error("cowrie tail failed", extra={"error": str(exc)})
             time.sleep(interval)
 

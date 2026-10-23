@@ -84,7 +84,7 @@ python -m app.cli create-token --name decoy-1 --role sensor
 curl -s http://127.0.0.1:8000/api/v1/ingest/events \
   -H "X-Agent-Token: tp_..." \
   -H "Content-Type: application/json" \
-  -d '{"schema_version":"1.0","occurred_at":"2026-01-01T00:00:00Z","source_module":"app","event_type":"app.auth","severity":"low","provenance":{"collector":"gateway","source":"auth-log","reliability":0.7,"synthetic":false},"features":{"action":"login_failed","username":"root","outcome":"denied"}}'
+  -d '{"schema_version":"1.0","occurred_at":"2026-01-01T00:00:00Z","source_module":"honeypot","event_type":"honeypot.ssh.login_failed","source_ip":"203.0.113.9","session_id":"sess-1","severity":"low","provenance":{"collector":"cowrie","source":"decoy-1","reliability":0.8,"synthetic":false},"features":{"username":"root","success":false,"client_version":"SSH-2.0-libssh_0.9.6"}}'
 ```
 
 3. Cowrie:
@@ -124,7 +124,7 @@ cd backend
 python -m pytest -q
 ```
 
-62 tests cover the event contract, ingestion, deduplication, quarantine,
+65 tests cover the event contract, ingestion, deduplication, quarantine,
 retention, the decoy, Cowrie parsing, correlation gates, campaign formation,
 adaptive investigation, risk separation, web assessment authorization and SSRF
 guards, crypto scoring, response policy, authorization boundaries, injection

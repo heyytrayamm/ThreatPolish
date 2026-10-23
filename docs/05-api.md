@@ -76,10 +76,11 @@ Ingest:
 curl -sX POST localhost:8000/api/v1/ingest/events \
   -H 'content-type: application/json' -H "X-Agent-Token: $TP_AGENT_TOKEN" \
   -d '{"events":[{"schema_version":"1.0","occurred_at":"2026-10-23T09:00:00Z",
-       "source_module":"honeypot","event_type":"ssh_auth_attempt",
-       "source_ip":"203.0.113.9",
+       "source_module":"honeypot","event_type":"honeypot.ssh.login_failed",
+       "source_ip":"203.0.113.9","session_id":"sess-1",
        "provenance":{"collector":"cowrie","source":"decoy-1","synthetic":false},
-       "features":{"username":"root","password_sha256":"..."}}]}'
+       "features":{"username":"root","success":false,
+                    "client_version":"SSH-2.0-libssh_0.9.6"}}]}'
 ```
 
 Correlate and read a campaign:

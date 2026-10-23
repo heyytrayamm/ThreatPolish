@@ -179,7 +179,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         return int(args.func(args))
-    except Exception as exc:  # noqa: BLE001 - CLI reports and exits non-zero
+    except Exception as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 

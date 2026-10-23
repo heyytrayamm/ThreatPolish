@@ -70,7 +70,7 @@ def create_scope(
                     notes=notes[:2000],
                 )
             )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         if "UNIQUE" in str(exc).upper() or "unique" in str(exc):
             raise Conflict("an authorization already exists for this domain") from exc
         raise
@@ -133,7 +133,10 @@ def validate_target(target: str, *, allow_active: bool) -> tuple[str, str, str]:
     if not parsed.hostname:
         raise ValidationFailure("target hostname is required")
     host = parsed.hostname.lower()
-    port = parsed.port
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise ValidationFailure("target port is not a valid number") from exc
     if port is not None and not (1 <= port <= 65535):
         raise ValidationFailure("target port is outside the valid range")
 

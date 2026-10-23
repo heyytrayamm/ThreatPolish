@@ -17,7 +17,7 @@ Safety limits enforced here:
 from __future__ import annotations
 
 import threading
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select, text
@@ -30,7 +30,6 @@ from ..db.schema import investigations
 from ..correlation.engine import correlate
 from ..correlation.repository import get_campaign, get_edge
 from ..correlation.scoring import ALGORITHM_VERSION
-from ..telemetry.repository import event_summary
 from .profiles import get_profile, list_profiles
 
 log = get_logger(__name__)

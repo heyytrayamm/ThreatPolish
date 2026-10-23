@@ -12,7 +12,6 @@ Findings are persisted and also flow through the shared telemetry pipeline as
 from __future__ import annotations
 
 import hashlib
-import ipaddress
 import json
 import re
 import socket

@@ -141,7 +141,20 @@ def test_token_tampering_is_rejected():
     tampered = f"{header}.{payload}.{'A' + signature[1:]}"
     try:
         decode_access_token(tampered, secret="a" * 40)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         assert "signature" in str(exc)
     else:
         raise AssertionError("tampered token was accepted")
+
+
+def test_production_rejects_placeholder_signing_secret(monkeypatch):
+    import pytest
+
+    from app.core.config import build_settings
+    from app.core.errors import ConfigurationError
+
+    monkeypatch.setenv("TP_ENV", "production")
+    monkeypatch.setenv("TP_JWT_SECRET", "replace-with-a-random-64-character-secret")
+
+    with pytest.raises(ConfigurationError):
+        build_settings()

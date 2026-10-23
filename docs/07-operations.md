@@ -136,8 +136,10 @@ telemetry and must be encrypted at rest.
 3. Verify `/health/ready` and one authenticated read.
 4. Keep the previous image tag for 7 days.
 
-Schema changes are applied at startup. There is no automatic downgrade: roll
-back the image **and** restore the pre-upgrade backup. Treat a change to the
+Schema changes are applied at startup. The container runs a single API worker
+because concurrent workers would race on the migration table; apply migrations
+before adding replicas. There is no automatic downgrade: roll back the image
+**and** restore the pre-upgrade backup. Treat a change to the
 correlation `algorithm_version` as a behavioural change and re-run
 `python scripts/evaluate.py` before promoting.
 

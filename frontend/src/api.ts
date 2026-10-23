@@ -15,13 +15,15 @@ export interface ApiError {
 
 const TOKEN_KEY = "threatpolish.token";
 
+// Session storage keeps the bearer token out of persistent browser storage:
+// it is discarded when the tab closes and is not shared with other tabs.
 export function getToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
+  return sessionStorage.getItem(TOKEN_KEY);
 }
 
 export function setToken(token: string | null): void {
-  if (token) localStorage.setItem(TOKEN_KEY, token);
-  else localStorage.removeItem(TOKEN_KEY);
+  if (token) sessionStorage.setItem(TOKEN_KEY, token);
+  else sessionStorage.removeItem(TOKEN_KEY);
 }
 
 export class ApiFailure extends Error {

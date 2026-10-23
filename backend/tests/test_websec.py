@@ -7,10 +7,10 @@ import pytest
 
 
 class _TargetHandler(BaseHTTPRequestHandler):
-    def log_message(self, *args):  # noqa: D401 - silence test server
+    def log_message(self, *args):
         return
 
-    def do_GET(self):  # noqa: N802
+    def do_GET(self):
         if self.path == "/.env":
             body = b"DB_PASSWORD=super-secret-value\nAPP_KEY=abc123\n"
             self.send_response(200)
@@ -55,6 +55,16 @@ def _create_scope(client, admin_headers, domain: str, allow_active: bool = True)
     )
     assert response.status_code == 201, response.text
     return response.json()
+
+
+def test_invalid_port_is_rejected_with_validation_error(client, admin_headers):
+    response = client.post(
+        "/api/v1/websec/assess",
+        headers=admin_headers,
+        json={"target": "https://example.com:not-a-port/", "active_checks": False},
+    )
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "validation_failed"
 
 
 def test_assessment_requires_authorization(client, admin_headers):

@@ -33,3 +33,6 @@ frontend/.vite/
 
 # TypeScript incremental build
 *.tsbuildinfo
+
+# Python build artifacts
+backend/build/

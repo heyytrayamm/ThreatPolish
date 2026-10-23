@@ -17,7 +17,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from app.evaluation.runner import run  # noqa: E402
+from app.evaluation.runner import run
 
 REPORT_DIR = ROOT.parent / "docs" / "research"
 METHOD_LABELS = {

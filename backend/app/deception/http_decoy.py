@@ -22,7 +22,6 @@ from datetime import datetime, timezone
 from http import HTTPStatus
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
@@ -61,26 +60,26 @@ class DecoyHandler(BaseHTTPRequestHandler):
     def decoy(self) -> "DecoyService":
         return self.server.decoy  # type: ignore[attr-defined]
 
-    def log_message(self, fmt: str, *args: Any) -> None:  # noqa: A003 - stdlib signature
+    def log_message(self, fmt: str, *args: Any) -> None:
         log.debug("decoy request", extra={"detail": fmt % args})
 
     # ------------------------------------------------------------------ #
-    def do_GET(self) -> None:  # noqa: N802 - stdlib naming
+    def do_GET(self) -> None:
         self._handle("GET")
 
-    def do_HEAD(self) -> None:  # noqa: N802
+    def do_HEAD(self) -> None:
         self._handle("HEAD")
 
-    def do_POST(self) -> None:  # noqa: N802
+    def do_POST(self) -> None:
         self._handle("POST")
 
-    def do_PUT(self) -> None:  # noqa: N802
+    def do_PUT(self) -> None:
         self._reject_method()
 
-    def do_DELETE(self) -> None:  # noqa: N802
+    def do_DELETE(self) -> None:
         self._reject_method()
 
-    def do_PATCH(self) -> None:  # noqa: N802
+    def do_PATCH(self) -> None:
         self._reject_method()
 
     # ------------------------------------------------------------------ #
@@ -157,7 +156,7 @@ class DecoyHandler(BaseHTTPRequestHandler):
         cookie = SimpleCookie()
         try:
             cookie.load(self.headers.get("Cookie", ""))
-        except Exception:  # noqa: BLE001 - malformed cookies are attacker input
+        except Exception:
             cookie = SimpleCookie()
         if SESSION_COOKIE in cookie:
             value = cookie[SESSION_COOKIE].value
@@ -401,7 +400,7 @@ class DecoyService:
     def emit(self, payload: dict[str, Any]) -> None:
         try:
             self.ingestor.ingest([payload], actor="sensor:http-decoy")
-        except Exception as exc:  # noqa: BLE001 - capture must not crash the decoy
+        except Exception as exc:
             log.error("decoy telemetry spooled after pipeline failure", extra={"error": str(exc)})
             self._spool(payload)
 

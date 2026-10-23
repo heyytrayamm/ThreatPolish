@@ -20,6 +20,12 @@ from .core.logging import configure_logging, get_logger
 
 log = get_logger(__name__)
 
+DASHBOARD_CSP = (
+    "default-src 'self'; connect-src 'self'; img-src 'self' data:; "
+    "style-src 'self' 'unsafe-inline'; script-src 'self'; base-uri 'none'; "
+    "form-action 'self'; frame-ancestors 'none'"
+)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -88,6 +94,11 @@ def create_app() -> FastAPI:
             "Cache-Control", "no-store"
         )
         response.headers["X-Process-Time-Ms"] = f"{(time.perf_counter() - started) * 1000:.1f}"
+        path = request.url.path
+        if path in {"/", "/index.html"} or path.startswith("/assets/"):
+            # Only the dashboard gets the CSP; API docs load their own assets
+            # and are not part of the analyst-facing single-page application.
+            response.headers["Content-Security-Policy"] = DASHBOARD_CSP
         return response
 
     @app.exception_handler(ThreatPolishError)
@@ -152,8 +163,6 @@ def create_app() -> FastAPI:
     app.include_router(routes_honeypot.router, prefix="/api/v1")
     app.include_router(routes_audit.router, prefix="/api/v1")
 
-    _register_optional_routers(app)
-
     dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
     if dist.is_dir():
         app.mount("/", StaticFiles(directory=str(dist), html=True), name="dashboard")
@@ -172,11 +181,6 @@ def _validation_errors(exc: RequestValidationError) -> list[dict[str, Any]]:
             }
         )
     return errors
-
-
-def _register_optional_routers(app: FastAPI) -> None:
-    """Routers are registered as modules are available."""
-    return None
 
 
 app = create_app()

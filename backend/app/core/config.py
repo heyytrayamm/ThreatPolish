@@ -115,6 +115,13 @@ def build_settings() -> Settings:
         generated = True
     elif len(secret) < 32:
         raise ConfigurationError("TP_JWT_SECRET must be at least 32 characters")
+    elif env == "production" and any(
+        marker in secret.lower()
+        for marker in ("replace-with", "change-me", "changeme", "example-secret")
+    ):
+        raise ConfigurationError(
+            "TP_JWT_SECRET still contains an example placeholder; generate a real secret"
+        )
 
     data_dir = Path(os.environ.get("TP_DATA_DIR", "./data")).expanduser()
     db_url = os.environ.get("TP_DB_URL", f"sqlite:///{data_dir / 'threatpolish.db'}")

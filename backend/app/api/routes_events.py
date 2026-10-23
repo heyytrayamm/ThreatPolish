@@ -28,7 +28,7 @@ async def ingest_events(
         )
     try:
         body = await request.json()
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         raise ValidationFailure("request body must be valid JSON") from exc
 
     if isinstance(body, dict) and "events" in body:

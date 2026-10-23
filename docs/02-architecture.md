@@ -135,8 +135,9 @@ a whole; anything queried or constrained is a typed column.
 
 ## Capacity
 
-Correlation is quadratic in the number of sessions: 250 sessions produce 31k
-pairs, measured at roughly 1.5 s in the benchmark. Window caps keep a request
-under a few seconds on one core. Additional throughput would come from
+Correlation is quadratic in the number of sessions: the 400-session cap implies
+79,800 pairs. The evaluation's 165-session volume run (13,530 pairs) took 18.7 s
+and peaked at 112 MB, so a full capped run takes roughly a minute on one core.
+The cap keeps a request bounded. Additional throughput would come from
 restricting pairs by shared low-specificity keys, which is the next step if the
-session cap becomes restrictive.
+cap becomes restrictive.

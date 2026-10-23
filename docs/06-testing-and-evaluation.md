@@ -29,8 +29,8 @@ overrides.
 
 ## Measured behaviour
 
-Latest full run: **62 passed**. Static checks: the frontend builds with
-`tsc --noEmit` and `vite build`.
+Latest full run: **65 passed**. Static checks: the frontend builds with
+`tsc -b` and `vite build`; the backend compiles with `compileall`.
 
 Benchmark, 63 sessions / 1953 pairs, two seeds, algorithm `corr-1.1.0`:
 
@@ -42,7 +42,8 @@ Benchmark, 63 sessions / 1953 pairs, two seeds, algorithm `corr-1.1.0`:
 | False positives (proposed / rule) | 0 / 424 | 0 / 420 |
 | Campaign-level exact recovery | 8 of 12 | 4 of 12 |
 
-Resources: 6.1 s total, 16.4 MB peak for a full run including all ablations.
+Resources: about 6.3 s total, 16.4 MB peak for a full run including all
+ablations.
 Full tables, per-subset breakdowns, the deliberately hard subset and the
 adaptive experiment are in `docs/research/evaluation-results.md`.
 

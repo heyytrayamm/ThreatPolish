@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-23T09:26:59.406346+00:00",
+  "generated_at": "2026-10-23T09:51:36.116699+00:00",
   "runs": [
     {
       "adaptive": {
@@ -129,17 +129,17 @@
       "positives": 38,
       "resources": {
         "method_seconds": {
-          "ablation_no_intel": 1.134,
-          "ablation_no_timing": 1.094,
-          "ablation_no_toolchain": 1.087,
-          "ip_only": 0.004,
-          "proposed": 1.333,
-          "proposed_adaptive": 1.356,
-          "rule_based": 0.005
+          "ablation_no_intel": 1.208,
+          "ablation_no_timing": 1.09,
+          "ablation_no_toolchain": 1.072,
+          "ip_only": 0.003,
+          "proposed": 1.432,
+          "proposed_adaptive": 1.365,
+          "rule_based": 0.004
         },
         "peak_memory_mb": 16.39,
-        "sessions_per_second": 10.3,
-        "total_seconds": 6.136
+        "sessions_per_second": 10.0,
+        "total_seconds": 6.288
       },
       "results": {
         "ablation_no_intel": {
@@ -430,17 +430,17 @@
       "positives": 38,
       "resources": {
         "method_seconds": {
-          "ablation_no_intel": 1.137,
-          "ablation_no_timing": 1.082,
-          "ablation_no_toolchain": 1.082,
+          "ablation_no_intel": 1.129,
+          "ablation_no_timing": 1.084,
+          "ablation_no_toolchain": 1.122,
           "ip_only": 0.003,
-          "proposed": 1.3,
-          "proposed_adaptive": 1.246,
+          "proposed": 1.288,
+          "proposed_adaptive": 1.222,
           "rule_based": 0.004
         },
-        "peak_memory_mb": 16.27,
+        "peak_memory_mb": 16.28,
         "sessions_per_second": 10.6,
-        "total_seconds": 5.966
+        "total_seconds": 5.965
       },
       "results": {
         "ablation_no_intel": {
@@ -606,7 +606,7 @@
   ],
   "volume_run": {
     "adaptive": {
-      "ambiguous_pairs": 1434,
+      "ambiguous_pairs": 1423,
       "candidate_components": 8,
       "components_investigated": 8,
       "note": "Additional observation is simulated by appending one decoy interaction to sessions in the largest uncertain clusters only. Production adaptation records real decoy traffic and cannot create evidence.",
@@ -696,14 +696,14 @@
     "positives": 128,
     "resources": {
       "method_seconds": {
-        "ip_only": 0.028,
-        "proposed": 9.714,
-        "proposed_adaptive": 8.755,
-        "rule_based": 0.037
+        "ip_only": 0.024,
+        "proposed": 9.679,
+        "proposed_adaptive": 8.531,
+        "rule_based": 0.038
       },
-      "peak_memory_mb": 111.89,
-      "sessions_per_second": 8.7,
-      "total_seconds": 18.911
+      "peak_memory_mb": 111.83,
+      "sessions_per_second": 8.8,
+      "total_seconds": 18.68
     },
     "results": {
       "ip_only": {

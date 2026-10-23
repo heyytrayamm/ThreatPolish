@@ -35,7 +35,7 @@ def readiness() -> JSONResponse:
             conn.execute(text("SELECT 1"))
         checks["database"] = "ok"
         checks["schema_version"] = schema_version()
-    except Exception as exc:  # noqa: BLE001 - readiness must never raise
+    except Exception as exc:
         healthy = False
         checks["database"] = f"error: {type(exc).__name__}"
 

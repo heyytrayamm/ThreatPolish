@@ -129,7 +129,7 @@ def init_db(url: str | None = None) -> Engine:
         for version, name, apply in MIGRATIONS:
             if version in applied:
                 continue
-            log.info("applying migration", extra={"version": version, "name": name})
+            log.info("applying migration", extra={"version": version, "migration": name})
             apply(conn)
             conn.execute(
                 schema_migrations.insert().values(

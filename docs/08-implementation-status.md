@@ -15,7 +15,7 @@ why.
 | Ingestion with hashing, dedup, quarantine | Done | `app/services/ingestion.py`, `test_pipeline.py` |
 | Auth, RBAC, audit trail | Done | `app/auth/`, `test_foundation.py`, `test_security.py` |
 | Dashboard shell and navigation | Done | `frontend/` builds cleanly |
-| Test harness | Done | 62 tests, SQLite, isolated per test |
+| Test harness | Done | 65 tests, SQLite, isolated per test |
 | Reproducible benchmark | Done | `backend/scripts/evaluate.py` |
 | Audit, novelty review, architecture, threat model | Done | `docs/00`–`docs/03` |
 | License | Done | Proprietary notice, all rights reserved by the project team |

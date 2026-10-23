@@ -54,7 +54,7 @@ Campaign-level: 8 of 12 true groups recovered exactly; 10 predicted clusters, pu
 
 Adaptive experiment: 199 ambiguous pairs in 7 candidate clusters; 7 clusters investigated, 1953 pairs recomputed, 5 correctly resolved, 17 incorrectly resolved, 1931 unchanged. Additional observation is simulated by appending one decoy interaction to sessions in the largest uncertain clusters only. Production adaptation records real decoy traffic and cannot create evidence.
 
-Resources: total 6.136s, peak memory 16.39 MB, 10.3 sessions/s.
+Resources: total 6.288s, peak memory 16.39 MB, 10.0 sessions/s.
 
 ## Seed 2026
 
@@ -97,11 +97,11 @@ Campaign-level: 4 of 12 true groups recovered exactly; 10 predicted clusters, pu
 
 Adaptive experiment: 188 ambiguous pairs in 6 candidate clusters; 6 clusters investigated, 1711 pairs recomputed, 10 correctly resolved, 16 incorrectly resolved, 1685 unchanged. Additional observation is simulated by appending one decoy interaction to sessions in the largest uncertain clusters only. Production adaptation records real decoy traffic and cannot create evidence.
 
-Resources: total 5.966s, peak memory 16.27 MB, 10.6 sessions/s.
+Resources: total 5.965s, peak memory 16.28 MB, 10.6 sessions/s.
 
 ## Volume run (seed 99)
 
-165 sessions and 13530 pairs: total 18.911s, peak memory 111.89 MB.
+165 sessions and 13530 pairs: total 18.680s, peak memory 111.83 MB.
 
 | Method | Precision | Recall | F1 | FPR |
 | --- | --- | --- | --- | --- |

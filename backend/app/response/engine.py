@@ -20,7 +20,7 @@ from ..core.logging import get_logger
 from ..core.security import iso, new_id, utcnow
 from ..db.database import connection, dumps, loads
 from ..db.schema import responses
-from .policy import POLICY_VERSION, decide, is_action_permitted
+from .policy import POLICY_VERSION, decide
 
 log = get_logger(__name__)
 

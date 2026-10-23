@@ -5,12 +5,12 @@ from __future__ import annotations
 from datetime import timedelta
 from typing import Any
 
-from sqlalchemy import select, text
+from sqlalchemy import text
 
 from ..core.errors import NotFound
 from ..core.security import iso, new_id, utcnow
-from ..db.database import connection, dumps, loads, query_one
-from ..db.schema import campaigns, feedback, graph_edges, graph_nodes
+from ..db.database import connection, loads, query_one
+from ..db.schema import campaigns, feedback
 from ..risk.scoring import explain_finding, score_risk
 from .scoring import ALGORITHM_VERSION, LINK_CONFIDENCE
 
