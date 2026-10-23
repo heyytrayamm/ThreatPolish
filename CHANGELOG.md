@@ -28,6 +28,11 @@ Initial release.
   derived from the audit trail rather than per-request logging. Administrators
   can open any account's history from the Administration page or
   `GET /auth/users/{id}/sessions`.
+- Per-session sign-out: each token carries an identifier, `DELETE /auth/sessions/{jti}`
+  revokes just that device, and revoked identifiers are kept only until the token
+  would have expired.
+- The Overview page raises recent sign-in anomalies as an attention item, for the
+  signed-in account and, for administrators, as a count from the audit trail.
 - Sign-in anomaly alerts: a second live session from a different network inside
   `TP_SIGNIN_ALERT_WINDOW_MINUTES` is recorded as `auth.signin.anomaly` and shown
   on the account and admin session views. An optional geolocation endpoint adds

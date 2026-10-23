@@ -61,6 +61,7 @@ class Principal:
     name: str
     email: str
     via: str  # "session" or "agent_token"
+    jti: str | None = None
 
     @property
     def is_agent(self) -> bool:

@@ -7,7 +7,7 @@ const EVENT_LABEL: Record<string, string> = {
   sessions_revoked: "Sessions revoked",
 };
 
-function describe(anomaly: SignInAnomaly): string {
+export function describeSignInAnomaly(anomaly: SignInAnomaly): string {
   const previous = `${anomaly.previous_ip ?? "an unknown address"} at ${formatTime(anomaly.previous_at)}`;
   if (anomaly.kind === "distant_signin") {
     const distance = anomaly.distance_km ?? 0;
@@ -20,7 +20,13 @@ function describe(anomaly: SignInAnomaly): string {
   } minutes. Confirm it was you before continuing.`;
 }
 
-export function SessionTable({ history }: { history: SessionHistory }) {
+export function SessionTable({
+  history,
+  onRevoke,
+}: {
+  history: SessionHistory;
+  onRevoke?: (jti: string) => void;
+}) {
   const flagged = history.sessions.filter(
     (entry: SessionRecord) => entry.event === "sign_in" && entry.anomaly,
   );
@@ -29,7 +35,7 @@ export function SessionTable({ history }: { history: SessionHistory }) {
     <>
       {flagged.length > 0 && (
         <div className="error" role="alert">
-          <strong>Unusual sign-in.</strong> {describe(flagged[0].anomaly as SignInAnomaly)}
+          <strong>Unusual sign-in.</strong> {describeSignInAnomaly(flagged[0].anomaly as SignInAnomaly)}
         </div>
       )}
       {history.sessions.length === 0 && (
@@ -38,7 +44,10 @@ export function SessionTable({ history }: { history: SessionHistory }) {
       {history.sessions.length > 0 && (
         <table>
           <thead>
-            <tr><th>When</th><th>Event</th><th>Client</th><th>Address</th><th>State</th></tr>
+            <tr>
+              <th>When</th><th>Event</th><th>Client</th><th>Address</th><th>State</th>
+              {onRevoke && <th>Session</th>}
+            </tr>
           </thead>
           <tbody>
             {history.sessions.map((entry) => (
@@ -56,7 +65,21 @@ export function SessionTable({ history }: { history: SessionHistory }) {
                   ) : (
                     <span className="muted small">{entry.outcome}</span>
                   )}
+                  {entry.current && <span className="muted small"> this device</span>}
                 </td>
+                {onRevoke && (
+                  <td>
+                    {entry.jti && entry.state === "active" && !entry.current && (
+                      <button
+                        type="button"
+                        className="secondary small"
+                        onClick={() => onRevoke(entry.jti as string)}
+                      >
+                        Sign out
+                      </button>
+                    )}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>

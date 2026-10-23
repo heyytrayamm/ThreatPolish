@@ -8,6 +8,7 @@ from typing import Callable
 from fastapi import Depends, Header, Request
 
 from ..auth.rbac import Principal, require_permission
+from ..auth.sessions import session_is_revoked
 from ..auth.users import get_user_with_session, resolve_agent_token
 from ..core.config import get_settings
 from ..core.errors import AuthenticationFailure
@@ -35,12 +36,16 @@ def get_principal(
             raise AuthenticationFailure("account is disabled")
         if int(payload.get("tv", -1)) != session_version:
             raise AuthenticationFailure("session has been revoked; sign in again")
+        jti = str(payload.get("jti", ""))
+        if jti and session_is_revoked(jti):
+            raise AuthenticationFailure("this session was signed out")
         return Principal(
             user_id=user["id"],
             role=user["role"],
             name=user["name"],
             email=user["email"],
             via="session",
+            jti=jti or None,
         )
 
     if x_agent_token:

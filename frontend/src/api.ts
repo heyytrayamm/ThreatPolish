@@ -87,6 +87,11 @@ export const api = {
     request<SessionHistory>(`/api/v1/auth/sessions?limit=${limit}`),
   userSessions: (userId: string, limit = 20) =>
     request<SessionHistory>(`/api/v1/auth/users/${userId}/sessions?limit=${limit}`),
+  revokeSession: (jti: string) =>
+    request<{ status: string; jti: string }>(
+      `/api/v1/auth/sessions/${encodeURIComponent(jti)}`,
+      { method: "DELETE" },
+    ),
   revokeSessions: (userId: string) =>
     request<{ status: string; user_id: string; session_version: number }>(
       `/api/v1/auth/users/${userId}/revoke-sessions`,
@@ -368,6 +373,9 @@ export interface SessionRecord {
   state?: "active" | "expired" | "revoked" | "unknown";
   expires_at?: string | null;
   anomaly?: SignInAnomaly | null;
+  jti?: string | null;
+  current?: boolean;
+  revoked_jti?: string | null;
 }
 
 export interface SessionHistory {

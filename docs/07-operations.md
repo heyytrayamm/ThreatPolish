@@ -175,10 +175,12 @@ reversion in the audit log, then review who approved it and why.
 service before retrying ingestion; replay is safe because ingestion is
 idempotent.
 
-**Suspected token compromise.** Revoke the account's sessions
-(`POST /auth/users/{id}/revoke-sessions`) or have the user rotate their
-password; both act on the account session version and take effect on the next
-request. Rotate `TP_JWT_SECRET` to invalidate every session in the deployment,
+**Suspected token compromise.** If one device is suspect, sign that session out
+(`DELETE /auth/sessions/{jti}`, or the Sign out button beside it on the Account
+page); the account's other sessions keep working. To end every session at once,
+revoke the account's sessions (`POST /auth/users/{id}/revoke-sessions`) or have
+the user rotate their password; both act on the account session version and take
+effect on the next request. Rotate `TP_JWT_SECRET` to invalidate every session in the deployment,
 revoke agent tokens, and review `/audit` and the account's session history.
 
 A sign-in from a different network while an earlier session is still live is

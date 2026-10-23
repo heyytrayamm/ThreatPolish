@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { api, User } from "../api";
+import { api, SessionRecord, User } from "../api";
+import { describeSignInAnomaly } from "../components/SessionTable";
 import { Badge, Card, Empty, ErrorBox, Field, formatTime, Loading, can, useAsync } from "../ui";
 
 export default function Overview({ user }: { user: User }) {
@@ -17,6 +18,11 @@ export default function Overview({ user }: { user: User }) {
   const sources = useAsync(() => api.sources(), [tick]);
   const latest = useAsync(() => api.latestRun(), [tick]);
   const campaigns = useAsync(() => api.campaigns(), [tick]);
+  const sessions = useAsync(() => api.sessions(10), [tick]);
+  const audit = useAsync(
+    () => (user.role === "admin" ? api.audit() : Promise.resolve(null)),
+    [user.role, tick],
+  );
 
   async function runCorrelation() {
     setRunning(true);
@@ -37,6 +43,12 @@ export default function Overview({ user }: { user: User }) {
 
   const data = summary.data;
   const maxHour = Math.max(1, ...(data?.hourly.map((point) => point.count) ?? [1]));
+  const ownAlerts = (sessions.data?.sessions ?? []).filter(
+    (entry: SessionRecord) => entry.anomaly,
+  );
+  const fleetAlerts = (audit.data?.items ?? []).filter(
+    (entry) => entry.action === "auth.signin.anomaly",
+  );
 
   return (
     <div className="page">
@@ -64,6 +76,23 @@ export default function Overview({ user }: { user: User }) {
 
       <ErrorBox message={summary.error ?? sources.error ?? campaigns.error} />
       {notice && <div className="notice">{notice}</div>}
+
+      {(ownAlerts.length > 0 || fleetAlerts.length > 0) && (
+        <Card title="Sign-in attention">
+          {ownAlerts.length > 0 && (
+            <div className="error" role="alert">
+              <strong>Unusual sign-in.</strong>{" "}
+              {describeSignInAnomaly(ownAlerts[0].anomaly as NonNullable<SessionRecord["anomaly"]>)}
+            </div>
+          )}
+          {fleetAlerts.length > 0 && (
+            <p className="muted small">
+              {fleetAlerts.length} sign-in {fleetAlerts.length === 1 ? "alert" : "alerts"} recorded in the
+              recent audit trail. Open an account's sessions under Administration to review them.
+            </p>
+          )}
+        </Card>
+      )}
 
       <div className="metrics">
         <Metric label="Events" value={data?.total ?? 0} />

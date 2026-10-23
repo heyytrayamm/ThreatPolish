@@ -14,6 +14,21 @@ export default function Account({ user }: { user: User }) {
 
   const sessions = useAsync(() => api.sessions(), [tick]);
 
+  async function signOutDevice(jti: string) {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await api.revokeSession(jti);
+      setNotice("That device was signed out. Other sessions are unaffected.");
+      setTick((value) => value + 1);
+    } catch (failure) {
+      setError((failure as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function submit(event: FormEvent) {
     event.preventDefault();
     setError(null);
@@ -109,7 +124,7 @@ export default function Account({ user }: { user: User }) {
 
       <Card title="Recent sessions">
         {sessions.loading && <Loading />}
-        {sessions.data && <SessionTable history={sessions.data} />}
+        {sessions.data && <SessionTable history={sessions.data} onRevoke={signOutDevice} />}
       </Card>
     </div>
   );

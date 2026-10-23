@@ -146,7 +146,10 @@ rows, so the limit holds even when two requests are planned at the same moment.
   audit trail with the client address, the user agent and the session version in
   force. The account's session history is derived from those records rather than
   from per-request logging, so an analyst can see where an account was used
-  without the platform keeping a browsing record of every API call.
+  without the platform keeping a browsing record of every API call. Each token
+  carries its own identifier, and signing out one device adds that identifier to
+  `revoked_sessions`; the entry is dropped once the token would have expired, so
+  a single device can be ended without touching the account's other sessions.
 - A sign-in from a different network while an earlier session is still live is
   flagged as `auth.signin.anomaly` on the sign-in and as its own audit entry,
   and is shown on the account page and in the admin session view. Distance is

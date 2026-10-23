@@ -51,6 +51,17 @@ agent_tokens = Table(
     Column("revoked_at", String(40), nullable=True),
 )
 
+revoked_sessions = Table(
+    "revoked_sessions",
+    metadata,
+    Column("jti", String(64), primary_key=True),
+    Column("user_id", String(64), nullable=False),
+    Column("revoked_at", String(40), nullable=False),
+    Column("expires_at", String(40), nullable=False),
+    Column("reason", String(120), nullable=False, default="user_request"),
+    Index("ix_revoked_sessions_user", "user_id"),
+)
+
 events = Table(
     "events",
     metadata,

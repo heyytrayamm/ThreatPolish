@@ -247,6 +247,17 @@ def _migration_007_unique_open_investigations(conn: Connection) -> None:
     )
 
 
+def _migration_008_revoked_sessions(conn: Connection) -> None:
+    """Track individually revoked token identifiers.
+
+    A stateless token can be invalidated one device at a time by naming its
+    identifier here; entries are dropped once the token would have expired.
+    """
+    from .schema import revoked_sessions
+
+    revoked_sessions.create(bind=conn, checkfirst=True)
+
+
 MIGRATIONS: list[tuple[int, str, Any]] = [
     (1, "initial schema", _migration_001_initial),
     (2, "event retention index", _migration_002_events_retention_index),
@@ -255,6 +266,7 @@ MIGRATIONS: list[tuple[int, str, Any]] = [
     (5, "session pair identifier rekey", _migration_005_rekey_session_pairs),
     (6, "account session versions", _migration_006_session_versions),
     (7, "unique open investigations", _migration_007_unique_open_investigations),
+    (8, "per-session revocation", _migration_008_revoked_sessions),
 ]
 
 

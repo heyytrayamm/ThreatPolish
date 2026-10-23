@@ -304,6 +304,93 @@ def test_dashboard_password_change_keeps_this_tab_and_revokes_the_others(live_se
     ).status_code == 200
 
 
+def test_session_history_signs_out_one_device_and_admins_can_inspect_it(live_server: str):
+    second = httpx.post(
+        f"{live_server}/api/v1/auth/login",
+        json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD},
+        headers={"User-Agent": "browser-second-device/1.0"},
+    )
+    assert second.status_code == 200, second.text
+    second_token = second.json()["access_token"]
+
+    with playwright_api.sync_playwright() as p:
+        browser = _launch(p.chromium)
+        try:
+            page = browser.new_page()
+            page.goto(live_server, wait_until="domcontentloaded")
+            page.get_by_label("Email").fill(ADMIN_EMAIL)
+            page.get_by_label("Password", exact=True).fill(ADMIN_PASSWORD)
+            page.get_by_role("button", name="Sign in").click()
+            page.wait_for_selector(".sidebar")
+
+            page.get_by_role("button", name="Account").click()
+            page.wait_for_selector("td:has-text('Sign-in')")
+            assert page.get_by_text("this device").count() >= 1
+
+            other = page.locator("tr", has_text="browser-second-device/1.0")
+            other.wait_for()
+            other.get_by_role("button", name="Sign out").click()
+            page.wait_for_selector("text=That device was signed out")
+            page.wait_for_selector(
+                "tr:has-text('browser-second-device/1.0') .badge:has-text('revoked')"
+            )
+
+            # The administrator can open another account's history. This
+            # deployment has the bootstrap administrator only.
+            page.get_by_role("button", name="Administration").click()
+            page.get_by_role("button", name="Sessions", exact=True).first.click()
+            page.wait_for_selector("text=Sessions — Administrator")
+            page.wait_for_selector("#main td:has-text('Sign-in')")
+
+            # An account-level alert must reach the Overview page as well.
+            page.route(
+                "**/api/v1/auth/sessions*",
+                lambda route: route.fulfill(
+                    json={
+                        "user_id": "usr_demo",
+                        "current_session_version": 1,
+                        "note": "demo",
+                        "sessions": [
+                            {
+                                "id": "aud_demo",
+                                "occurred_at": "2026-10-24T10:00:00+00:00",
+                                "event": "sign_in",
+                                "ip": "198.51.100.7",
+                                "client": "browser",
+                                "outcome": "success",
+                                "session_version": 1,
+                                "state": "active",
+                                "jti": "jti_demo",
+                                "current": True,
+                                "expires_at": None,
+                                "anomaly": {
+                                    "kind": "distant_signin",
+                                    "previous_ip": "203.0.113.10",
+                                    "previous_at": "2026-10-24T09:56:00+00:00",
+                                    "detected_at": "2026-10-24T10:00:00+00:00",
+                                    "distance_km": 5570,
+                                    "threshold_km": 500,
+                                    "window_minutes": 30,
+                                },
+                            }
+                        ],
+                    }
+                ),
+            )
+            page.get_by_role("button", name="Overview").click()
+            page.wait_for_selector("text=Sign-in attention")
+            page.wait_for_selector("text=Unusual sign-in")
+            assert "5,570 km" in page.inner_text("#main")
+        finally:
+            browser.close()
+
+    stale = httpx.get(
+        f"{live_server}/api/v1/events",
+        headers={"Authorization": f"Bearer {second_token}"},
+    )
+    assert stale.status_code == 401, stale.text
+
+
 def test_dashboard_plans_and_activates_an_investigation(live_server: str):
     _seed_campaign(live_server)
 

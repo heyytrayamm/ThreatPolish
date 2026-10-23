@@ -333,6 +333,82 @@ def test_session_history_reports_expired_sign_ins(client, admin_headers):
     assert entry["expires_at"]
 
 
+def _login_with_agent(client, email: str, password: str, agent: str) -> str:
+    response = client.post(
+        "/api/v1/auth/login",
+        json={"email": email, "password": password},
+        headers={"User-Agent": agent},
+    )
+    assert response.status_code == 200, response.text
+    return response.json()["access_token"]
+
+
+def _history(client, token: str) -> dict:
+    response = client.get(
+        "/api/v1/auth/sessions", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def test_one_device_can_be_signed_out_without_ending_the_other_sessions(client):
+    credentials = {"email": "admin@threatpolish.test", "password": ADMIN_PASSWORD}
+    laptop = _login_with_agent(client, **credentials, agent="laptop/1.0")
+    phone = _login_with_agent(client, **credentials, agent="phone/2.0")
+
+    history = _history(client, phone)
+    current = [item for item in history["sessions"] if item["current"]]
+    assert len(current) == 1 and current[0]["client"] == "phone/2.0"
+    laptop_entry = next(item for item in history["sessions"] if item["client"] == "laptop/1.0")
+    assert laptop_entry["jti"] and laptop_entry["state"] == "active"
+
+    signed_out = client.delete(
+        f"/api/v1/auth/sessions/{laptop_entry['jti']}",
+        headers={"Authorization": f"Bearer {phone}"},
+    )
+    assert signed_out.status_code == 200, signed_out.text
+
+    assert client.get(
+        "/api/v1/events", headers={"Authorization": f"Bearer {laptop}"}
+    ).status_code == 401
+    assert client.get(
+        "/api/v1/events", headers={"Authorization": f"Bearer {phone}"}
+    ).status_code == 200
+
+    refreshed = _history(client, phone)
+    laptop_entry = next(item for item in refreshed["sessions"] if item["client"] == "laptop/1.0")
+    assert laptop_entry["state"] == "revoked"
+    assert any(item["event"] == "session_revoked" for item in refreshed["sessions"])
+
+    # Signing the same device out twice changes nothing.
+    again = client.delete(
+        f"/api/v1/auth/sessions/{laptop_entry['jti']}",
+        headers={"Authorization": f"Bearer {phone}"},
+    )
+    assert again.status_code == 200
+
+
+def test_signing_out_a_foreign_or_unknown_session_is_refused(
+    client, admin_headers, viewer_headers
+):
+    viewer_history = _history(client, viewer_headers["Authorization"].split(" ", 1)[1])
+    viewer_jti = next(item["jti"] for item in viewer_history["sessions"] if item["current"])
+
+    foreign = client.delete(f"/api/v1/auth/sessions/{viewer_jti}", headers=admin_headers)
+    assert foreign.status_code == 404, foreign.text
+
+    unknown = client.delete("/api/v1/auth/sessions/jti_not_a_session", headers=admin_headers)
+    assert unknown.status_code == 404, unknown.text
+
+    from app.auth.users import create_agent_token
+
+    agent = create_agent_token(name="no-sessions", role="sensor")
+    denied = client.delete(
+        "/api/v1/auth/sessions/jti_whatever", headers={"X-Agent-Token": agent["token"]}
+    )
+    assert denied.status_code == 401, denied.text
+
+
 def test_an_admins_reading_of_another_accounts_sessions_is_authorised_and_recorded(
     client, admin_headers, viewer_headers
 ):
