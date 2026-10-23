@@ -23,6 +23,18 @@ decide what the evidence supports.
 > ingestion. The evaluation uses synthetic telemetry; see its limitations before
 > drawing operational conclusions.
 
+## Dashboard
+
+![ThreatPolish analyst overview](docs/assets/dashboard-overview.png)
+
+| Campaign evidence | Sign in |
+| --- | --- |
+| ![Campaign candidates and evidence graph](docs/assets/campaigns.png) | ![Sign-in screen](docs/assets/login.png) |
+
+The interface shows the evidence behind each hypothesis: severity and
+confidence are separate, contradictions and missing evidence are visible, and
+no view presents an IP address as an identity.
+
 ## Why this exists
 
 Attribution tools usually start from an IP address. Attackers rotate addresses,
@@ -203,6 +215,7 @@ backend/app/risk         severity, confidence and asset risk
 backend/tests            unit, integration and end-to-end tests
 frontend                 React/TypeScript analyst dashboard
 docs                     audit, method, architecture, threat model and runbooks
+docs/assets              dashboard screenshots used by the README
 deploy                   Cowrie configuration
 ```
 
@@ -230,7 +243,10 @@ cd ../frontend
 npm run build
 ```
 
-CI runs the same checks plus a container build on every push and pull request.
+CI runs the same checks on every push and pull request, plus the full suite
+against PostgreSQL 16 and a container image build. The PostgreSQL job uses
+`TP_TEST_DB_URL` and resets the schema for each test, so engine-specific query
+behaviour is covered rather than assumed.
 
 ## License
 

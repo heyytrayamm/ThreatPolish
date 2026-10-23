@@ -8,9 +8,10 @@ python -m pytest -q              # full suite
 python scripts/evaluate.py       # benchmark, writes docs/research/
 ```
 
-The suite uses SQLite and an in-process ASGI client; no external services are
-required. Tests are isolated per test via a fresh database and dependency
-overrides.
+The suite runs on SQLite with an in-process ASGI client and needs no external
+services. Set `TP_TEST_DB_URL` to a PostgreSQL URL to run the same suite against
+PostgreSQL; the fixture resets the schema before each test so isolation matches
+the SQLite path. CI runs both engines on every push and pull request.
 
 ## Suite structure
 
@@ -29,8 +30,20 @@ overrides.
 
 ## Measured behaviour
 
-Latest full run: **66 passed**. Static checks: the frontend builds with
-`tsc -b` and `vite build`; the backend compiles with `compileall`.
+Latest full run: **66 passed on SQLite** and **66 passed on PostgreSQL 16**.
+Static checks: the frontend builds with `tsc -b` and `vite build`; the backend
+passes Ruff and compiles with `compileall`.
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on every push and pull request:
+
+| Job | Checks |
+| --- | --- |
+| Backend tests (SQLite) | Ruff `F,E9`; full pytest suite |
+| Backend tests (PostgreSQL) | Full pytest suite against a PostgreSQL 16 service |
+| Dashboard build | `npm ci`; TypeScript build and Vite bundle |
+| Container image | Multi-stage Docker build |
 
 Benchmark, 63 sessions / 1953 pairs, two seeds, algorithm `corr-1.1.0`:
 

@@ -22,8 +22,11 @@ Initial release.
 - React/TypeScript analyst dashboard with a strict Content-Security-Policy.
 - Docker/Compose deployment, CLI, schema migrations, backup and recovery
   runbooks.
+- CI pipeline covering lint, the full suite on SQLite and PostgreSQL 16, the
+  dashboard build and a container image build.
 - Seeded evaluation harness with baselines, ablations, adaptive experiment and
   a volume run.
+- Dashboard screenshots and a documentation index for review.
 
 ### Fixed
 
@@ -37,6 +40,10 @@ Initial release.
   error.
 - Production refuses example signing secrets; the API runs one worker so
   startup migrations cannot race.
+- A sparse event-volume window rendered as one full-width block; bars now cap
+  their width and label counts when few buckets exist.
+- The container dashboard build used `npm install`; it now uses `npm ci` so the
+  lockfile is authoritative.
 
 ### Security
 
@@ -44,3 +51,5 @@ Initial release.
 - The dashboard CSP is sent by the API and scoped to dashboard responses.
 - Agent tokens are stored as hashes and can be revoked.
 - Build context excludes secrets, local data and build artefacts.
+- The Vite/esbuild development toolchain was updated to clear the published
+  advisories; `npm audit` reports no vulnerabilities.

@@ -13,11 +13,27 @@ ADMIN_EMAIL = "admin@threatpolish.test"
 ADMIN_PASSWORD = "correct-horse-battery-staple"
 
 
+def _reset_postgres(url: str) -> None:
+    """Give each test an empty schema so the PostgreSQL job matches SQLite isolation."""
+    from sqlalchemy import create_engine, text
+
+    engine = create_engine(url, pool_pre_ping=True)
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
+            conn.execute(text("CREATE SCHEMA public"))
+    finally:
+        engine.dispose()
+
+
 @pytest.fixture(autouse=True)
 def _environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     db_path = tmp_path / "test.db"
+    postgres_url = os.environ.get("TP_TEST_DB_URL")
+    if postgres_url:
+        _reset_postgres(postgres_url)
     monkeypatch.setenv("TP_ENV", "test")
-    monkeypatch.setenv("TP_DB_URL", f"sqlite:///{db_path}")
+    monkeypatch.setenv("TP_DB_URL", postgres_url or f"sqlite:///{db_path}")
     monkeypatch.setenv("TP_JWT_SECRET", "test-secret-that-is-long-enough-for-hs256")
     monkeypatch.setenv("TP_BOOTSTRAP_ADMIN_EMAIL", ADMIN_EMAIL)
     monkeypatch.setenv("TP_BOOTSTRAP_ADMIN_PASSWORD", ADMIN_PASSWORD)

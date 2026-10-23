@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   backend:
-    name: Backend tests
+    name: Backend tests (SQLite)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -30,6 +30,40 @@ jobs:
       - name: Lint for correctness errors
         working-directory: backend
         run: ruff check app tests scripts --select F,E9
+      - name: Run tests
+        working-directory: backend
+        run: python -m pytest -q
+
+  postgres:
+    name: Backend tests (PostgreSQL)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: threatpolish
+          POSTGRES_PASSWORD: threatpolish
+          POSTGRES_DB: threatpolish_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U threatpolish -d threatpolish_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TP_TEST_DB_URL: postgresql+psycopg://threatpolish:threatpolish@localhost:5432/threatpolish_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+      - name: Install dependencies
+        working-directory: backend
+        run: pip install -r requirements-dev.txt
       - name: Run tests
         working-directory: backend
         run: python -m pytest -q
