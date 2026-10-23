@@ -105,15 +105,23 @@ def graph_view(
 
 
 def list_campaigns(*, limit: int = 50, status: str | None = None) -> list[dict[str, Any]]:
+    # Build the optional predicate instead of passing an untyped NULL: on
+    # PostgreSQL ``:status IS NULL`` fails with "could not determine data type
+    # of parameter" because the driver cannot infer the parameter type.
+    clauses = ["1 = 1"]
+    params: dict[str, Any] = {"limit": limit}
+    if status:
+        clauses.append("status = :status")
+        params["status"] = status
     with connection() as conn:
         rows = conn.execute(
             text(
                 "SELECT id, name, status, confidence, summary, created_at, updated_at, "
                 "member_count, ip_count, algorithm_version FROM campaigns "
-                "WHERE (:status IS NULL OR status = :status) "
+                f"WHERE {' AND '.join(clauses)} "
                 "ORDER BY confidence DESC, updated_at DESC LIMIT :limit"
             ),
-            {"status": status, "limit": limit},
+            params,
         ).fetchall()
     return [
         {

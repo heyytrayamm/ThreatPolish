@@ -164,3 +164,10 @@ def test_decoy_reports_source_health(client, admin_headers):
         decoy.stop()
     sources = client.get("/api/v1/sources", headers=admin_headers).json()["sources"]
     assert any(source["source"] == "honeypot:http-decoy" for source in sources)
+
+
+def test_cowrie_tailer_defaults_state_to_data_dir(tmp_path):
+    from app.core.config import get_settings
+
+    tailer = CowrieTailer(tmp_path / "cowrie.json")
+    assert tailer.state_path.parent == get_settings().data_dir

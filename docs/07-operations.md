@@ -102,10 +102,11 @@ revoked (`DELETE /auth/tokens/{id}`); revocation takes effect immediately.
 - **HTTP sensor / generic collectors:** post to `/api/v1/ingest/events` with the
   event contract in `docs/04-event-contract.md`. A single object, an array, or
   `{"events": [...]}` up to 500 records is accepted.
-- **Cowrie:** mount `cowrie.json` and run
-  `python -m app.cli cowrie-tail --path /var/log/cowrie/cowrie.json`. The tailer
-  persists its offset, survives rotation, and relies on event deduplication for
-  at-least-once delivery.
+- **Cowrie:** the Compose profile writes to the shared `cowrie-logs` volume,
+  mounted read-only in the app at `/var/log/cowrie`. Run
+  `docker compose exec app python -m app.cli cowrie-tail --path /var/log/cowrie/cowrie.json`.
+  The tailer keeps its offset in `/data` (the log volume is read-only), survives
+  rotation, and relies on event deduplication for at-least-once delivery.
 - **HTTP decoy:** `python -m app.cli decoy`; interactions become telemetry
   automatically.
 - NTP-synchronise every sensor; timing evidence depends on clocks.
@@ -187,8 +188,9 @@ Run it on a schedule and confirm deletions against the database size trend.
 
 ## Known limitations
 
-- Compose and PostgreSQL were not executed on the build host; validate the
-  deployment in staging before production.
+- Cowrie was exercised with connection attempts, not a full interactive shell
+  session; validate the fake filesystem against your image version.
 - No automated dependency scanning is configured in this repository.
 - Single-node deployment; correlation does not scale horizontally (it processes
-  at most 400 sessions per run).
+  at most 400 sessions per run), and the API runs one worker so startup
+  migrations cannot race.

@@ -29,7 +29,7 @@ overrides.
 
 ## Measured behaviour
 
-Latest full run: **65 passed**. Static checks: the frontend builds with
+Latest full run: **66 passed**. Static checks: the frontend builds with
 `tsc -b` and `vite build`; the backend compiles with `compileall`.
 
 Benchmark, 63 sessions / 1953 pairs, two seeds, algorithm `corr-1.1.0`:
@@ -66,13 +66,33 @@ adaptive experiment are in `docs/research/evaluation-results.md`.
   observation would not. The production path records real decoy traffic and
   cannot add evidence, and every investigation stores before/after values.
 
+## Container deployment verification
+
+The Compose stack was built and run on this host against PostgreSQL 16:
+
+- image build succeeded; the API runs as uid 10001, not root;
+- readiness reported the database healthy at schema version 2;
+- login, ingestion, correlation and every read endpoint returned success;
+- 12 smoke events produced 4 sessions, 6 edges and 1 campaign;
+- response approval/rollback and the investigation plan/activate/evaluate
+  lifecycle completed against PostgreSQL;
+- restarting the API preserved data; a `pg_dump` restored into a scratch
+  database with matching row counts;
+- stopping PostgreSQL made readiness return 503, and it recovered to 200 after
+  the database restarted;
+- the optional Cowrie profile started, wrote its JSON log to a shared volume,
+  and `cowrie-tail` ingested 5 events, then reported 0 on re-run (idempotent);
+- the HTTP decoy ran inside the container and emitted a telemetry event.
+
+Two PostgreSQL-only defects were found and fixed in this pass:
+`WHERE (:param IS NULL OR ...)` patterns could not be typed by the driver in
+campaign listing and duplicate-investigation lookup. Both now build predicates
+conditionally.
+
 ## Not verified
 
-- Docker Compose was not executed: Docker is not installed on the build host.
-  The files are provided and statically reviewed only.
-- PostgreSQL was not executed for the same reason; the schema is portable but
-  the deployed path is untested here.
-- Cowrie was not run end-to-end; the adapter is tested against representative
-  JSON log lines.
+- Cowrie was exercised with connection attempts, not a full interactive shell
+  session.
 - The adaptive simulation is not a substitute for field measurement.
-- No load test beyond the 63-session benchmark.
+- No load test beyond the 63-session benchmark and the volume run.
+- Web assessment was tested against loopback targets, not a real external host.

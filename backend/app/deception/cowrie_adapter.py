@@ -152,7 +152,14 @@ class CowrieTailer:
 
     def __init__(self, path: str | Path, *, state_path: str | Path | None = None, ingestor: Ingestor | None = None):
         self.path = Path(path)
-        state = Path(state_path) if state_path else self.path.with_suffix(self.path.suffix + ".offset")
+        if state_path:
+            state = Path(state_path)
+        else:
+            # Cowrie's log directory is mounted read-only in the container, so
+            # the offset belongs in the writable data directory.
+            from ..core.config import get_settings
+
+            state = get_settings().data_dir / f"{self.path.name}.offset"
         self.state_path = state
         self.ingestor = ingestor or Ingestor()
 

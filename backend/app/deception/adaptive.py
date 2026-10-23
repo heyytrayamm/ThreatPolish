@@ -142,14 +142,23 @@ def plan_investigation(
 
     investigation_id = new_id("inv")
     now = utcnow()
+    # Build predicates only for the identifiers present. PostgreSQL cannot
+    # infer the type of a NULL parameter used as ``:value IS NOT NULL``.
+    subject_clauses: list[str] = []
+    subject_params: dict[str, Any] = {}
+    if edge_id:
+        subject_clauses.append("edge_id = :edge")
+        subject_params["edge"] = edge_id
+    if campaign_id:
+        subject_clauses.append("campaign_id = :campaign")
+        subject_params["campaign"] = campaign_id
     with connection() as conn:
         existing = conn.execute(
             text(
                 "SELECT id FROM investigations WHERE status IN ('planned', 'active') "
-                "AND ((:edge IS NOT NULL AND edge_id = :edge) OR "
-                "(:campaign IS NOT NULL AND campaign_id = :campaign)) LIMIT 1"
+                f"AND ({' OR '.join(subject_clauses)}) LIMIT 1"
             ),
-            {"edge": edge_id, "campaign": campaign_id},
+            subject_params,
         ).fetchone()
         if existing:
             raise Conflict(

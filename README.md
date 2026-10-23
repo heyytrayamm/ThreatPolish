@@ -124,7 +124,7 @@ cd backend
 python -m pytest -q
 ```
 
-65 tests cover the event contract, ingestion, deduplication, quarantine,
+66 tests cover the event contract, ingestion, deduplication, quarantine,
 retention, the decoy, Cowrie parsing, correlation gates, campaign formation,
 adaptive investigation, risk separation, web assessment authorization and SSRF
 guards, crypto scoring, response policy, authorization boundaries, injection

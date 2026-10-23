@@ -15,7 +15,7 @@ why.
 | Ingestion with hashing, dedup, quarantine | Done | `app/services/ingestion.py`, `test_pipeline.py` |
 | Auth, RBAC, audit trail | Done | `app/auth/`, `test_foundation.py`, `test_security.py` |
 | Dashboard shell and navigation | Done | `frontend/` builds cleanly |
-| Test harness | Done | 65 tests, SQLite, isolated per test |
+| Test harness | Done | 66 tests, SQLite, isolated per test, plus container smoke checks |
 | Reproducible benchmark | Done | `backend/scripts/evaluate.py` |
 | Audit, novelty review, architecture, threat model | Done | `docs/00`–`docs/03` |
 | License | Done | Proprietary notice, all rights reserved by the project team |
@@ -26,7 +26,7 @@ why.
 | --- | --- | --- |
 | Decoy profiles (SSH, HTTP, DB, telnet) | Done | `app/deception/profiles.py` |
 | HTTP decoy service | Done | `http_decoy.py`, exercised over HTTP |
-| Cowrie log adapter | Done | fixture-tested against representative JSON |
+| Cowrie log adapter | Done | ran against a real Cowrie container; offset persisted outside the read-only log volume |
 | Password capture as hashes | Done | `test_deception.py` |
 | Uncertainty-directed investigation | Partial | real before/after records, but the *benefit* is measured with a simulated observation in the benchmark; field measurement pending |
 | Automatic decoy rotation from attacker tooling | Not done | the investigation mutates profile choice and records it, but there is no live adaptive server reconfiguration |
@@ -72,8 +72,8 @@ why.
 
 | Item | Status | Evidence |
 | --- | --- | --- |
-| Dockerfile and Compose stack | Partial | written and statically reviewed; Docker unavailable on the build host, so not executed |
-| PostgreSQL production path | Partial | schema portable, driver included; not executed here |
+| Dockerfile and Compose stack | Done | built and run on this host; API healthy as non-root; restart, backup/restore and database-outage behaviour verified |
+| PostgreSQL production path | Done | migrations, all module flows and recovery verified against PostgreSQL 16 |
 | Backup, restore, retention, runbooks | Done | `docs/07-operations.md` |
 | Health and readiness probes | Done | `/health`, `/health/ready` |
 | CI pipeline | Not done | no CI configuration in the repository |

@@ -31,7 +31,7 @@ services:
       - "127.0.0.1:8000:8000"
     volumes:
       - app-data:/data
-      - ./data/cowrie:/var/log/cowrie:ro
+      - cowrie-logs:/var/log/cowrie:ro
     networks: [backend, decoy]
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health/ready', timeout=4).status == 200 else 1)\""]
@@ -48,7 +48,7 @@ services:
       - "2222:2222"
     volumes:
       - ./deploy/cowrie/cowrie.cfg:/cowrie/cowrie-git/etc/cowrie.cfg:ro
-      - ./data/cowrie:/cowrie/cowrie-git/var/log/cowrie
+      - cowrie-logs:/cowrie/cowrie-git/var/log/cowrie
     networks: [decoy]
 
 networks:
@@ -59,3 +59,4 @@ networks:
 volumes:
   db-data:
   app-data:
+  cowrie-logs:
