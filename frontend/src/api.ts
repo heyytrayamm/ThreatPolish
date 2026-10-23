@@ -72,6 +72,22 @@ export const api = {
       body: JSON.stringify({ email, password }),
     }),
   me: () => request<User & { via: string }>("/api/v1/auth/me"),
+  changePassword: (current_password: string, new_password: string) =>
+    request<{
+      status: string;
+      access_token: string;
+      token_type: string;
+      expires_at: string;
+      other_sessions_revoked: boolean;
+    }>("/api/v1/auth/password", {
+      method: "POST",
+      body: JSON.stringify({ current_password, new_password }),
+    }),
+  revokeSessions: (userId: string) =>
+    request<{ status: string; user_id: string; session_version: number }>(
+      `/api/v1/auth/users/${userId}/revoke-sessions`,
+      { method: "POST" },
+    ),
   summary: (hours: number) =>
     request<{
       total: number;

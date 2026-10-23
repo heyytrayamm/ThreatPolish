@@ -20,6 +20,8 @@ Initial release.
 - Digital-asset risk with a provider adapter, provenance and freshness.
 - Policy-gated response engine with approval, expiry, rollback and audit.
 - React/TypeScript analyst dashboard with a strict Content-Security-Policy.
+- Account page for password rotation, and an administrator action that revokes
+  every session of an account without changing its password.
 - Docker/Compose deployment, CLI, schema migrations, backup and recovery
   runbooks.
 - CI pipeline covering lint, the full suite on SQLite and PostgreSQL 16, the
@@ -82,7 +84,8 @@ Initial release.
 - The dashboard CSP is sent by the API and scoped to dashboard responses.
 - Agent tokens are stored as hashes and can be revoked.
 - Bearer tokens are bound to an account session version that is checked on
-  every request; rotating a password invalidates tokens already issued.
+  every request; rotating a password invalidates tokens already issued, and an
+  administrator can revoke an account's sessions when theft is suspected.
 - Untrusted numeric and Unicode input is bounded at the event and provider
   boundaries before it reaches storage or a JSON response.
 - Login endpoints enforce both account-level and address-level attempt budgets.

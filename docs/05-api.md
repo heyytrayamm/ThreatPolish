@@ -28,6 +28,7 @@ recorded in the audit log.
 | GET | `/auth/me` | any | Current identity and role |
 | POST | `/auth/password` | any | Rotate own password; revokes every other session and returns a replacement token |
 | GET/POST | `/auth/users` | admin | List and create users |
+| POST | `/auth/users/{id}/revoke-sessions` | admin | Invalidate every token issued to an account |
 | GET/POST/DELETE | `/auth/tokens` | admin | Service token management |
 | GET | `/auth/roles` | any | Role capability matrix |
 | POST | `/ingest/events` | sensor | Batch ingestion |

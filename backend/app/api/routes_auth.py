@@ -14,6 +14,7 @@ from ..auth.users import (
     list_agent_tokens,
     list_users,
     revoke_agent_token,
+    revoke_sessions,
 )
 from ..core.audit import audit_standalone
 from ..core.config import get_settings
@@ -150,6 +151,22 @@ def update_password(
         "expires_at": expires_at.isoformat(),
         "other_sessions_revoked": True,
     }
+
+
+@router.post("/users/{user_id}/revoke-sessions")
+def revoke_user_sessions(
+    user_id: str, principal: Principal = Depends(require("users:manage"))
+) -> dict[str, object]:
+    version = revoke_sessions(user_id)
+    audit_standalone(
+        action="auth.sessions.revoke",
+        actor_id=principal.user_id,
+        actor_role=principal.role,
+        object_type="user",
+        object_id=user_id,
+        detail={"session_version": version},
+    )
+    return {"status": "revoked", "user_id": user_id, "session_version": version}
 
 
 @router.get("/tokens")

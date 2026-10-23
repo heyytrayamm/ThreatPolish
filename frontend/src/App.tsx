@@ -9,8 +9,18 @@ import Findings from "./pages/Findings";
 import Crypto from "./pages/Crypto";
 import Responses from "./pages/Responses";
 import Administration from "./pages/Administration";
+import Account from "./pages/Account";
 
-type View = "overview" | "events" | "campaigns" | "deception" | "findings" | "crypto" | "responses" | "admin";
+type View =
+  | "overview"
+  | "events"
+  | "campaigns"
+  | "deception"
+  | "findings"
+  | "crypto"
+  | "responses"
+  | "admin"
+  | "account";
 
 const NAV: { key: View; label: string }[] = [
   { key: "overview", label: "Overview" },
@@ -21,6 +31,7 @@ const NAV: { key: View; label: string }[] = [
   { key: "crypto", label: "Asset risk" },
   { key: "responses", label: "Responses" },
   { key: "admin", label: "Administration" },
+  { key: "account", label: "Account" },
 ];
 
 export default function App() {
@@ -175,6 +186,7 @@ export default function App() {
         {view === "crypto" && <Crypto user={user} />}
         {view === "responses" && <Responses user={user} />}
         {view === "admin" && <Administration />}
+        {view === "account" && <Account user={user} />}
       </main>
     </div>
   );

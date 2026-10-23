@@ -7,6 +7,7 @@ import re
 from typing import Any
 
 from sqlalchemy import func, select
+from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError
 
 from ..core.errors import AuthenticationFailure, Conflict, NotFound, ValidationFailure
@@ -109,6 +110,19 @@ def authenticate(email: str, password: str) -> dict[str, Any]:
     return _public_user({**row, "last_login_at": iso(utcnow())})
 
 
+def _increment_session_version(conn: Connection, user_id: str) -> int:
+    """Bump the account's session version inside the caller's transaction."""
+    result = conn.execute(
+        users.update()
+        .where(users.c.id == user_id)
+        .values(token_version=users.c.token_version + 1)
+    )
+    if result.rowcount == 0:
+        raise NotFound("user not found")
+    row = conn.execute(select(users.c.token_version).where(users.c.id == user_id)).fetchone()
+    return int(row[0]) if row else 0
+
+
 def change_password(user_id: str, new_password: str) -> int:
     """Store a new password and revoke every token issued before it.
 
@@ -121,17 +135,21 @@ def change_password(user_id: str, new_password: str) -> int:
         result = conn.execute(
             users.update()
             .where(users.c.id == user_id)
-            .values(
-                password_hash=hash_password(new_password),
-                token_version=users.c.token_version + 1,
-            )
+            .values(password_hash=hash_password(new_password))
         )
         if result.rowcount == 0:
             raise NotFound("user not found")
-        row = conn.execute(
-            select(users.c.token_version).where(users.c.id == user_id)
-        ).fetchone()
-    return int(row[0]) if row else 0
+        return _increment_session_version(conn, user_id)
+
+
+def revoke_sessions(user_id: str) -> int:
+    """Invalidate every token issued to an account so far, without a password change.
+
+    Used when a token is suspected stolen: the account keeps its password and
+    the next sign-in issues a token carrying the new session version.
+    """
+    with connection() as conn:
+        return _increment_session_version(conn, user_id)
 
 
 # --------------------------------------------------------------------------- #

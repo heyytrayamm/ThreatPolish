@@ -31,7 +31,7 @@ the SQLite path. CI runs both engines on every push and pull request.
 
 ## Measured behaviour
 
-Latest full run: **100 passed on SQLite and 100 passed on PostgreSQL 16.2**
+Latest full run: **102 passed on SQLite and 102 passed on PostgreSQL 16.2**
 (a temporary PostgreSQL 16 server on the development host). CI runs the same
 suite against both engines.
 Static checks: the frontend builds with `tsc -b` and `vite build`; the backend

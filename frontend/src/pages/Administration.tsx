@@ -1,11 +1,30 @@
+import { useState } from "react";
 import { api } from "../api";
 import { Card, Empty, ErrorBox, formatTime, Loading, useAsync } from "../ui";
 
 export default function Administration() {
+  const [tick, setTick] = useState(0);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [busyUser, setBusyUser] = useState<string | null>(null);
+
   const sources = useAsync(() => api.sources(), []);
   const quarantine = useAsync(() => api.quarantine(), []);
-  const users = useAsync(() => api.users(), []);
-  const audit = useAsync(() => api.audit(), []);
+  const users = useAsync(() => api.users(), [tick]);
+  const audit = useAsync(() => api.audit(), [tick]);
+
+  async function revoke(userId: string, email: string) {
+    setBusyUser(userId);
+    setNotice(null);
+    try {
+      await api.revokeSessions(userId);
+      setNotice(`Every session for ${email} was revoked. The account keeps its password.`);
+      setTick((value) => value + 1);
+    } catch (error) {
+      setNotice((error as Error).message);
+    } finally {
+      setBusyUser(null);
+    }
+  }
 
   return (
     <div className="page">
@@ -17,6 +36,7 @@ export default function Administration() {
       </header>
 
       <ErrorBox message={sources.error ?? quarantine.error ?? users.error ?? audit.error} />
+      {notice && <div className="notice">{notice}</div>}
 
       <div className="grid two">
         <Card title="Source health">
@@ -43,13 +63,23 @@ export default function Administration() {
           {users.loading && <Loading />}
           {users.data && (
             <table>
-              <thead><tr><th>Name</th><th>Email</th><th>Role</th></tr></thead>
+              <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Sessions</th></tr></thead>
               <tbody>
                 {users.data.users.map((user) => (
                   <tr key={user.id}>
                     <td>{user.name}</td>
                     <td>{user.email}</td>
                     <td>{user.role}</td>
+                    <td>
+                      <button
+                        type="button"
+                        className="secondary small"
+                        disabled={busyUser === user.id}
+                        onClick={() => revoke(user.id, user.email)}
+                      >
+                        {busyUser === user.id ? "Revoking…" : "Revoke sessions"}
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>

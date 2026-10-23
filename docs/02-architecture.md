@@ -131,7 +131,10 @@ rows, so the limit holds even when two requests are planned at the same moment.
 - Bearer tokens carry a per-account session version that is checked on every
   request. Changing a password increments the version, which revokes all
   tokens issued earlier; the caller receives a replacement token so the
-  session performing the change continues without a re-login.
+  session performing the change continues without a re-login. An administrator
+  can increment the same version through
+  `POST /auth/users/{id}/revoke-sessions` when a token is suspected stolen,
+  leaving the password unchanged.
 - Decoy listeners share the database but not an event loop or request context
   with the API. The HTTP decoy writes events directly and spools to disk if the
   pipeline is unavailable; Cowrie logs are tailed with a persisted offset.

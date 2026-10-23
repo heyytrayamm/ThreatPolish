@@ -207,6 +207,68 @@ def test_login_spraying_across_accounts_is_limited_by_address(client):
     assert blocked.headers.get("Retry-After")
 
 
+def test_an_admin_can_revoke_every_session_of_an_account(client, admin_headers):
+    """Suspected theft must be answerable without waiting for token expiry."""
+    from app.auth.users import create_user
+
+    create_user(
+        email="stolen@threatpolish.test",
+        name="Stolen Session",
+        role="analyst",
+        password="stolen-password-123",
+    )
+    credentials = {"email": "stolen@threatpolish.test", "password": "stolen-password-123"}
+    tokens = [
+        client.post("/api/v1/auth/login", json=credentials).json()["access_token"]
+        for _ in range(2)
+    ]
+    for token in tokens:
+        assert client.get(
+            "/api/v1/events", headers={"Authorization": f"Bearer {token}"}
+        ).status_code == 200
+
+    user_id = client.get(
+        "/api/v1/auth/me", headers={"Authorization": f"Bearer {tokens[0]}"}
+    ).json()["id"]
+    revoked = client.post(
+        f"/api/v1/auth/users/{user_id}/revoke-sessions", headers=admin_headers
+    )
+    assert revoked.status_code == 200, revoked.text
+    assert revoked.json()["status"] == "revoked"
+
+    for token in tokens:
+        response = client.get(
+            "/api/v1/events", headers={"Authorization": f"Bearer {token}"}
+        )
+        assert response.status_code == 401, response.text
+
+    # The password is untouched: the analyst signs in again and carries on.
+    fresh = client.post("/api/v1/auth/login", json=credentials)
+    assert fresh.status_code == 200, fresh.text
+    assert client.get(
+        "/api/v1/events",
+        headers={"Authorization": f"Bearer {fresh.json()['access_token']}"},
+    ).status_code == 200
+
+    audit = client.get("/api/v1/audit?limit=100", headers=admin_headers).json()["items"]
+    assert any(entry["action"] == "auth.sessions.revoke" for entry in audit)
+
+
+def test_session_revocation_is_admin_only_and_reports_unknown_accounts(
+    client, viewer_headers, admin_headers
+):
+    viewer_id = client.get("/api/v1/auth/me", headers=viewer_headers).json()["id"]
+    denied = client.post(
+        f"/api/v1/auth/users/{viewer_id}/revoke-sessions", headers=viewer_headers
+    )
+    assert denied.status_code == 403, denied.text
+
+    missing = client.post(
+        "/api/v1/auth/users/usr_does_not_exist/revoke-sessions", headers=admin_headers
+    )
+    assert missing.status_code == 404, missing.text
+
+
 def test_a_token_without_a_session_version_is_refused():
     """Tokens minted before revocation support must not be trusted."""
     import pytest
