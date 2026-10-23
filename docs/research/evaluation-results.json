@@ -1,0 +1,833 @@
+{
+  "generated_at": "2026-10-23T09:51:36.116699+00:00",
+  "runs": [
+    {
+      "adaptive": {
+        "ambiguous_pairs": 199,
+        "candidate_components": 7,
+        "components_investigated": 7,
+        "note": "Additional observation is simulated by appending one decoy interaction to sessions in the largest uncertain clusters only. Production adaptation records real decoy traffic and cannot create evidence.",
+        "pairs_recomputed": 1953,
+        "resolved_correctly": 5,
+        "resolved_incorrectly": 17,
+        "sessions_enriched": 63,
+        "unchanged": 1931
+      },
+      "algorithm_version": "corr-1.1.0",
+      "campaign_analysis": {
+        "campaign_recall": 0.6667,
+        "cluster_purity": 1.0,
+        "groups_recovered_exactly": 8,
+        "note": "Recovery requires every member of a true group to appear in exactly one predicted cluster (no fragmentation, no contamination).",
+        "predicted_clusters": 10,
+        "pure_clusters": 10,
+        "true_multi_session_groups": 12
+      },
+      "dataset": {
+        "benign_sessions": 12,
+        "campaign_groups": 10,
+        "delayed_sessions": 3,
+        "generic_groups": 2,
+        "hard_subset": "Groups prefixed 'hard-' are excluded from headline metrics.",
+        "incomplete_groups": 2,
+        "note": "Synthetic benchmark; ground truth is scenario membership, not actor identity. No public attack telemetry is redistributed.",
+        "same_ip_pairs": 4,
+        "seed": 7,
+        "sessions_per_group": 3,
+        "synthetic": true
+      },
+      "hard_subset": {
+        "note": "Generic scanner groups with no distinguishing artefact. Labels are not recoverable from the available telemetry; reported separately so they do not inflate or deflate the headline numbers.",
+        "pairs": 15,
+        "results": {
+          "ablation_no_intel": {
+            "accuracy": 0.4,
+            "f1": 0.5714,
+            "false_negative_rate": 0.0,
+            "false_positive_rate": 1.0,
+            "fn": 0,
+            "fp": 9,
+            "precision": 0.4,
+            "recall": 1.0,
+            "tn": 0,
+            "tp": 6
+          },
+          "ablation_no_timing": {
+            "accuracy": 0.4,
+            "f1": 0.5714,
+            "false_negative_rate": 0.0,
+            "false_positive_rate": 1.0,
+            "fn": 0,
+            "fp": 9,
+            "precision": 0.4,
+            "recall": 1.0,
+            "tn": 0,
+            "tp": 6
+          },
+          "ablation_no_toolchain": {
+            "accuracy": 0.4,
+            "f1": 0.5714,
+            "false_negative_rate": 0.0,
+            "false_positive_rate": 1.0,
+            "fn": 0,
+            "fp": 9,
+            "precision": 0.4,
+            "recall": 1.0,
+            "tn": 0,
+            "tp": 6
+          },
+          "ip_only": {
+            "accuracy": 0.6,
+            "f1": 0.0,
+            "false_negative_rate": 1.0,
+            "false_positive_rate": 0.0,
+            "fn": 6,
+            "fp": 0,
+            "precision": 0.0,
+            "recall": 0.0,
+            "tn": 9,
+            "tp": 0
+          },
+          "proposed": {
+            "accuracy": 0.4,
+            "f1": 0.5714,
+            "false_negative_rate": 0.0,
+            "false_positive_rate": 1.0,
+            "fn": 0,
+            "fp": 9,
+            "precision": 0.4,
+            "recall": 1.0,
+            "tn": 0,
+            "tp": 6
+          },
+          "rule_based": {
+            "accuracy": 0.4,
+            "f1": 0.5714,
+            "false_negative_rate": 0.0,
+            "false_positive_rate": 1.0,
+            "fn": 0,
+            "fp": 9,
+            "precision": 0.4,
+            "recall": 1.0,
+            "tn": 0,
+            "tp": 6
+          }
+        },
+        "sessions": 6
+      },
+      "limitations": [
+        "Synthetic telemetry; absolute scores will differ on production traffic.",
+        "Ground truth is scenario membership, not actor identity.",
+        "Thresholds were chosen a priori and not tuned on this benchmark.",
+        "The confidence index is monotone but has not been probability-calibrated.",
+        "Adaptive observation is simulated; it cannot create evidence, only add observations.",
+        "No train/test split is reported because the method performs no learning.",
+        "Time-to-detection is not measured in this batch benchmark."
+      ],
+      "negatives": 1915,
+      "pairs": 1953,
+      "positives": 38,
+      "resources": {
+        "method_seconds": {
+          "ablation_no_intel": 1.208,
+          "ablation_no_timing": 1.09,
+          "ablation_no_toolchain": 1.072,
+          "ip_only": 0.003,
+          "proposed": 1.432,
+          "proposed_adaptive": 1.365,
+          "rule_based": 0.004
+        },
+        "peak_memory_mb": 16.39,
+        "sessions_per_second": 10.0,
+        "total_seconds": 6.288
+      },
+      "results": {
+        "ablation_no_intel": {
+          "accuracy": 0.9969,
+          "f1": 0.9153,
+          "false_negative_rate": 0.1562,
+          "false_positive_rate": 0.0,
+          "fn": 5,
+          "fp": 0,
+          "precision": 1.0,
+          "recall": 0.8438,
+          "tn": 1564,
+          "tp": 27
+        },
+        "ablation_no_timing": {
+          "accuracy": 0.9956,
+          "f1": 0.8772,
+          "false_negative_rate": 0.2188,
+          "false_positive_rate": 0.0,
+          "fn": 7,
+          "fp": 0,
+          "precision": 1.0,
+          "recall": 0.7812,
+          "tn": 1564,
+          "tp": 25
+        },
+        "ablation_no_toolchain": {
+          "accuracy": 0.99,
+          "f1": 0.7576,
+          "false_negative_rate": 0.2188,
+          "false_positive_rate": 0.0058,
+          "fn": 7,
+          "fp": 9,
+          "precision": 0.7353,
+          "recall": 0.7812,
+          "tn": 1555,
+          "tp": 25
+        },
+        "ip_only": {
+          "accuracy": 0.9774,
+          "f1": 0.0,
+          "false_negative_rate": 1.0,
+          "false_positive_rate": 0.0026,
+          "fn": 32,
+          "fp": 4,
+          "precision": 0.0,
+          "recall": 0.0,
+          "tn": 1560,
+          "tp": 0
+        },
+        "proposed": {
+          "accuracy": 0.9956,
+          "f1": 0.8772,
+          "false_negative_rate": 0.2188,
+          "false_positive_rate": 0.0,
+          "fn": 7,
+          "fp": 0,
+          "precision": 1.0,
+          "recall": 0.7812,
+          "tn": 1564,
+          "tp": 25
+        },
+        "proposed_adaptive": {
+          "accuracy": 0.9881,
+          "f1": 0.7595,
+          "false_negative_rate": 0.0625,
+          "false_positive_rate": 0.0109,
+          "fn": 2,
+          "fp": 17,
+          "precision": 0.6383,
+          "recall": 0.9375,
+          "tn": 1547,
+          "tp": 30
+        },
+        "rule_based": {
+          "accuracy": 0.7331,
+          "f1": 0.1235,
+          "false_negative_rate": 0.0625,
+          "false_positive_rate": 0.2711,
+          "fn": 2,
+          "fp": 424,
+          "precision": 0.0661,
+          "recall": 0.9375,
+          "tn": 1140,
+          "tp": 30
+        }
+      },
+      "seed": 7,
+      "sessions": 63,
+      "subsets": {
+        "benign": {
+          "accuracy": 1.0,
+          "f1": 0.0,
+          "false_negative_rate": 0.0,
+          "false_positive_rate": 0.0,
+          "fn": 0,
+          "fp": 0,
+          "pairs": 735,
+          "positives": 0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "tn": 735,
+          "tp": 0
+        },
+        "cross_campaign": {
+          "accuracy": 1.0,
+          "f1": 0.0,
+          "false_negative_rate": 0.0,
+          "false_positive_rate": 0.0,
+          "fn": 0,
+          "fp": 0,
+          "pairs": 1035,
+          "positives": 0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "tn": 1035,
+          "tp": 0
+        },
+        "incomplete": {
+          "accuracy": 0.9474,
+          "f1": 0.0,
+          "false_negative_rate": 1.0,
+          "false_positive_rate": 0.0,
+          "fn": 2,
+          "fp": 0,
+          "pairs": 38,
+          "positives": 2,
+          "precision": 0.0,
+          "recall": 0.0,
+          "tn": 36,
+          "tp": 0
+        },
+        "same_campaign": {
+          "accuracy": 0.8333,
+          "f1": 0.9091,
+          "false_negative_rate": 0.1667,
+          "false_positive_rate": 0.0,
+          "fn": 5,
+          "fp": 0,
+          "pairs": 30,
+          "positives": 30,
+          "precision": 1.0,
+          "recall": 0.8333,
+          "tn": 0,
+          "tp": 25
+        },
+        "same_ip": {
+          "accuracy": 1.0,
+          "f1": 0.0,
+          "false_negative_rate": 0.0,
+          "false_positive_rate": 0.0,
+          "fn": 0,
+          "fp": 0,
+          "pairs": 28,
+          "positives": 0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "tn": 28,
+          "tp": 0
+        }
+      }
+    },
+    {
+      "adaptive": {
+        "ambiguous_pairs": 188,
+        "candidate_components": 6,
+        "components_investigated": 6,
+        "note": "Additional observation is simulated by appending one decoy interaction to sessions in the largest uncertain clusters only. Production adaptation records real decoy traffic and cannot create evidence.",
+        "pairs_recomputed": 1711,
+        "resolved_correctly": 10,
+        "resolved_incorrectly": 16,
+        "sessions_enriched": 59,
+        "unchanged": 1685
+      },
+      "algorithm_version": "corr-1.1.0",
+      "campaign_analysis": {
+        "campaign_recall": 0.3333,
+        "cluster_purity": 1.0,
+        "groups_recovered_exactly": 4,
+        "note": "Recovery requires every member of a true group to appear in exactly one predicted cluster (no fragmentation, no contamination).",
+        "predicted_clusters": 10,
+        "pure_clusters": 10,
+        "true_multi_session_groups": 12
+      },
+      "dataset": {
+        "benign_sessions": 12,
+        "campaign_groups": 10,
+        "delayed_sessions": 3,
+        "generic_groups": 2,
+        "hard_subset": "Groups prefixed 'hard-' are excluded from headline metrics.",
+        "incomplete_groups": 2,
+        "note": "Synthetic benchmark; ground truth is scenario membership, not actor identity. No public attack telemetry is redistributed.",
+        "same_ip_pairs": 4,
+        "seed": 2026,
+        "sessions_per_group": 3,
+        "synthetic": true
+      },
+      "hard_subset": {
+        "note": "Generic scanner groups with no distinguishing artefact. Labels are not recoverable from the available telemetry; reported separately so they do not inflate or deflate the headline numbers.",
+        "pairs": 15,
+        "results": {
+          "ablation_no_intel": {
+            "accuracy": 0.4,
+            "f1": 0.5714,
+            "false_negative_rate": 0.0,
+            "false_positive_rate": 1.0,
+            "fn": 0,
+            "fp": 9,
+            "precision": 0.4,
+            "recall": 1.0,
+            "tn": 0,
+            "tp": 6
+          },
+          "ablation_no_timing": {
+            "accuracy": 0.4,
+            "f1": 0.5714,
+            "false_negative_rate": 0.0,
+            "false_positive_rate": 1.0,
+            "fn": 0,
+            "fp": 9,
+            "precision": 0.4,
+            "recall": 1.0,
+            "tn": 0,
+            "tp": 6
+          },
+          "ablation_no_toolchain": {
+            "accuracy": 0.4,
+            "f1": 0.5714,
+            "false_negative_rate": 0.0,
+            "false_positive_rate": 1.0,
+            "fn": 0,
+            "fp": 9,
+            "precision": 0.4,
+            "recall": 1.0,
+            "tn": 0,
+            "tp": 6
+          },
+          "ip_only": {
+            "accuracy": 0.6,
+            "f1": 0.0,
+            "false_negative_rate": 1.0,
+            "false_positive_rate": 0.0,
+            "fn": 6,
+            "fp": 0,
+            "precision": 0.0,
+            "recall": 0.0,
+            "tn": 9,
+            "tp": 0
+          },
+          "proposed": {
+            "accuracy": 0.4,
+            "f1": 0.5714,
+            "false_negative_rate": 0.0,
+            "false_positive_rate": 1.0,
+            "fn": 0,
+            "fp": 9,
+            "precision": 0.4,
+            "recall": 1.0,
+            "tn": 0,
+            "tp": 6
+          },
+          "rule_based": {
+            "accuracy": 0.4,
+            "f1": 0.5714,
+            "false_negative_rate": 0.0,
+            "false_positive_rate": 1.0,
+            "fn": 0,
+            "fp": 9,
+            "precision": 0.4,
+            "recall": 1.0,
+            "tn": 0,
+            "tp": 6
+          }
+        },
+        "sessions": 6
+      },
+      "limitations": [
+        "Synthetic telemetry; absolute scores will differ on production traffic.",
+        "Ground truth is scenario membership, not actor identity.",
+        "Thresholds were chosen a priori and not tuned on this benchmark.",
+        "The confidence index is monotone but has not been probability-calibrated.",
+        "Adaptive observation is simulated; it cannot create evidence, only add observations.",
+        "No train/test split is reported because the method performs no learning.",
+        "Time-to-detection is not measured in this batch benchmark."
+      ],
+      "negatives": 1915,
+      "pairs": 1953,
+      "positives": 38,
+      "resources": {
+        "method_seconds": {
+          "ablation_no_intel": 1.129,
+          "ablation_no_timing": 1.084,
+          "ablation_no_toolchain": 1.122,
+          "ip_only": 0.003,
+          "proposed": 1.288,
+          "proposed_adaptive": 1.222,
+          "rule_based": 0.004
+        },
+        "peak_memory_mb": 16.28,
+        "sessions_per_second": 10.6,
+        "total_seconds": 5.965
+      },
+      "results": {
+        "ablation_no_intel": {
+          "accuracy": 0.9931,
+          "f1": 0.7925,
+          "false_negative_rate": 0.3438,
+          "false_positive_rate": 0.0,
+          "fn": 11,
+          "fp": 0,
+          "precision": 1.0,
+          "recall": 0.6562,
+          "tn": 1564,
+          "tp": 21
+        },
+        "ablation_no_timing": {
+          "accuracy": 0.9912,
+          "f1": 0.72,
+          "false_negative_rate": 0.4375,
+          "false_positive_rate": 0.0,
+          "fn": 14,
+          "fp": 0,
+          "precision": 1.0,
+          "recall": 0.5625,
+          "tn": 1564,
+          "tp": 18
+        },
+        "ablation_no_toolchain": {
+          "accuracy": 0.985,
+          "f1": 0.5714,
+          "false_negative_rate": 0.5,
+          "false_positive_rate": 0.0051,
+          "fn": 16,
+          "fp": 8,
+          "precision": 0.6667,
+          "recall": 0.5,
+          "tn": 1556,
+          "tp": 16
+        },
+        "ip_only": {
+          "accuracy": 0.9774,
+          "f1": 0.0,
+          "false_negative_rate": 1.0,
+          "false_positive_rate": 0.0026,
+          "fn": 32,
+          "fp": 4,
+          "precision": 0.0,
+          "recall": 0.0,
+          "tn": 1560,
+          "tp": 0
+        },
+        "proposed": {
+          "accuracy": 0.9912,
+          "f1": 0.72,
+          "false_negative_rate": 0.4375,
+          "false_positive_rate": 0.0,
+          "fn": 14,
+          "fp": 0,
+          "precision": 1.0,
+          "recall": 0.5625,
+          "tn": 1564,
+          "tp": 18
+        },
+        "proposed_adaptive": {
+          "accuracy": 0.9875,
+          "f1": 0.7368,
+          "false_negative_rate": 0.125,
+          "false_positive_rate": 0.0102,
+          "fn": 4,
+          "fp": 16,
+          "precision": 0.6364,
+          "recall": 0.875,
+          "tn": 1548,
+          "tp": 28
+        },
+        "rule_based": {
+          "accuracy": 0.7356,
+          "f1": 0.1245,
+          "false_negative_rate": 0.0625,
+          "false_positive_rate": 0.2685,
+          "fn": 2,
+          "fp": 420,
+          "precision": 0.0667,
+          "recall": 0.9375,
+          "tn": 1144,
+          "tp": 30
+        }
+      },
+      "seed": 2026,
+      "sessions": 63,
+      "subsets": {
+        "benign": {
+          "accuracy": 1.0,
+          "f1": 0.0,
+          "false_negative_rate": 0.0,
+          "false_positive_rate": 0.0,
+          "fn": 0,
+          "fp": 0,
+          "pairs": 735,
+          "positives": 0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "tn": 735,
+          "tp": 0
+        },
+        "cross_campaign": {
+          "accuracy": 1.0,
+          "f1": 0.0,
+          "false_negative_rate": 0.0,
+          "false_positive_rate": 0.0,
+          "fn": 0,
+          "fp": 0,
+          "pairs": 1035,
+          "positives": 0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "tn": 1035,
+          "tp": 0
+        },
+        "incomplete": {
+          "accuracy": 0.9474,
+          "f1": 0.0,
+          "false_negative_rate": 1.0,
+          "false_positive_rate": 0.0,
+          "fn": 2,
+          "fp": 0,
+          "pairs": 38,
+          "positives": 2,
+          "precision": 0.0,
+          "recall": 0.0,
+          "tn": 36,
+          "tp": 0
+        },
+        "same_campaign": {
+          "accuracy": 0.6,
+          "f1": 0.75,
+          "false_negative_rate": 0.4,
+          "false_positive_rate": 0.0,
+          "fn": 12,
+          "fp": 0,
+          "pairs": 30,
+          "positives": 30,
+          "precision": 1.0,
+          "recall": 0.6,
+          "tn": 0,
+          "tp": 18
+        },
+        "same_ip": {
+          "accuracy": 1.0,
+          "f1": 0.0,
+          "false_negative_rate": 0.0,
+          "false_positive_rate": 0.0,
+          "fn": 0,
+          "fp": 0,
+          "pairs": 28,
+          "positives": 0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "tn": 28,
+          "tp": 0
+        }
+      }
+    }
+  ],
+  "volume_run": {
+    "adaptive": {
+      "ambiguous_pairs": 1423,
+      "candidate_components": 8,
+      "components_investigated": 8,
+      "note": "Additional observation is simulated by appending one decoy interaction to sessions in the largest uncertain clusters only. Production adaptation records real decoy traffic and cannot create evidence.",
+      "pairs_recomputed": 12246,
+      "resolved_correctly": 9,
+      "resolved_incorrectly": 28,
+      "sessions_enriched": 157,
+      "unchanged": 12209
+    },
+    "algorithm_version": "corr-1.1.0",
+    "campaign_analysis": {
+      "campaign_recall": 0.7619,
+      "cluster_purity": 1.0,
+      "groups_recovered_exactly": 32,
+      "note": "Recovery requires every member of a true group to appear in exactly one predicted cluster (no fragmentation, no contamination).",
+      "predicted_clusters": 39,
+      "pure_clusters": 39,
+      "true_multi_session_groups": 42
+    },
+    "dataset": {
+      "benign_sessions": 24,
+      "campaign_groups": 40,
+      "delayed_sessions": 3,
+      "generic_groups": 2,
+      "hard_subset": "Groups prefixed 'hard-' are excluded from headline metrics.",
+      "incomplete_groups": 2,
+      "note": "Synthetic benchmark; ground truth is scenario membership, not actor identity. No public attack telemetry is redistributed.",
+      "same_ip_pairs": 4,
+      "seed": 99,
+      "sessions_per_group": 3,
+      "synthetic": true
+    },
+    "hard_subset": {
+      "note": "Generic scanner groups with no distinguishing artefact. Labels are not recoverable from the available telemetry; reported separately so they do not inflate or deflate the headline numbers.",
+      "pairs": 15,
+      "results": {
+        "ip_only": {
+          "accuracy": 0.6,
+          "f1": 0.0,
+          "false_negative_rate": 1.0,
+          "false_positive_rate": 0.0,
+          "fn": 6,
+          "fp": 0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "tn": 9,
+          "tp": 0
+        },
+        "proposed": {
+          "accuracy": 0.4,
+          "f1": 0.5714,
+          "false_negative_rate": 0.0,
+          "false_positive_rate": 1.0,
+          "fn": 0,
+          "fp": 9,
+          "precision": 0.4,
+          "recall": 1.0,
+          "tn": 0,
+          "tp": 6
+        },
+        "rule_based": {
+          "accuracy": 0.4,
+          "f1": 0.5714,
+          "false_negative_rate": 0.0,
+          "false_positive_rate": 1.0,
+          "fn": 0,
+          "fp": 9,
+          "precision": 0.4,
+          "recall": 1.0,
+          "tn": 0,
+          "tp": 6
+        }
+      },
+      "sessions": 6
+    },
+    "limitations": [
+      "Synthetic telemetry; absolute scores will differ on production traffic.",
+      "Ground truth is scenario membership, not actor identity.",
+      "Thresholds were chosen a priori and not tuned on this benchmark.",
+      "The confidence index is monotone but has not been probability-calibrated.",
+      "Adaptive observation is simulated; it cannot create evidence, only add observations.",
+      "No train/test split is reported because the method performs no learning.",
+      "Time-to-detection is not measured in this batch benchmark."
+    ],
+    "negatives": 13402,
+    "pairs": 13530,
+    "positives": 128,
+    "resources": {
+      "method_seconds": {
+        "ip_only": 0.024,
+        "proposed": 9.679,
+        "proposed_adaptive": 8.531,
+        "rule_based": 0.038
+      },
+      "peak_memory_mb": 111.83,
+      "sessions_per_second": 8.8,
+      "total_seconds": 18.68
+    },
+    "results": {
+      "ip_only": {
+        "accuracy": 0.99,
+        "f1": 0.0,
+        "false_negative_rate": 1.0,
+        "false_positive_rate": 0.0003,
+        "fn": 122,
+        "fp": 4,
+        "precision": 0.0,
+        "recall": 0.0,
+        "tn": 12435,
+        "tp": 0
+      },
+      "proposed": {
+        "accuracy": 0.9984,
+        "f1": 0.9107,
+        "false_negative_rate": 0.1639,
+        "false_positive_rate": 0.0,
+        "fn": 20,
+        "fp": 0,
+        "precision": 1.0,
+        "recall": 0.8361,
+        "tn": 12439,
+        "tp": 102
+      },
+      "proposed_adaptive": {
+        "accuracy": 0.9969,
+        "f1": 0.8506,
+        "false_negative_rate": 0.0902,
+        "false_positive_rate": 0.0023,
+        "fn": 11,
+        "fp": 28,
+        "precision": 0.7986,
+        "recall": 0.9098,
+        "tn": 12411,
+        "tp": 111
+      },
+      "rule_based": {
+        "accuracy": 0.4356,
+        "f1": 0.0327,
+        "false_negative_rate": 0.0164,
+        "false_positive_rate": 0.5697,
+        "fn": 2,
+        "fp": 7087,
+        "precision": 0.0167,
+        "recall": 0.9836,
+        "tn": 5352,
+        "tp": 120
+      }
+    },
+    "seed": 99,
+    "sessions": 165,
+    "subsets": {
+      "benign": {
+        "accuracy": 1.0,
+        "f1": 0.0,
+        "false_negative_rate": 0.0,
+        "false_positive_rate": 0.0,
+        "fn": 0,
+        "fp": 0,
+        "pairs": 3717,
+        "positives": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "tn": 3717,
+        "tp": 0
+      },
+      "cross_campaign": {
+        "accuracy": 1.0,
+        "f1": 0.0,
+        "false_negative_rate": 0.0,
+        "false_positive_rate": 0.0,
+        "fn": 0,
+        "fp": 0,
+        "pairs": 9540,
+        "positives": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "tn": 9540,
+        "tp": 0
+      },
+      "incomplete": {
+        "accuracy": 0.9474,
+        "f1": 0.0,
+        "false_negative_rate": 1.0,
+        "false_positive_rate": 0.0,
+        "fn": 2,
+        "fp": 0,
+        "pairs": 38,
+        "positives": 2,
+        "precision": 0.0,
+        "recall": 0.0,
+        "tn": 36,
+        "tp": 0
+      },
+      "same_campaign": {
+        "accuracy": 0.85,
+        "f1": 0.9189,
+        "false_negative_rate": 0.15,
+        "false_positive_rate": 0.0,
+        "fn": 18,
+        "fp": 0,
+        "pairs": 120,
+        "positives": 120,
+        "precision": 1.0,
+        "recall": 0.85,
+        "tn": 0,
+        "tp": 102
+      },
+      "same_ip": {
+        "accuracy": 1.0,
+        "f1": 0.0,
+        "false_negative_rate": 0.0,
+        "false_positive_rate": 0.0,
+        "fn": 0,
+        "fp": 0,
+        "pairs": 28,
+        "positives": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "tn": 28,
+        "tp": 0
+      }
+    }
+  }
+}

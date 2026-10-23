@@ -1,38 +1,26 @@
-# ==============================================================================
-# ThreatPolish Platform - Docker Compose Development Setup
-#
-# DEFENSIVE SAFETY NOTE:
-# All port mappings are bound strictly to 127.0.0.1 (localhost) to prevent
-# accidental exposure to local networks or public interfaces during development.
-# ==============================================================================
+name: threatpolish
 
 services:
-  # Database Service (PostgreSQL 16)
   db:
     image: postgres:16-alpine
-    container_name: threatpolish-db
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:5432:5432"
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-threatpolish_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-threatpolish_dev_secret_change_in_prod}
-      POSTGRES_DB: ${POSTGRES_DB:-threatpolish_db}
+      POSTGRES_DB: threatpolish
+      POSTGRES_USER: threatpolish
+      POSTGRES_PASSWORD: ${TP_DB_PASSWORD:?set TP_DB_PASSWORD in .env}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - db-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-threatpolish_user} -d ${POSTGRES_DB:-threatpolish_db}"]
+      test: ["CMD-SHELL", "pg_isready -U threatpolish -d threatpolish"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
+    networks: [backend]
 
-  # Backend Service (FastAPI on Python 3.12-slim)
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: threatpolish-backend
+  app:
+    build: .
     restart: unless-stopped
+<<<<<<< HEAD
     ports:
       - "127.0.0.1:8000:8000"
     env_file:
@@ -41,30 +29,45 @@ services:
       - POSTGRES_HOST=db
       - DATABASE_URL=postgresql+psycopg://${POSTGRES_USER:-threatpolish_user}:${POSTGRES_PASSWORD:-threatpolish_dev_secret_change_in_prod}@db:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-threatpolish_db}
       - HOST=0.0.0.0
+=======
+>>>>>>> origin/main
     depends_on:
       db:
         condition: service_healthy
+    env_file: .env
+    environment:
+      TP_DB_URL: postgresql+psycopg://threatpolish:${TP_DB_PASSWORD}@db:5432/threatpolish
+      TP_DATA_DIR: /data
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - app-data:/data
+      - cowrie-logs:/var/log/cowrie:ro
+    networks: [backend, decoy]
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/api/v1/health"]
-      interval: 15s
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health/ready', timeout=4).status == 200 else 1)\""]
+      interval: 30s
       timeout: 5s
       retries: 3
+      start_period: 20s
 
-  # Frontend Service (React + Vite)
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    container_name: threatpolish-frontend
+  cowrie:
+    image: cowrie/cowrie:latest
+    profiles: ["honeypot"]
     restart: unless-stopped
     ports:
-      - "127.0.0.1:5173:5173"
-    env_file:
-      - .env
-    depends_on:
-      backend:
-        condition: service_healthy
+      - "2222:2222"
+    volumes:
+      - ./deploy/cowrie/cowrie.cfg:/cowrie/cowrie-git/etc/cowrie.cfg:ro
+      - cowrie-logs:/cowrie/cowrie-git/var/log/cowrie
+    networks: [decoy]
+
+networks:
+  backend:
+    internal: true
+  decoy:
 
 volumes:
-  postgres_data:
-    driver: local
+  db-data:
+  app-data:
+  cowrie-logs:

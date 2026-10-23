@@ -1,334 +1,210 @@
-"""
-ThreatPolish Canonical Event Schema — Version 1.0
+"""Versioned event contract shared by every module.
 
-This module defines the Pydantic v2 schema for the normalised telemetry
-events that every decoy sensor emits.  The schema is intentionally
-independent of FastAPI route handlers and SQLAlchemy models so that it
-can be validated, serialised, and tested in isolation.
-
-Design principles
-─────────────────
-• UUIDs for event_id / session_id — globally unique, collision-resistant.
-• All timestamps are timezone-aware UTC (naïve datetimes are rejected).
-• IP addresses validated via Python's ipaddress module.
-• Ports constrained to the IANA range 0–65535.
-• Text / payload fields have sensible length caps to prevent abuse.
-• Passwords, password hashes, API secrets, and other credentials MUST
-  NEVER appear in event telemetry — only auth-outcome metadata is allowed.
-• source_ip is never treated as proof of a person's identity.
-• Unknown / extra fields are **rejected** (model_config forbid).
-• Schema version is pinned per class; consumers must check it.
-
-Safety notes
-────────────
-• ``password_length`` records only how many characters were submitted,
-  never the password itself.
-• ``auth_outcome`` is one of ``success | failure | unknown``.
+Every event that enters ThreatPolish is validated against this model before it
+touches storage.  Unknown fields are rejected so a sensor cannot smuggle an
+unexpected structure into the pipeline, and payload size is bounded to protect
+the ingestion path.
 """
 
 from __future__ import annotations
 
-import uuid
-from datetime import datetime, timezone
-from enum import Enum
-from ipaddress import IPv4Address, IPv6Address
-from typing import Annotated, Any, Union
+import ipaddress
+import json
+import re
+import unicodedata
+from datetime import datetime, timedelta, timezone
+from typing import Any, Literal
 
-from pydantic import (
-    BaseModel,
-    ConfigDict,
-    Field,
-    field_serializer,
-    field_validator,
-    model_validator,
-)
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from ..core.config import get_settings
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
+SCHEMA_VERSION = "1.0"
+SUPPORTED_SCHEMA_VERSIONS = {"1.0"}
 
-CURRENT_SCHEMA_VERSION = "1.0"
+SourceModule = Literal["honeypot", "websec", "cryptointel", "app", "correlation", "manual"]
+Severity = Literal["info", "low", "medium", "high", "critical"]
 
-# Length / size guardrails
-MAX_SENSOR_ID_LEN = 128
-MAX_SERVICE_LEN = 64
-MAX_RAW_EVENT_REF_LEN = 512
-MAX_PAYLOAD_KEYS = 64
-MAX_PAYLOAD_STR_VALUE_LEN = 8_192
-MAX_INGESTION_SOURCE_LEN = 256
-MAX_INGESTION_ERROR_LEN = 2_048
+SEVERITY_ORDER = {"info": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
+
+_EVENT_TYPE_RE = re.compile(r"^[a-z][a-z0-9_.-]{2,63}$")
+_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,120}$")
+_CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+_MAX_STRING = 4000
 
 
-# ---------------------------------------------------------------------------
-# Enums
-# ---------------------------------------------------------------------------
-
-class ProtocolEnum(str, Enum):
-    """Transport/application protocols recognised by the canonical schema."""
-    TCP = "tcp"
-    UDP = "udp"
-    HTTP = "http"
-    HTTPS = "https"
-    SSH = "ssh"
-    DNS = "dns"
-    ICMP = "icmp"
-    OTHER = "other"
+def _clean(value: str, *, limit: int = _MAX_STRING) -> str:
+    normalized = unicodedata.normalize("NFC", value)
+    normalized = _CONTROL_RE.sub("", normalized)
+    return normalized.strip()[:limit]
 
 
-class EventTypeEnum(str, Enum):
-    """High-level event classification for routing and detection."""
-    CONNECTION = "connection"
-    AUTH_ATTEMPT = "auth_attempt"
-    COMMAND = "command"
-    QUERY = "query"
-    SCAN = "scan"
-    DATA_EXFIL = "data_exfil"
-    RECON = "recon"
-    PAYLOAD_DELIVERY = "payload_delivery"
-    OTHER = "other"
+def _clean_obj(value: Any, depth: int = 0) -> Any:
+    """Normalize strings recursively and bound nesting."""
+    if depth > 8:
+        raise ValueError("feature payload nesting too deep")
+    if isinstance(value, str):
+        return _clean(value)
+    if isinstance(value, dict):
+        if len(value) > 200:
+            raise ValueError("feature object has too many keys")
+        return {_clean(str(k), limit=100): _clean_obj(v, depth + 1) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        if len(value) > 500:
+            raise ValueError("feature array too long")
+        return [_clean_obj(v, depth + 1) for v in value]
+    if isinstance(value, (int, float, bool)) or value is None:
+        return value
+    raise ValueError(f"unsupported feature value type: {type(value).__name__}")
 
 
-class AuthOutcome(str, Enum):
-    """Outcome of an authentication attempt.  Only metadata is stored."""
-    SUCCESS = "success"
-    FAILURE = "failure"
-    UNKNOWN = "unknown"
-
-
-# ---------------------------------------------------------------------------
-# IP address type alias — accepts both v4 and v6
-# ---------------------------------------------------------------------------
-
-IPAddress = Union[IPv4Address, IPv6Address]
-
-
-# ---------------------------------------------------------------------------
-# Sub-models
-# ---------------------------------------------------------------------------
-
-class AuthMetadata(BaseModel):
-    """
-    Authentication metadata recorded without storing credentials.
-
-    ``password_length`` captures only the *length* of the submitted
-    credential; the actual password or hash is never persisted.
-    """
-
+class Provenance(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    username: str | None = Field(
-        default=None,
-        max_length=256,
-        description="Submitted username (may be forged by the attacker).",
+    collector: str = Field(min_length=1, max_length=120)
+    source: str = Field(min_length=1, max_length=120)
+    reliability: float = Field(default=0.6, ge=0.0, le=1.0)
+    synthetic: bool = Field(
+        default=False,
+        description="True when the event was produced by a test/fixture, never by a live sensor.",
     )
-    auth_outcome: AuthOutcome = Field(
-        default=AuthOutcome.UNKNOWN,
-        description="Whether the simulated authentication succeeded, failed, or is unknown.",
-    )
-    password_length: int | None = Field(
-        default=None,
-        ge=0,
-        le=10_000,
-        description="Length of the submitted password. The password itself is NEVER stored.",
-    )
-
-
-class IngestionMeta(BaseModel):
-    """
-    Metadata injected by the ingestion pipeline describing how / when the
-    event was received and normalised.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    received_at: datetime = Field(
-        description="UTC timestamp when the ingestion layer first received the raw event.",
-    )
-    ingestion_source: str = Field(
-        max_length=MAX_INGESTION_SOURCE_LEN,
-        description="Identifier of the ingestion pathway (e.g. 'ssh-decoy-collector').",
-    )
-    normalised: bool = Field(
-        default=True,
-        description="True when the event has been converted to the canonical schema.",
-    )
-    ingestion_errors: list[str] = Field(
+    external_refs: list[str] = Field(default_factory=list, max_length=20)
+    indicators: list[str] = Field(
         default_factory=list,
-        max_length=16,
-        description="Non-fatal issues encountered during normalisation.",
+        max_length=50,
+        description="Verified indicators observed in this event (key fingerprints, JA3, hashes).",
     )
 
-    @field_validator("received_at")
+    @field_validator("collector", "source")
     @classmethod
-    def _received_at_must_be_aware(cls, v: datetime) -> datetime:
-        if v.tzinfo is None:
-            raise ValueError("received_at must be a timezone-aware UTC datetime")
-        return v
+    def _clean_text(cls, value: str) -> str:
+        return _clean(value, limit=120)
 
-    @field_validator("ingestion_errors")
+    @field_validator("external_refs", "indicators")
     @classmethod
-    def _cap_error_item_length(cls, v: list[str]) -> list[str]:
-        for idx, err in enumerate(v):
-            if len(err) > MAX_INGESTION_ERROR_LEN:
-                v[idx] = err[:MAX_INGESTION_ERROR_LEN]
-        return v
+    def _clean_list(cls, values: list[str]) -> list[str]:
+        return [_clean(item, limit=200) for item in values if item and item.strip()]
 
 
-# ---------------------------------------------------------------------------
-# Main event schema
-# ---------------------------------------------------------------------------
+class EventIn(BaseModel):
+    """An event as submitted by a sensor or module."""
 
-class CanonicalEvent(BaseModel):
-    """
-    ThreatPolish Canonical Event — v1.0
+    model_config = ConfigDict(extra="forbid")
 
-    This is the single, normalised representation of every interaction
-    captured by a decoy sensor.  All decoy types (SSH, REST, DB …)
-    convert their raw observations into this schema before persistence.
-    """
+    schema_version: Literal["1.0"]
+    event_id: str | None = None
+    occurred_at: datetime
+    source_module: SourceModule
+    event_type: str
+    source_ip: str | None = None
+    session_id: str | None = Field(default=None, max_length=120)
+    target_id: str | None = Field(default=None, max_length=200)
+    severity: Severity = "info"
+    provenance: Provenance
+    features: dict[str, Any] = Field(default_factory=dict)
+    evidence_refs: list[str] = Field(default_factory=list, max_length=50)
+    raw: dict[str, Any] = Field(default_factory=dict)
 
-    model_config = ConfigDict(
-        extra="forbid",                      # reject unknown fields
-        str_strip_whitespace=True,           # trim incoming strings
-        json_schema_extra={
-            "title": "ThreatPolish Canonical Event v1.0",
-        },
-    )
-
-    # ── Identity ──────────────────────────────────────────────────────
-    schema_version: str = Field(
-        default=CURRENT_SCHEMA_VERSION,
-        pattern=r"^\d+\.\d+$",
-        description="Schema version string (e.g. '1.0').  Consumers MUST check this.",
-    )
-    event_id: uuid.UUID = Field(
-        default_factory=uuid.uuid4,
-        description="Globally unique event identifier.",
-    )
-    session_id: uuid.UUID | None = Field(
-        default=None,
-        description="Correlates events belonging to the same attacker session.",
-    )
-    sensor_id: str = Field(
-        max_length=MAX_SENSOR_ID_LEN,
-        description="Identifier of the decoy sensor that captured the event.",
-    )
-
-    # ── Timing ────────────────────────────────────────────────────────
-    timestamp: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
-        description="UTC time the interaction occurred at the sensor.",
-    )
-
-    # ── Network addressing ────────────────────────────────────────────
-    source_ip: IPAddress = Field(
-        description=(
-            "IP address of the connecting party.  This is NOT treated as "
-            "proof of a person's identity — it may be spoofed or NAT'd."
-        ),
-    )
-    source_port: int | None = Field(
-        default=None,
-        ge=0,
-        le=65535,
-        description="Ephemeral source port (0–65535).",
-    )
-    destination_ip: IPAddress | None = Field(
-        default=None,
-        description="IP address of the decoy interface that received the connection.",
-    )
-    destination_port: int | None = Field(
-        default=None,
-        ge=0,
-        le=65535,
-        description="Destination port on the decoy sensor.",
-    )
-
-    # ── Classification ────────────────────────────────────────────────
-    protocol: ProtocolEnum = Field(
-        description="Transport or application-layer protocol.",
-    )
-    service: str = Field(
-        max_length=MAX_SERVICE_LEN,
-        description="Logical service name (e.g. 'ssh-decoy', 'rest-decoy').",
-    )
-    event_type: EventTypeEnum = Field(
-        description="High-level event classification.",
-    )
-
-    # ── Payload ───────────────────────────────────────────────────────
-    payload: dict[str, Any] | None = Field(
-        default=None,
-        description=(
-            "Structured event payload.  MUST NOT contain passwords, "
-            "password hashes, API secrets, or other credential material."
-        ),
-    )
-    raw_event_ref: str | None = Field(
-        default=None,
-        max_length=MAX_RAW_EVENT_REF_LEN,
-        description="Reference (URI, S3 key, etc.) to the original raw event blob.",
-    )
-
-    # ── Auth metadata ─────────────────────────────────────────────────
-    auth: AuthMetadata | None = Field(
-        default=None,
-        description="Authentication metadata (if the event represents an auth attempt).",
-    )
-
-    # ── Ingestion ─────────────────────────────────────────────────────
-    ingestion: IngestionMeta | None = Field(
-        default=None,
-        description="Metadata added by the ingestion pipeline.",
-    )
-
-    # ── Validators ────────────────────────────────────────────────────
-
-    @field_validator("timestamp")
+    @field_validator("event_id")
     @classmethod
-    def _timestamp_must_be_aware(cls, v: datetime) -> datetime:
-        """Reject naïve (timezone-unaware) timestamps."""
-        if v.tzinfo is None:
-            raise ValueError(
-                "timestamp must be timezone-aware (UTC).  "
-                "Naïve datetimes are not accepted."
-            )
-        return v
+    def _valid_event_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if not _ID_RE.match(value):
+            raise ValueError("event_id contains unsupported characters")
+        return value
 
-    @field_validator("payload")
+    @field_validator("event_type")
     @classmethod
-    def _validate_payload_size(cls, v: dict[str, Any] | None) -> dict[str, Any] | None:
-        """Enforce key-count and string-value-length limits on payload."""
-        if v is None:
-            return v
-        if len(v) > MAX_PAYLOAD_KEYS:
-            raise ValueError(
-                f"payload must not exceed {MAX_PAYLOAD_KEYS} top-level keys"
-            )
-        for key, val in v.items():
-            if isinstance(val, str) and len(val) > MAX_PAYLOAD_STR_VALUE_LEN:
-                raise ValueError(
-                    f"payload['{key}'] exceeds the {MAX_PAYLOAD_STR_VALUE_LEN}-char limit"
-                )
-        return v
+    def _valid_event_type(cls, value: str) -> str:
+        if not _EVENT_TYPE_RE.match(value):
+            raise ValueError("event_type must match ^[a-z][a-z0-9_.-]{2,63}$")
+        return value
+
+    @field_validator("occurred_at")
+    @classmethod
+    def _utc_timestamp(cls, value: datetime) -> datetime:
+        if value.tzinfo is None:
+            raise ValueError("occurred_at must include a UTC offset")
+        value = value.astimezone(timezone.utc)
+        now = datetime.now(timezone.utc)
+        if value > now + timedelta(minutes=10):
+            raise ValueError("occurred_at is in the future beyond allowed clock skew")
+        if value < now - timedelta(days=400):
+            raise ValueError("occurred_at is older than the accepted retention horizon")
+        return value
+
+    @field_validator("source_ip")
+    @classmethod
+    def _valid_ip(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        try:
+            return str(ipaddress.ip_address(value.strip()))
+        except ValueError as exc:
+            raise ValueError("source_ip is not a valid IP address") from exc
+
+    @field_validator("session_id", "target_id")
+    @classmethod
+    def _clean_ids(cls, value: str | None) -> str | None:
+        return _clean(value, limit=200) if value else None
+
+    @field_validator("features", "raw")
+    @classmethod
+    def _clean_payload(cls, value: dict[str, Any]) -> dict[str, Any]:
+        cleaned = _clean_obj(value)
+        if not isinstance(cleaned, dict):
+            raise ValueError("payload must be an object")
+        return cleaned
+
+    @field_validator("evidence_refs")
+    @classmethod
+    def _clean_refs(cls, values: list[str]) -> list[str]:
+        return [_clean(item, limit=200) for item in values if item.strip()]
 
     @model_validator(mode="after")
-    def _check_auth_event_consistency(self) -> "CanonicalEvent":
-        """Warn-level: auth metadata on a non-auth event type is unusual."""
-        # We don't raise — just ensure the model is internally consistent.
+    def _bounded_payload(self) -> "EventIn":
+        limit = get_settings().max_event_bytes
+        encoded = json.dumps(self.model_dump(mode="json"), default=str).encode("utf-8")
+        if len(encoded) > limit:
+            raise ValueError(f"event exceeds maximum size of {limit} bytes")
         return self
 
-    # ── Serialisation helpers ─────────────────────────────────────────
 
-    @field_serializer("source_ip", "destination_ip")
-    def _serialise_ip(self, v: IPAddress | None) -> str | None:
-        return str(v) if v is not None else None
+class EventRecord(BaseModel):
+    """A persisted event, including pipeline metadata."""
 
-    @field_serializer("event_id", "session_id")
-    def _serialise_uuid(self, v: uuid.UUID | None) -> str | None:
-        return str(v) if v is not None else None
+    id: str
+    schema_version: str
+    occurred_at: datetime
+    received_at: datetime
+    source_module: str
+    event_type: str
+    source_ip: str | None
+    session_id: str | None
+    target_id: str | None
+    severity: str
+    provenance: dict[str, Any]
+    features: dict[str, Any]
+    evidence_refs: list[str]
+    raw: dict[str, Any]
+    status: str
+    correlation_state: str
+    synthetic: bool
 
-    @field_serializer("timestamp")
-    def _serialise_timestamp(self, v: datetime) -> str:
-        return v.isoformat()
+
+class IngestItemResult(BaseModel):
+    index: int
+    event_id: str | None
+    status: Literal["accepted", "duplicate", "rejected"]
+    reason: str | None = None
+    quarantine_id: str | None = None
+
+
+class IngestReport(BaseModel):
+    received: int
+    accepted: int
+    duplicates: int
+    rejected: int
+    results: list[IngestItemResult]
+

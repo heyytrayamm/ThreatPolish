@@ -1,1 +1,1 @@
-"""ThreatPolish API package."""
+"""HTTP API layer."""

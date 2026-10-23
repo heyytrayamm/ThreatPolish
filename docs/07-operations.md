@@ -1,0 +1,196 @@
+# Operations
+
+## Prerequisites
+
+- Python 3.12+ and Node 20+ for development.
+- Docker and Docker Compose for the container deployment.
+- A TLS-terminating reverse proxy (Caddy, nginx, or a load balancer) for any
+  internet-facing deployment.
+- A host with only decoy ports exposed publicly.
+
+## Configuration
+
+Copy `.env.example` to `.env` and replace every placeholder. The authoritative
+list is `backend/app/core/config.py`; the table below covers what operators
+normally change.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `TP_ENV` | `development` | `development`, `test` or `production`; production refuses to start without a signing secret |
+| `TP_JWT_SECRET` | generated in dev | JWT signing key, at least 32 characters; changing it invalidates all sessions |
+| `TP_JWT_TTL_MINUTES` | `60` | Session lifetime, 5–1440 |
+| `TP_DB_URL` | SQLite under `TP_DATA_DIR` | e.g. `postgresql+psycopg://threatpolish:PASSWORD@db:5432/threatpolish` |
+| `TP_DB_PASSWORD` | none | Used only by Compose to initialise PostgreSQL; must match `TP_DB_URL` |
+| `TP_ALLOWED_ORIGINS` | localhost:5173 | Comma-separated dashboard origins allowed by CORS |
+| `TP_BOOTSTRAP_ADMIN_EMAIL` / `TP_BOOTSTRAP_ADMIN_PASSWORD` | none | First admin, created only when the user table is empty; remove afterwards |
+| `TP_DATA_DIR` | `./data` | Local state (SQLite file, decoy spool) |
+| `TP_DECOY_ENABLED`, `TP_DECOY_PORT` | `true`, `8022` | HTTP decoy listener |
+| `TP_DECOY_MAX_SESSIONS_PER_HOUR` | `120` | Decoy admission limit |
+| `TP_RETENTION_DAYS` | `90` | Event retention horizon |
+| `TP_MAX_EVENT_BYTES` | `65536` | Per-event payload cap |
+| `TP_INGEST_RATE_LIMIT_PER_MINUTE` | `6000` | Per-principal ingestion limit |
+| `TP_CORRELATION_WINDOW_HOURS` | `72` | Default correlation window |
+| `TP_RESPONSE_AUTO_APPLY` | `false` | Keep disabled: no reviewed execution adapter exists |
+| `TP_WEB_SEC_ALLOW_LOOPBACK` | `false` | Must stay `false` in production |
+| `TP_WEB_SEC_TIMEOUT_SECONDS`, `TP_WEB_SEC_MAX_REQUESTS_PER_HOST` | `10`, `10` | Assessment bounds |
+| `TP_CRYPTO_PROVIDER`, `TP_CRYPTO_API_BASE` | `coingecko`, public API | Market-data source; `fixture` is available for offline use |
+| `TP_LOG_LEVEL` | `INFO` | Log verbosity |
+
+Generate secrets with `python3 -c "import secrets;print(secrets.token_urlsafe(48))"`.
+Never reuse the example values. The JWT secret is read in production and a
+missing or short value stops startup rather than silently generating one.
+
+## Deploy with Compose
+
+```bash
+cp .env.example .env
+# edit .env: TP_JWT_SECRET, TP_DB_PASSWORD, TP_DB_URL, bootstrap admin
+docker compose build
+docker compose up -d
+docker compose ps
+docker compose logs -f app
+curl -fsS http://127.0.0.1:8000/api/v1/health/ready
+```
+
+The stack contains:
+
+| Service | Role | Exposure |
+| --- | --- | --- |
+| `db` | PostgreSQL 16 | Internal `backend` network only |
+| `app` | API plus the built dashboard | Bound to `127.0.0.1:8000` |
+| `cowrie` | Optional SSH/Telnet decoy | Profile `honeypot`, publishes `2222` |
+
+```bash
+docker compose --profile honeypot up -d cowrie
+```
+
+The HTTP decoy is **not** a Compose service. Run it as a separate process (or
+your own unit/container) so it can be placed on an isolated network segment:
+
+```bash
+cd backend
+TP_ENV=production python -m app.cli decoy --host 0.0.0.0 --port 8022
+```
+
+Expose only the decoy ports (2222, 8022) to the internet. Keep 8000 behind the
+reverse proxy on the management network and never publish 5432.
+
+## First run
+
+1. Set a strong `TP_BOOTSTRAP_ADMIN_PASSWORD` (and email) before the first
+   start; the admin is created only when no users exist. Alternatively create it
+   from the CLI: `python -m app.cli create-admin --email you@example.com`.
+2. Log in and change the password immediately (`POST /auth/password`).
+3. Create analyst and viewer accounts (`POST /auth/users` or
+   `python -m app.cli create-user --email ... --name ... --role analyst`).
+4. Remove the bootstrap variables and restart.
+5. Add authorised web-assessment scopes with an authorization reference.
+6. Confirm `GET /health/ready` and `GET /events/summary` return data.
+
+## Sensors
+
+Create a sensor token (the plaintext is shown once):
+
+```bash
+cd backend
+python -m app.cli create-token --name decoy-1 --role sensor
+```
+
+Send events with `X-Agent-Token: tp_...`. The stored token is a hash and can be
+revoked (`DELETE /auth/tokens/{id}`); revocation takes effect immediately.
+
+- **HTTP sensor / generic collectors:** post to `/api/v1/ingest/events` with the
+  event contract in `docs/04-event-contract.md`. A single object, an array, or
+  `{"events": [...]}` up to 500 records is accepted.
+- **Cowrie:** the Compose profile writes to the shared `cowrie-logs` volume,
+  mounted read-only in the app at `/var/log/cowrie`. Run
+  `docker compose exec app python -m app.cli cowrie-tail --path /var/log/cowrie/cowrie.json`.
+  The tailer keeps its offset in `/data` (the log volume is read-only), survives
+  rotation, and relies on event deduplication for at-least-once delivery.
+- **HTTP decoy:** `python -m app.cli decoy`; interactions become telemetry
+  automatically.
+- NTP-synchronise every sensor; timing evidence depends on clocks.
+
+## Backup and restore
+
+Backup (nightly, and before upgrades):
+
+```bash
+docker compose exec -T db pg_dump -U threatpolish threatpolish \
+  | gzip > backup-$(date +%F).sql.gz
+```
+
+Restore into a fresh database:
+
+```bash
+gunzip -c backup-2026-10-23.sql.gz \
+  | docker compose exec -T db psql -U threatpolish -d threatpolish
+```
+
+Verify a restore quarterly in a non-production stack. Backups contain attacker
+telemetry and must be encrypted at rest.
+
+## Upgrade and rollback
+
+1. Take a backup.
+2. Pull the new image, `docker compose up -d app`.
+3. Verify `/health/ready` and one authenticated read.
+4. Keep the previous image tag for 7 days.
+
+Schema changes are applied at startup. The container runs a single API worker
+because concurrent workers would race on the migration table; apply migrations
+before adding replicas. There is no automatic downgrade: roll back the image
+**and** restore the pre-upgrade backup. Treat a change to the
+correlation `algorithm_version` as a behavioural change and re-run
+`python scripts/evaluate.py` before promoting.
+
+## Monitoring
+
+- Liveness `/api/v1/health` and readiness `/api/v1/health/ready` every 30 s.
+- Alert on `authentication_failed` audit events above baseline.
+- Alert on ingestion stalls (no events for longer than the expected probe rate).
+- Alert on `pending_approval` responses older than the on-call SLA.
+- Watch database size against the retention window.
+
+## Runbooks
+
+**Decoy appears compromised / used for egress.** Stop the decoy process, capture
+its files and logs, revoke the sensor's agent token, and review `honeypot`
+sessions for unexpected outbound behaviour. The decoy has no outbound path by
+design; any egress is a deployment error.
+
+**False-positive correlation.** Reject the edge via `POST /feedback`. Re-run
+correlation for the window. If false positives recur, inspect the stored
+`independent_families` and contradiction list before changing thresholds.
+
+**Bad response action approved.** `POST /responses/{id}/rollback`. If the block
+was pushed to an external system manually, revert it there and record the
+reversion in the audit log, then review who approved it and why.
+
+**Database unavailable.** The API returns 503 and stores nothing. Restore
+service before retrying ingestion; replay is safe because ingestion is
+idempotent.
+
+**Suspected token compromise.** Rotate `TP_JWT_SECRET` (invalidates all
+sessions), revoke agent tokens, rotate the affected user's password, and review
+`/audit`.
+
+## Retention
+
+Events carry `retention_until` (`TP_RETENTION_DAYS`, default 90). Enforce it:
+
+```bash
+docker compose exec app python -m app.cli purge
+```
+
+Run it on a schedule and confirm deletions against the database size trend.
+`python -m app.cli status` shows configuration and schema state.
+
+## Known limitations
+
+- Cowrie was exercised with connection attempts, not a full interactive shell
+  session; validate the fake filesystem against your image version.
+- No automated dependency scanning is configured in this repository.
+- Single-node deployment; correlation does not scale horizontally (it processes
+  at most 400 sessions per run), and the API runs one worker so startup
+  migrations cannot race.

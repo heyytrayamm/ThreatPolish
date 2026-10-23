@@ -1,1 +1,0 @@
-"""ThreatPolish Backend Test Suite."""

@@ -1,1 +1,1 @@
-"""Pydantic v2 schemas for the ThreatPolish canonical event format."""
+"""API and event schemas."""
