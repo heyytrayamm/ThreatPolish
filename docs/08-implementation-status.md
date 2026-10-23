@@ -76,7 +76,7 @@ why.
 | PostgreSQL production path | Done | migrations, all module flows and recovery verified against PostgreSQL 16 |
 | Backup, restore, retention, runbooks | Done | `docs/07-operations.md` |
 | Health and readiness probes | Done | `/health`, `/health/ready` |
-| CI pipeline | Not done | no CI configuration in the repository |
+| CI pipeline | Done | `.github/workflows/ci.yml` runs backend lint and tests, the dashboard build and a container image build |
 | Dependency scanning | Not done | commands documented, not automated |
 
 ## Deliberate non-goals

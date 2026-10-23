@@ -83,7 +83,8 @@ preference for a rewrite.
   breadth of unverified features.
 - **Evaluation risk.** No public labelled dataset was bundled; the benchmark is
   synthetic and its limitations are reported with the results.
-- **Deployment risk.** Docker and PostgreSQL could not be executed on this host,
-  so the Compose deployment is documented and statically reviewed but not
-  runtime-verified here. The application itself was run against SQLite and
-  exercised over HTTP.
+- **Deployment risk.** Docker and PostgreSQL were not available on this host at
+  audit time, so the Compose deployment started as a documented design. It was
+  later built and run against PostgreSQL 16; the results are recorded in
+  [Testing and evaluation](06-testing-and-evaluation.md) and
+  [Implementation status](08-implementation-status.md).

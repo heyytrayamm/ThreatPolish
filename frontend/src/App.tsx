@@ -62,56 +62,87 @@ export default function App() {
   if (!user) {
     return (
       <main className="login">
-        <form onSubmit={signIn} className="login-card">
-          <h1>ThreatPolish</h1>
-          <p className="muted">Evidence-guided campaign correlation</p>
-          <ErrorBox message={error} />
-          <label>
-            Email
-            <input
-              type="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              autoComplete="username"
-              required
-            />
-          </label>
-          <label>
-            Password
-            <input
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              autoComplete="current-password"
-              required
-            />
-          </label>
-          <button type="submit" disabled={busy}>
-            {busy ? "Signing in…" : "Sign in"}
-          </button>
-          <p className="muted small">
-            Sessions expire automatically. Contact an administrator if you do not have an account.
-          </p>
-        </form>
+        <div className="login-aurora" aria-hidden="true" />
+        <section className="login-shell">
+          <div className="login-intro">
+            <span className="eyebrow">Analyst workspace</span>
+            <h1>See the campaign behind the noise.</h1>
+            <p>
+              ThreatPolish correlates decoy and assessment telemetry across
+              addresses, shows the evidence behind every link, and asks for more
+              observation only when the answer is genuinely uncertain.
+            </p>
+            <ul className="login-points">
+              <li>Cross-IP correlation with auditable evidence and contradictions</li>
+              <li>Adaptive decoys that observe without inventing evidence</li>
+              <li>Response actions with approval, expiry and rollback</li>
+            </ul>
+          </div>
+          <form onSubmit={signIn} className="login-card" aria-label="sign in">
+            <div className="login-card-head">
+              <span className="brand-mark">TP</span>
+              <div>
+                <strong>ThreatPolish</strong>
+                <span className="muted small">Analyst access</span>
+              </div>
+            </div>
+            <ErrorBox message={error} />
+            <label>
+              Email
+              <input
+                type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                autoComplete="username"
+                required
+              />
+            </label>
+            <label>
+              Password
+              <input
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                autoComplete="current-password"
+                required
+              />
+            </label>
+            <button type="submit" disabled={busy}>
+              {busy ? "Signing in…" : "Sign in"}
+            </button>
+            <p className="muted small">
+              Sessions expire automatically. Contact an administrator if you do not have an account.
+            </p>
+          </form>
+        </section>
+        <footer className="login-foot">Authorized defensive use only · Evidence retained with every decision</footer>
       </main>
     );
   }
 
   return (
     <div className="app">
+      <a className="skip-link" href="#main">Skip to content</a>
       <aside className="sidebar">
         <div className="brand">
           <span className="brand-mark">TP</span>
           <div>
             <strong>ThreatPolish</strong>
-            <span className="muted small">{user.role}</span>
+            <span className="brand-sub">Security workspace</span>
           </div>
         </div>
+        <div className="side-status">
+          <span className="status-dot" />
+          Evidence engine
+        </div>
         <nav>
+          <span className="nav-label">Workspace</span>
           {NAV.filter((item) => item.key !== "admin" || user.role === "admin").map((item) => (
             <button
               key={item.key}
+              type="button"
               className={view === item.key ? "nav-item active" : "nav-item"}
+              aria-current={view === item.key ? "page" : undefined}
               onClick={() => setView(item.key)}
             >
               {item.label}
@@ -119,8 +150,12 @@ export default function App() {
           ))}
         </nav>
         <div className="sidebar-foot">
-          <div className="muted small">{user.name}</div>
+          <div className="sidebar-user">
+            <span className="muted small">{user.name}</span>
+            <span className="role-chip">{user.role}</span>
+          </div>
           <button
+            type="button"
             className="link"
             onClick={() => {
               setToken(null);
@@ -131,7 +166,7 @@ export default function App() {
           </button>
         </div>
       </aside>
-      <main className="content">
+      <main className="content" id="main">
         {view === "overview" && <Overview user={user} />}
         {view === "events" && <Events />}
         {view === "campaigns" && <Campaigns user={user} />}
