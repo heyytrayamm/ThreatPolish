@@ -324,6 +324,40 @@ export default function Administration() {
                   {retentionHistory.length} runs. Graph size now: {retention.data.graph.nodes} nodes,{" "}
                   {retention.data.graph.edges} edges.
                 </p>
+                <h3>Recent runs</h3>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Ran</th><th>Trigger</th><th>Backlog</th><th>Removed</th>
+                      <th>Duration</th><th>State</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {retention.data.history.map((run) => {
+                      const backlog =
+                        run.events_expired + run.retired_edges + run.stale_observations;
+                      const removed =
+                        run.events_removed +
+                        run.edges_removed +
+                        run.observations_removed +
+                        run.nodes_removed;
+                      return (
+                        <tr key={run.id}>
+                          <td>{formatTime(run.ran_at)}</td>
+                          <td>{run.trigger}</td>
+                          <td>{backlog}</td>
+                          <td>{removed}</td>
+                          <td>{run.duration_ms} ms</td>
+                          <td>
+                            <span className={run.overdue ? "bad" : "ok"}>
+                              {run.overdue ? "overdue" : "current"}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </>
             )}
             {retentionHistory.length === 0 && (

@@ -321,12 +321,57 @@ them as `history`. An administrator can run it immediately from Administration;
 the run is confirmed, recorded and audited like a scheduled one.
 
 `GET /metrics` exports the same backlog and graph counts in Prometheus text
-format. It requires an account with `graph:read` (viewer, analyst or admin), so
-a monitoring scrape uses a bearer token and never sees event content.
+format. It requires `graph:read` and never returns event content. Create a
+revocable analyst token for the scrape so it does not expire with a login:
+
+```bash
+python -m app.cli create-token --name prometheus --role analyst
+```
+
+### Prometheus scrape and alerts
+
+```yaml
+# prometheus.yml
+scrape_configs:
+  - job_name: threatpolish
+    metrics_path: /api/v1/metrics
+    authorization:
+      credentials: "<the analyst agent token>"
+    static_configs:
+      - targets: ["threatpolish:8000"]
+```
+
+```yaml
+# rules.yml
+groups:
+  - name: threatpolish-retention
+    rules:
+      - alert: ThreatPolishRetentionOverdue
+        expr: threatpolish_retention_overdue == 1
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: Retention work has waited past the grace window
+      - alert: ThreatPolishRetentionStalled
+        expr: time() - threatpolish_retention_last_run_timestamp_seconds > 172800
+        for: 30m
+        labels:
+          severity: critical
+        annotations:
+          summary: No retention run recorded for two days
+```
+
+The last-run series are absent until the first run, so pair the stalled rule
+with a notification on the absence of the metric if a new deployment must alert
+immediately.
 
 For a local review without waiting for history to accumulate, run
-`python -m app.cli seed-demo`; it refuses to run in production and seeds
-synthetic telemetry plus a week of retention runs.
+`python -m app.cli seed-demo`; it refuses to run in production, seeds synthetic
+telemetry plus a week of retention runs, and creates a demo administrator with a
+one-time password when the database has no accounts. After `make install`,
+`make demo` seeds the data, builds the dashboard and serves it on
+`http://127.0.0.1:8000` in one command.
 `python -m app.cli status` shows configuration, retention and schema state.
 
 ## Known limitations

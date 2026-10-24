@@ -28,6 +28,8 @@ decoy:
 
 demo:
 	cd backend && python -m app.cli seed-demo
+	cd frontend && npm run build
+	cd backend && uvicorn app.main:app --host 127.0.0.1 --port 8000
 
 clean:
 	rm -rf backend/.pytest_cache backend/__pycache__ backend/app/__pycache__ frontend/dist

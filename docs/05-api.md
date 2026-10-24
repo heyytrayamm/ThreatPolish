@@ -65,7 +65,7 @@ recorded in the audit log.
 | GET | `/audit` | admin | Audit trail |
 | GET | `/retention` | admin | Retention lag, graph size and the last 14 runs |
 | POST | `/retention/run` | admin | Run both retention horizons now; recorded and audited |
-| GET | `/metrics` | viewer | Prometheus text metrics for retention backlog and graph size |
+| GET | `/metrics` | viewer/analyst | Prometheus text metrics for retention backlog and graph size |
 
 ## Examples
 

@@ -158,6 +158,13 @@ def _seed_demo(args: argparse.Namespace) -> int:
         f"{result['campaigns']} campaign candidates, "
         f"{result['retention_runs_added']} retention runs"
     )
+    if result["login"]:
+        print(
+            f"demo login: {result['login']['email']} / {result['login']['password']}"
+        )
+        print("This password is shown once; set TP_DEMO_PASSWORD to choose your own.")
+    else:
+        print("Existing accounts were left unchanged; sign in with one of them.")
     return 0
 
 

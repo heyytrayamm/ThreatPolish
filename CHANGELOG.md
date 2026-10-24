@@ -33,9 +33,14 @@ All notable changes to this project are recorded here. Dates use ISO 8601.
   a scheduled run.
 - `GET /metrics` exports retention backlog and graph size in Prometheus text
   format. It needs `graph:read` but exposes no event content.
-- `python -m app.cli seed-demo` (or `make demo`) populates development
-  telemetry, correlation and a week of retention history so the trend chart is
-  visible immediately; it refuses to run in production.
+- `python -m app.cli seed-demo` populates development telemetry, correlation
+  and a week of retention history, and creates a demo administrator with a
+  one-time password when no accounts exist. `make demo` seeds, builds and
+  serves the stack in one command; it refuses to run in production.
+- Administration lists each recent retention run with its trigger, backlog,
+  removed count, duration and overdue state.
+- The operations guide includes Prometheus scrape configuration and alert
+  rules for an overdue backlog and a stalled retention schedule.
 - CI runs `tests/test_retention.py` explicitly against PostgreSQL, after the
   full suite, so a retention regression is attributed to its own step.
 - Migration 11 adds the retention run history table.

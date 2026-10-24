@@ -160,7 +160,7 @@ every stage and dashboard view to its implementation, test and measured result.
 
 | Check | Result |
 | --- | --- |
-| Backend suite · SQLite | **151 passed** (three of them drive Chrome) |
+| Backend suite · SQLite | **152 passed** (three of them drive Chrome) |
 | Backend suite · PostgreSQL 16 | the same suite, run in CI on a fresh service database |
 | Static analysis | Ruff `F,E9` clean; `compileall` clean |
 | Dependency audit | `pip-audit` and `npm audit --audit-level=high` report no known vulnerabilities, run locally and in CI |
@@ -239,12 +239,17 @@ cp .env.example .env
 
 cd backend
 python -m app.cli create-admin --email you@example.com
-python -m app.cli seed-demo      # optional: synthetic telemetry and retention history
+python -m app.cli seed-demo      # optional: demo login, telemetry and retention history
 uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
 For hot reload, run `npm --prefix frontend run dev` and open
 `http://127.0.0.1:5173`; Vite proxies `/api` to the backend.
+
+For a one-command review after `make install`, run `make demo`. It seeds the
+demo login and data, builds the dashboard and serves it on
+`http://127.0.0.1:8000`; the generated password is printed once. Demo seeding
+refuses to run when `TP_ENV=production`.
 
 ## Connecting a sensor
 

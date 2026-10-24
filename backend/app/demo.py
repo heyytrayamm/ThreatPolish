@@ -8,6 +8,8 @@ so a local review can exercise the real dashboard.
 
 from __future__ import annotations
 
+import os
+import secrets
 from datetime import timedelta
 from typing import Any
 
@@ -64,10 +66,12 @@ def seed_demo_data(*, seed: int = 7) -> dict[str, Any]:
     else:
         report = Ingestor(settings).ingest(events, actor="demo-seed")
         accepted, duplicates = report.accepted, report.duplicates
+    login = _ensure_demo_login()
     correlation = correlate(window_hours=6, trigger="demo", actor="demo-seed")
     history_added = _seed_retention_history()
     return {
         "seed": seed,
+        "login": login,
         "sessions_generated": len(dataset["sessions"]),
         "events_accepted": accepted,
         "events_duplicate": duplicates,
@@ -115,3 +119,20 @@ def _seed_retention_history() -> int:
                 )
             )
     return len(backlogs)
+
+
+def _ensure_demo_login() -> dict[str, str] | None:
+    """Create one known sign-in when the database has no accounts.
+
+    A generated password is printed once by the CLI.  An explicitly supplied
+    ``TP_DEMO_PASSWORD`` is honoured so a reviewer can choose it; use of a
+    weak value is the operator's choice in a development environment.
+    """
+    from .auth.users import count_users, create_user
+
+    if count_users() > 0:
+        return None
+    email = os.environ.get("TP_DEMO_EMAIL", "demo@threatpolish.local").strip()
+    password = os.environ.get("TP_DEMO_PASSWORD") or secrets.token_urlsafe(12)
+    create_user(email=email, name="Demo Administrator", role="admin", password=password)
+    return {"email": email, "password": password}
