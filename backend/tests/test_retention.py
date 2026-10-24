@@ -152,3 +152,45 @@ def test_scheduled_retention_records_history_and_audit(client, admin_headers):
     assert entry["object_id"] == result["run_id"]
     assert entry["detail"]["trigger"] == "scheduled"
     assert entry["detail"]["events_removed"] == 1
+
+
+def test_admin_can_run_retention_from_the_api(client, admin_headers, viewer_headers):
+    _insert_event(iso(utcnow() - timedelta(days=10)), dedup_key="api-run")
+    assert client.post("/api/v1/retention/run").status_code == 401
+    assert (
+        client.post("/api/v1/retention/run", headers=viewer_headers).status_code
+        == 403
+    )
+
+    response = client.post("/api/v1/retention/run", headers=admin_headers)
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["run_id"].startswith("rtn_")
+    assert result["trigger"] == "manual"
+    assert result["events"]["events"] == 1
+
+    history = client.get("/api/v1/retention", headers=admin_headers).json()["history"]
+    assert history[0]["id"] == result["run_id"]
+    assert history[0]["trigger"] == "manual"
+
+
+def test_metrics_exposes_retention_and_graph_without_event_content(
+    client, admin_headers, viewer_headers
+):
+    assert client.get("/api/v1/metrics").status_code == 401
+    response = client.get("/api/v1/metrics", headers=viewer_headers)
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/plain")
+    body = response.text
+    assert "threatpolish_retention_overdue 0" in body
+    assert "threatpolish_events_total 0" in body
+    assert "threatpolish_graph_nodes 0" in body
+    assert "threatpolish_graph_edges 0" in body
+
+    _insert_event(iso(utcnow() - timedelta(days=10)), dedup_key="metrics-run")
+    run_retention(trigger="scheduled")
+    refreshed = client.get("/api/v1/metrics", headers=admin_headers)
+    assert refreshed.status_code == 200
+    assert "threatpolish_events_total 0" in refreshed.text
+    assert "threatpolish_retention_last_run_events_removed 1" in refreshed.text
+    assert "threatpolish_retention_last_run_timestamp_seconds 0" not in refreshed.text

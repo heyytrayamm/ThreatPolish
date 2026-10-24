@@ -317,7 +317,16 @@ shows the same backlog, and the Overview raises an alert to administrators once
 it is overdue. Each `retention` run records the pre-run backlog in
 `retention_runs` and writes a `retention.run` audit entry with actor role
 `system`; Administration charts the last 14 runs and `GET /retention` returns
-them as `history`.
+them as `history`. An administrator can run it immediately from Administration;
+the run is confirmed, recorded and audited like a scheduled one.
+
+`GET /metrics` exports the same backlog and graph counts in Prometheus text
+format. It requires an account with `graph:read` (viewer, analyst or admin), so
+a monitoring scrape uses a bearer token and never sees event content.
+
+For a local review without waiting for history to accumulate, run
+`python -m app.cli seed-demo`; it refuses to run in production and seeds
+synthetic telemetry plus a week of retention runs.
 `python -m app.cli status` shows configuration, retention and schema state.
 
 ## Known limitations

@@ -15,6 +15,7 @@ export default function Administration() {
   const [tokenRole, setTokenRole] = useState<"sensor" | "analyst">("sensor");
   const [issued, setIssued] = useState<{ name: string; token: string } | null>(null);
   const [tokenBusy, setTokenBusy] = useState(false);
+  const [retentionBusy, setRetentionBusy] = useState(false);
 
   const sources = useAsync(() => api.sources(), []);
   const quarantine = useAsync(() => api.quarantine(), []);
@@ -83,6 +84,32 @@ export default function Administration() {
       setTick((value) => value + 1);
     } catch (error) {
       setNotice((error as Error).message);
+    }
+  }
+
+  async function runRetentionNow() {
+    if (
+      !window.confirm(
+        "Run retention now? Expired events and graph evidence past the configured horizons will be deleted.",
+      )
+    ) {
+      return;
+    }
+    setRetentionBusy(true);
+    setNotice(null);
+    try {
+      const result = await api.runRetention();
+      const graphChanges =
+        result.graph.edges + result.graph.observations + result.graph.nodes;
+      setNotice(
+        `Retention run ${result.run_id} removed ${result.events.events} events and ` +
+          `${graphChanges} graph records.`,
+      );
+      setTick((value) => value + 1);
+    } catch (error) {
+      setNotice((error as Error).message);
+    } finally {
+      setRetentionBusy(false);
     }
   }
 
@@ -199,9 +226,19 @@ export default function Administration() {
       <Card
         title="Retention"
         actions={
-          <button type="button" className="link" onClick={() => setTick((value) => value + 1)}>
-            Refresh
-          </button>
+          <div className="row">
+            <button
+              type="button"
+              className="secondary small"
+              disabled={retentionBusy}
+              onClick={runRetentionNow}
+            >
+              {retentionBusy ? "Running…" : "Run retention now"}
+            </button>
+            <button type="button" className="link" onClick={() => setTick((value) => value + 1)}>
+              Refresh
+            </button>
+          </div>
         }
       >
         {retention.loading && <Loading />}

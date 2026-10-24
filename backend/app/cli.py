@@ -9,6 +9,7 @@ Examples:
     python -m app.cli purge
     python -m app.cli purge-graph
     python -m app.cli retention
+    python -m app.cli seed-demo
 """
 
 from __future__ import annotations
@@ -146,6 +147,20 @@ def _retention(args: argparse.Namespace) -> int:
     return 0
 
 
+def _seed_demo(args: argparse.Namespace) -> int:
+    from .demo import seed_demo_data
+
+    init_db()
+    result = seed_demo_data(seed=args.seed)
+    print(
+        f"seeded {result['events_accepted']} events across "
+        f"{result['sessions_generated']} synthetic sessions; "
+        f"{result['campaigns']} campaign candidates, "
+        f"{result['retention_runs_added']} retention runs"
+    )
+    return 0
+
+
 def _display_db_url(url: str) -> str:
     """Never print a password embedded in a database URL."""
     from sqlalchemy.engine import make_url
@@ -225,6 +240,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--scheduled", action="store_true", help="mark this as the scheduled service run"
     )
     retention.set_defaults(func=_retention)
+
+    demo = sub.add_parser(
+        "seed-demo", help="populate development telemetry and retention history"
+    )
+    demo.add_argument("--seed", type=int, default=7)
+    demo.set_defaults(func=_seed_demo)
 
     status = sub.add_parser("status", help="show configuration and schema state")
     status.set_defaults(func=_status)

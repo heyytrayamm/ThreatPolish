@@ -1,4 +1,4 @@
-.PHONY: install test audit benchmark evaluate build serve decoy clean
+.PHONY: install test audit benchmark evaluate build serve decoy demo clean
 
 install:
 	cd backend && pip install -r requirements-dev.txt
@@ -25,6 +25,9 @@ serve:
 
 decoy:
 	cd backend && python -m app.cli decoy --host 127.0.0.1 --port 8022
+
+demo:
+	cd backend && python -m app.cli seed-demo
 
 clean:
 	rm -rf backend/.pytest_cache backend/__pycache__ backend/app/__pycache__ frontend/dist

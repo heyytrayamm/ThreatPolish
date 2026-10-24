@@ -195,6 +195,8 @@ export const api = {
   quarantine: () => request<{ items: QuarantineRecord[] }>("/api/v1/quarantine"),
   audit: () => request<{ items: AuditEntry[] }>("/api/v1/audit"),
   retention: () => request<RetentionStatus>("/api/v1/retention"),
+  runRetention: () =>
+    request<RetentionRunResult>("/api/v1/retention/run", { method: "POST" }),
   latestRun: () =>
     request<{ run: CorrelationRun | null; algorithm: Record<string, unknown> }>(
       "/api/v1/correlation/latest",
@@ -475,6 +477,21 @@ export interface RetentionRun {
   graph_nodes: number;
   graph_edges: number;
   overdue: boolean;
+}
+
+export interface RetentionRunResult {
+  run_id: string;
+  trigger: string;
+  duration_ms: number;
+  overdue: boolean;
+  events: { days: number; cutoff: string; events: number };
+  graph: {
+    days: number;
+    cutoff: string;
+    edges: number;
+    observations: number;
+    nodes: number;
+  };
 }
 
 export interface RetentionStatus {

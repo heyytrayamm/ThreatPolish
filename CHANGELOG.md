@@ -28,6 +28,14 @@ All notable changes to this project are recorded here. Dates use ISO 8601.
   page, so an operator can see whether the backlog is growing.
 - Scheduled runs are audited as `retention.run` with actor role `system`; the
   Compose service passes `--scheduled` so the trigger is recorded.
+- Administrators can run retention from the dashboard (`POST /retention/run`);
+  the action asks for confirmation and records history and an audit entry like
+  a scheduled run.
+- `GET /metrics` exports retention backlog and graph size in Prometheus text
+  format. It needs `graph:read` but exposes no event content.
+- `python -m app.cli seed-demo` (or `make demo`) populates development
+  telemetry, correlation and a week of retention history so the trend chart is
+  visible immediately; it refuses to run in production.
 - CI runs `tests/test_retention.py` explicitly against PostgreSQL, after the
   full suite, so a retention regression is attributed to its own step.
 - Migration 11 adds the retention run history table.
