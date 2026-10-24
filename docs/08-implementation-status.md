@@ -15,7 +15,7 @@ why.
 | Ingestion with hashing, dedup, quarantine | Done | `app/telemetry/ingest.py`, `test_pipeline.py` |
 | Auth, RBAC, audit trail | Done | `app/auth/`, `test_foundation.py`, `test_security.py`; password change and the admin session revocation both act on the account session version, the session history is derived from the audit trail with client, address and validity, one device can be signed out through a revocation list keyed by token id, an administrator can sign one device out of another account while its other sessions continue, and a second live session from another network raises `auth.signin.anomaly` (`test_signin_alerts.py`). Session and target identifiers reject control characters, so a sensor cannot craft a session id that collides with the relationship-key separator (`test_properties.py`) |
 | Dashboard shell and navigation | Done | `frontend/` builds cleanly; the Deception page lists decoy sessions with their addresses and event counts; the account page rotates the password, keeps the replacement token, lists recent sign-ins and signs out one device, the Overview page raises recent sign-in alerts, administration opens any account's session history, signs one device out of it and manages sensor tokens, and `test_browser.py` drives the password, plan/activate, session-management and token flows in Chrome |
-| Test harness | Done | 134 tests passing on SQLite, isolated per test, three of them driving Chrome against a live API; CI runs the same suite against PostgreSQL 16 |
+| Test harness | Done | 139 tests passing on SQLite, isolated per test, three of them driving Chrome against a live API; CI runs the same suite against PostgreSQL 16 |
 | Reproducible benchmark | Done | `backend/scripts/evaluate.py`; reports precision, recall, false-positive and false-negative rates, campaign recovery, time to detection, wall and CPU time, memory and milliseconds per pair |
 | Audit, novelty review, architecture, threat model | Done | `docs/00`–`docs/03` |
 | License | Done | Proprietary notice, all rights reserved by the project team |
@@ -43,10 +43,11 @@ why.
 | Overlap-based sequence comparison | Done | action sequences score by containment as well as Jaccard, so a session that recorded fewer commands is not read as disagreement; `sequence_similarity` is recorded per edge and the `ablation_jaccard_only` run reproduces the previous comparison (seed 7 recall 0.812 vs 0.906, seed 2026 0.562 vs 0.812, precision unchanged at 1.000) |
 | Campaign membership follows edge state | Done | edges that become hypotheses or expire lose their campaign and campaign views count only active links (`campaign_id=None` on expiry, `status = 'active'` in `get_campaign`); expiry keeps the original evidence and records why and when it was retired (`test_correlation.py`) |
 | Edge persistence with full evidence | Done | `graph_edges`, `test_correlation.py` |
-| Campaign construction | Done | `engine.py` |
+| Campaign construction | Done | `engine.py`; new member sets inherit an existing campaign when at least half of its membership survives, so growth and shrinkage keep one identifier and record the added and removed sessions in `membership_history` |
+| Campaign lifecycle and archived reviews | Done | a reviewed campaign, or one an investigation or response refers to, is archived rather than deleted when its links disappear; a merge moves feedback and response references to the surviving campaign, carries a single analyst decision forward and turns conflicting decisions into `uncertain`; default listing excludes archived rows and `include_archived=true` shows them (`test_correlation.py`) |
 | Risk, severity, journey escalation | Done | `app/risk/scoring.py` |
 | Interactive graph and campaign views | Done | `frontend/src/components/EvidenceGraph.tsx` |
-| Analyst feedback loop | Done | `/feedback`, stored and listed |
+| Analyst feedback loop | Done | `/feedback`, stored and listed; feedback follows a merged campaign instead of pointing at the absorbed row, and a review on an archived campaign remains readable |
 | Learned/calibrated confidence | Not done | would require labelled production data; explicitly out of scope |
 | Streaming/incremental correlation | Not done | correlation is batch over a window |
 
@@ -79,9 +80,9 @@ why.
 | PostgreSQL production path | Done | migrations, all module flows and recovery verified against PostgreSQL 16 |
 | Backup, restore, retention, runbooks | Done | `docs/07-operations.md`, including a step-by-step session-compromise runbook that runs from a sign-in alert to a revoked device |
 | Health and readiness probes | Done | `/api/v1/health`, `/api/v1/health/ready` |
-| Schema migrations and upgrade path | Done | v3 PostgreSQL database upgraded to v5 on a restorable copy; v5 upgraded to v7 on SQLite and PostgreSQL 16, including a copy seeded with duplicate open investigations; v7 → v8 (per-session revocation) verified on both engines |
-| CI pipeline | Done | `.github/workflows/ci.yml` runs backend lint and tests on SQLite and PostgreSQL 16, the dashboard build and a container image build |
-| Dependency scanning | Not done | commands documented, not automated |
+| Schema migrations and upgrade path | Done | v3 PostgreSQL database upgraded to v5 on a restorable copy; v5 upgraded to v7 on SQLite and PostgreSQL 16, including a copy seeded with duplicate open investigations; v7 → v8 (per-session revocation) verified on both engines; v8 → v9 (campaign lifecycle) adds nullable columns and is covered by a migration test starting from a v8-shaped table |
+| CI pipeline | Done | `.github/workflows/ci.yml` runs backend lint and tests on SQLite and PostgreSQL 16, dependency audits, the dashboard build and a container image build |
+| Dependency scanning | Done | a CI job runs `pip-audit` over the installed backend environment and `npm audit --audit-level=high` over the dashboard lockfile; `make audit` reproduces both locally |
 
 ## Deliberate non-goals
 

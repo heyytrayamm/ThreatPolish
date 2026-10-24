@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import heapq
 import time
 from collections import defaultdict
 from datetime import datetime, timedelta
@@ -21,8 +22,20 @@ from .features import CorrelationContext, Session, build_sessions
 from .scoring import ALGORITHM_VERSION, MIN_SCORE_TO_STORE, PAIR_SEPARATOR, compare, pair_key
 
 log = get_logger(__name__)
-MAX_SESSIONS_PER_RUN = 400
-MAX_EDGES_PER_RUN = 2_000
+# Sized from `scripts/benchmark_correlation.py` and recorded in
+# `docs/research/correlation-runtime.md`: at 788 sessions the run scores 310,078
+# pairs in about 28 s and the 8,000-edge cap retains every linked pair.  At 982
+# sessions the same edge cap starts dropping links, so 800 is the largest
+# measured window that keeps all of them.
+MAX_SESSIONS_PER_RUN = 800
+MAX_EDGES_PER_RUN = 8_000
+# A campaign keeps its identifier while at least half of its membership survives,
+# measured as Jaccard overlap with the previous member set.  Growth, shrinkage
+# and the merge of two comparable campaigns therefore keep the reviewed
+# identity; a mostly new set of sessions starts a new campaign instead.  The
+# old row is archived, never deleted, when it loses that continuity.
+MIN_MEMBERSHIP_OVERLAP = 0.5
+MAX_MEMBERSHIP_HISTORY = 20
 
 
 class UnionFind:
@@ -71,15 +84,20 @@ def correlate(
     context = CorrelationContext.from_sessions(sessions.values())
     created = updated = expired = 0
     campaign_ids: list[str] = []
-    scored_pairs: dict[str, dict[str, Any]] = {}
+    # Scores are streamed into a bounded heap instead of being retained for
+    # every pair.  A full result is a few kilobytes, so keeping all of them is
+    # quadratic memory: at 800 sessions that was more than a gigabyte before a
+    # single edge was written.  Only the strongest MAX_EDGES_PER_RUN results
+    # can be persisted, so only those are kept.
+    scored_count = candidate_count = linked_candidates = 0
+    heap: list[tuple[float, int, str, dict[str, Any]]] = []
 
     with connection() as conn:
-        existing_edge_ids = {
-            row[0]
-            for row in conn.execute(
-                select(graph_edges.c.id).where(graph_edges.c.kind == "session_similarity")
-            ).fetchall()
-        }
+        existing_similarity_edges = conn.execute(
+            select(graph_edges.c.id, graph_edges.c.src_id, graph_edges.c.dst_id).where(
+                graph_edges.c.kind == "session_similarity"
+            )
+        ).fetchall()
 
         for session in sessions.values():
             _upsert_session_node(conn, session, started_at)
@@ -93,19 +111,39 @@ def correlate(
                     continue
                 result = compare(left, right, context=context)
                 key = pair_key(left.id, right.id)
-                scored_pairs[key] = {"left": left, "right": right, "result": result}
+                scored_count += 1
+                if result["score"] >= MIN_SCORE_TO_STORE:
+                    candidate_count += 1
+                    if result["decision"] == "linked":
+                        linked_candidates += 1
+                    heapq.heappush(
+                        heap,
+                        (
+                            result["score"],
+                            scored_count,
+                            key,
+                            {"left": left, "right": right, "result": result},
+                        ),
+                    )
+                    if len(heap) > MAX_EDGES_PER_RUN:
+                        heapq.heappop(heap)
 
         # Only persist the strongest relationships; a busy sensor must not be
         # able to inflate the graph without bound.
         persistable = [
             (key, item)
-            for key, item in scored_pairs.items()
-            if item["result"]["score"] >= MIN_SCORE_TO_STORE
+            for _score, _order, key, item in sorted(
+                heap, key=lambda entry: (-entry[0], entry[1])
+            )
         ]
-        persistable.sort(key=lambda entry: entry[1]["result"]["score"], reverse=True)
-        dropped = max(0, len(persistable) - MAX_EDGES_PER_RUN)
-        persistable = persistable[:MAX_EDGES_PER_RUN]
-        persisted_keys = {key for key, _ in persistable}
+        dropped = candidate_count - len(persistable)
+        # A dropped hypothesis is a lost lead; a dropped link would be a
+        # grouping error.  They are counted separately so the cap can be
+        # judged on what it actually removes.
+        dropped_links = linked_candidates - sum(
+            1 for _, item in persistable if item["result"]["decision"] == "linked"
+        )
+        persisted_edge_ids = {f"edg_{_digest(key)}" for key, _ in persistable}
 
         for _, item in persistable:
             was_created = _upsert_edge(
@@ -114,12 +152,17 @@ def correlate(
             created += 1 if was_created else 0
             updated += 0 if was_created else 1
 
-        for key in scored_pairs:
-            if key in persisted_keys:
+        # An edge whose sessions were both scored this run and which did not
+        # make the persistence cut is no longer supported by current evidence.
+        # Deriving that from the endpoints avoids keeping every pair key.
+        current_session_ids = set(sessions)
+        for edge_id, src, dst in existing_similarity_edges:
+            if edge_id in persisted_edge_ids:
                 continue
-            existing_id = f"edg_{_digest(key)}"
-            if existing_id in existing_edge_ids:
-                _expire_pair(conn, key, started_at)
+            left_id = str(src).removeprefix("session:")
+            right_id = str(dst).removeprefix("session:")
+            if left_id in current_session_ids and right_id in current_session_ids:
+                _expire_pair(conn, pair_key(left_id, right_id), started_at)
                 expired += 1
 
         # ---- campaign candidates over linked pairs ---------------------- #
@@ -131,9 +174,16 @@ def correlate(
             union.union(item["left"].id, item["right"].id)
             edge_confidence[key] = item["result"]["confidence"]
 
-        for members in union.components().values():
-            if len(members) < 2:
-                continue
+        components = sorted(
+            sorted(members)
+            for members in union.components().values()
+            if len(members) >= 2
+        )
+        existing_campaigns = _load_campaigns(conn)
+        existing_by_id = {campaign["id"]: campaign for campaign in existing_campaigns}
+        assignments, absorbed = _assign_campaign_ids(components, existing_campaigns)
+
+        for index, members in enumerate(components):
             member_set = set(members)
             internal = [
                 (key, confidence)
@@ -147,8 +197,17 @@ def correlate(
                 for session_id in member_set
                 for ip in sessions[session_id].source_ips
             }
-            campaign_id, name = _upsert_campaign(
-                conn, members, sessions, internal, ips, started_at
+            inherited = assignments.get(index)
+            campaign_id = inherited or f"cmp_{_digest('\x1f'.join(members))}"
+            campaign_id, name, _changed = _upsert_campaign(
+                conn,
+                campaign_id=campaign_id,
+                members=members,
+                sessions=sessions,
+                internal=internal,
+                ips=ips,
+                now=started_at,
+                existing=existing_by_id.get(inherited) if inherited else None,
             )
             campaign_ids.append(campaign_id)
             for key, _ in internal:
@@ -167,10 +226,20 @@ def correlate(
                 )
             _upsert_campaign_node(conn, campaign_id, name, started_at, members)
 
-        expired += _expire_stale(conn, started_at)
-        _cleanup_stale_campaigns(conn, started_at)
+        # Merged campaigns are recorded after their survivor has been written,
+        # so the analyst's decision and review history land on the final row.
+        merged_campaigns = 0
+        for survivor_id, absorbed_ids in absorbed.items():
+            if survivor_id not in campaign_ids:
+                continue
+            merged_campaigns += _merge_campaigns(
+                conn, survivor_id, absorbed_ids, existing_by_id, started_at
+            )
 
-        duplicate_pairs = max(0, len(scored_pairs) - len(persistable))
+        expired += _expire_stale(conn, started_at)
+        archived, removed = _cleanup_stale_campaigns(conn, started_at)
+
+        below_threshold = max(0, scored_count - candidate_count)
         conn.execute(
             correlation_runs.insert().values(
                 id=run_id,
@@ -188,10 +257,14 @@ def correlate(
                 metrics=dumps(
                     {
                         "events": len(events),
-                        "pairs_scored": len(scored_pairs),
+                        "pairs_scored": scored_count,
                         "pairs_persisted": len(persistable),
                         "pairs_dropped_by_cap": dropped,
-                        "pairs_below_threshold": duplicate_pairs,
+                        "links_dropped_by_cap": dropped_links,
+                        "pairs_below_threshold": below_threshold,
+                        "campaigns_merged": merged_campaigns,
+                        "campaigns_archived": archived,
+                        "campaigns_removed": removed,
                         "session_cap_applied": truncated,
                         "evidence_context": context.summary(),
                         "duration_ms": round((time.perf_counter() - started) * 1000, 2),
@@ -206,12 +279,16 @@ def correlate(
         "window_hours": hours,
         "events": len(events),
         "sessions": len(sessions),
-        "pairs_scored": len(scored_pairs),
+        "pairs_scored": scored_count,
         "edges_created": created,
         "edges_updated": updated,
         "edges_expired": expired,
         "campaigns": len(campaign_ids),
         "campaign_ids": campaign_ids,
+        "campaigns_merged": merged_campaigns,
+        "campaigns_archived": archived,
+        "pairs_dropped_by_cap": dropped,
+        "links_dropped_by_cap": dropped_links,
         "truncated": truncated or dropped > 0,
         "duration_ms": round((time.perf_counter() - started) * 1000, 2),
         "algorithm_version": ALGORITHM_VERSION,
@@ -462,7 +539,119 @@ def _expire_stale(conn: Connection, now: datetime) -> int:
     return int(result.rowcount or 0)
 
 
-def _cleanup_stale_campaigns(conn: Connection, now: datetime) -> None:
+def _load_campaigns(conn: Connection) -> list[dict[str, Any]]:
+    """Load campaign rows with the member set stored in their evidence."""
+    loaded: list[dict[str, Any]] = []
+    for row in conn.execute(select(campaigns)).fetchall():
+        data = dict(row._mapping)
+        evidence = loads(data.get("evidence"), {})
+        loaded.append(
+            {
+                "id": data["id"],
+                "name": data["name"],
+                "status": data["status"],
+                "created_at": data["created_at"],
+                "updated_at": data["updated_at"],
+                "status_updated_at": data.get("status_updated_at"),
+                "superseded_by": data.get("superseded_by"),
+                "archived_at": data.get("archived_at"),
+                "members": set(evidence.get("sessions", [])),
+                "evidence": evidence,
+            }
+        )
+    return loaded
+
+
+def _assign_campaign_ids(
+    components: list[list[str]], existing: list[dict[str, Any]]
+) -> tuple[dict[int, str], dict[str, list[str]]]:
+    """Match new membership components to existing campaign identities.
+
+    A campaign is the same relationship until most of its membership changes.
+    Matching is one-to-one so a split cannot hand the same identity to two
+    components; the component with the strongest overlap keeps it.  A campaign
+    that matched the winning component but was not itself assigned has been
+    merged into it and is superseded, which is how analyst feedback follows a
+    merge instead of being left on a row that no longer represents the cluster.
+    """
+    ranked: list[tuple[float, int, str, int]] = []
+    for index, members in enumerate(components):
+        current = set(members)
+        for campaign in existing:
+            # A superseded row has been absorbed into another campaign, so it
+            # must not be resurrected as a duplicate.  An archived row may be:
+            # if the same sessions link again, the analyst's review of that
+            # relationship applies again.
+            if campaign["superseded_by"]:
+                continue
+            shared = current & campaign["members"]
+            if not shared:
+                continue
+            similarity = len(shared) / len(current | campaign["members"])
+            if similarity < MIN_MEMBERSHIP_OVERLAP:
+                continue
+            ranked.append((similarity, len(shared), campaign["id"], index))
+    # Deterministic: strongest overlap first, then the campaign identifier so
+    # two runs over the same data always make the same choice.
+    ranked.sort(key=lambda item: (-item[0], -item[1], item[2], item[3]))
+
+    assignments: dict[int, str] = {}
+    claimed: set[str] = set()
+    for _similarity, _shared, campaign_id, index in ranked:
+        if index in assignments or campaign_id in claimed:
+            continue
+        assignments[index] = campaign_id
+        claimed.add(campaign_id)
+
+    absorbed: dict[str, list[str]] = {}
+    for index, survivor_id in assignments.items():
+        for _similarity, _shared, candidate, matched_index in ranked:
+            if matched_index != index or candidate == survivor_id or candidate in claimed:
+                continue
+            absorbed.setdefault(survivor_id, []).append(candidate)
+            claimed.add(candidate)
+    return assignments, absorbed
+
+
+def _campaign_has_history(conn: Connection, campaign_id: str, status: str) -> bool:
+    """Whether anything an analyst did would be lost by deleting the row."""
+    if status != "candidate":
+        return True
+    checks = (
+        ("feedback", "object_type = 'campaign' AND object_id = :id"),
+        ("investigations", "campaign_id = :id"),
+        ("responses", "campaign_id = :id"),
+    )
+    for table, predicate in checks:
+        found = conn.execute(
+            text(f"SELECT 1 FROM {table} WHERE {predicate} LIMIT 1"), {"id": campaign_id}
+        ).fetchone()
+        if found:
+            return True
+    return False
+
+
+def _drop_campaign_graph(conn: Connection, campaign_id: str) -> None:
+    """Remove a campaign's live graph presence without touching its record."""
+    conn.execute(
+        text("DELETE FROM graph_edges WHERE kind = 'campaign_contains' AND src_id = :node"),
+        {"node": f"campaign:{campaign_id}"},
+    )
+    conn.execute(
+        text("DELETE FROM graph_nodes WHERE id = :node"),
+        {"node": f"campaign:{campaign_id}"},
+    )
+
+
+def _cleanup_stale_campaigns(conn: Connection, now: datetime) -> tuple[int, int]:
+    """Archive reviewed campaigns that lost their links; delete only untouched ones.
+
+    Returns ``(archived, removed)``.  A campaign that an analyst reviewed, or
+    that an investigation or response refers to, is archived rather than
+    deleted: the row is the record of that decision and of the session set it
+    covered.  Unreviewed automatic candidates are removed so stale graph
+    candidates do not accumulate without bound.
+    """
     live = {
         row[0]
         for row in conn.execute(
@@ -473,29 +662,147 @@ def _cleanup_stale_campaigns(conn: Connection, now: datetime) -> None:
             )
         ).fetchall()
     }
-    stored = [row[0] for row in conn.execute(select(campaigns.c.id)).fetchall()]
-    for campaign_id in stored:
+    archived = removed = 0
+    for row in conn.execute(select(campaigns)).fetchall():
+        data = dict(row._mapping)
+        campaign_id = data["id"]
         if campaign_id in live:
             continue
+        _drop_campaign_graph(conn, campaign_id)
+        if data.get("archived_at") or data.get("superseded_by"):
+            # Already retired: only the graph presence needed clearing.
+            continue
+        if _campaign_has_history(conn, campaign_id, data["status"]):
+            conn.execute(
+                campaigns.update()
+                .where(campaigns.c.id == campaign_id)
+                .values(archived_at=iso(now), updated_at=iso(now))
+            )
+            archived += 1
+            continue
         conn.execute(text("DELETE FROM graph_edges WHERE campaign_id = :id"), {"id": campaign_id})
-        conn.execute(
-            text("DELETE FROM graph_edges WHERE src_id = :node"),
-            {"node": f"campaign:{campaign_id}"},
-        )
-        conn.execute(text("DELETE FROM graph_nodes WHERE id = :node"), {"node": f"campaign:{campaign_id}"})
         conn.execute(campaigns.delete().where(campaigns.c.id == campaign_id))
+        removed += 1
+    return archived, removed
+
+
+def _merge_campaigns(
+    conn: Connection,
+    survivor_id: str,
+    absorbed_ids: list[str],
+    existing: dict[str, dict[str, Any]],
+    now: datetime,
+) -> int:
+    """Absorb merged campaigns and carry their analyst decisions forward.
+
+    Feedback, open investigations and response requests move to the survivor,
+    so no review points at a row that no longer describes the cluster.  When
+    the absorbed and surviving campaigns disagree about their review status the
+    survivor becomes ``uncertain`` rather than silently preferring one
+    analyst's judgement over another.
+    """
+    survivor = existing[survivor_id]
+    decisions = [
+        (absorbed_id, existing[absorbed_id]["status"])
+        for absorbed_id in absorbed_ids
+        if existing[absorbed_id]["status"] != "candidate"
+    ]
+    for absorbed_id in absorbed_ids:
+        conn.execute(
+            text(
+                "UPDATE feedback SET object_id = :survivor "
+                "WHERE object_type = 'campaign' AND object_id = :absorbed"
+            ),
+            {"survivor": survivor_id, "absorbed": absorbed_id},
+        )
+        conn.execute(
+            text("UPDATE responses SET campaign_id = :survivor WHERE campaign_id = :absorbed"),
+            {"survivor": survivor_id, "absorbed": absorbed_id},
+        )
+        conn.execute(
+            text(
+                "UPDATE investigations SET status = 'superseded' "
+                "WHERE campaign_id = :absorbed AND status IN ('planned', 'active')"
+            ),
+            {"absorbed": absorbed_id},
+        )
+        # Links that belong to the merged component were reassigned to the
+        # survivor above.  Anything still pointing at the absorbed row is
+        # evidence the current run did not reproduce (for example, a member
+        # outside the window), so it must not become campaign evidence.
+        conn.execute(
+            text(
+                "UPDATE graph_edges SET campaign_id = NULL "
+                "WHERE campaign_id = :absorbed AND kind = 'session_similarity'"
+            ),
+            {"absorbed": absorbed_id},
+        )
+        conn.execute(
+            campaigns.update()
+            .where(campaigns.c.id == absorbed_id)
+            .values(superseded_by=survivor_id, archived_at=iso(now), updated_at=iso(now))
+        )
+        _drop_campaign_graph(conn, absorbed_id)
+
+    if not decisions:
+        return len(absorbed_ids)
+
+    survivor_status = survivor["status"]
+    carried = {status for _, status in decisions}
+    if survivor_status == "candidate":
+        new_status = carried.pop() if len(carried) == 1 else "uncertain"
+    else:
+        new_status = "uncertain" if any(status != survivor_status for status in carried) else survivor_status
+
+    row = conn.execute(
+        select(campaigns.c.evidence).where(campaigns.c.id == survivor_id)
+    ).fetchone()
+    evidence = loads(row[0], {}) if row else {}
+    history = list(evidence.get("review_history", []))
+    for absorbed_id, status in decisions:
+        history.append(
+            {
+                "at": iso(now),
+                "event": "campaign_merged",
+                "absorbed": absorbed_id,
+                "absorbed_status": status,
+            }
+        )
+    if new_status != survivor_status:
+        history.append(
+            {
+                "at": iso(now),
+                "event": "status_carried",
+                "from": survivor_status,
+                "to": new_status,
+                "source": [absorbed_id for absorbed_id, _ in decisions],
+            }
+        )
+    evidence["review_history"] = history[-MAX_MEMBERSHIP_HISTORY:]
+    conn.execute(
+        campaigns.update()
+        .where(campaigns.c.id == survivor_id)
+        .values(
+            status=new_status,
+            status_updated_at=iso(now) if new_status != survivor_status else survivor["status_updated_at"],
+            evidence=dumps(evidence),
+            updated_at=iso(now),
+        )
+    )
+    return len(absorbed_ids)
 
 
 def _upsert_campaign(
     conn: Connection,
+    *,
+    campaign_id: str,
     members: list[str],
     sessions: dict[str, Session],
     internal: list[tuple[str, float]],
     ips: set[str],
     now: datetime,
-) -> tuple[str, str]:
-    signature = "\x1f".join(sorted(members))
-    campaign_id = f"cmp_{_digest(signature)}"
+    existing: dict[str, Any] | None,
+) -> tuple[str, str, bool]:
     confidence = min(value for _, value in internal)
     categories: dict[str, int] = defaultdict(int)
     for member in members:
@@ -523,10 +830,27 @@ def _upsert_campaign(
             "relationship hypothesis, not an attribution to a named actor."
         ),
     }
-    existing = conn.execute(
-        select(campaigns.c.id).where(campaigns.c.id == campaign_id)
-    ).fetchone()
-    if existing:
+    membership_changed = True
+    if existing is not None:
+        previous_members = set(existing["members"])
+        added = sorted(set(members) - previous_members)
+        removed = sorted(previous_members - set(members))
+        membership_changed = bool(added or removed)
+        evidence["membership"] = {"added": added, "removed": removed}
+        history = list(existing["evidence"].get("membership_history", []))
+        if membership_changed:
+            history.append({"at": iso(now), "added": added, "removed": removed})
+        reactivated = bool(existing.get("archived_at"))
+        if reactivated:
+            history.append({"at": iso(now), "event": "reactivated"})
+        review_history = list(existing["evidence"].get("review_history", []))
+        if review_history:
+            evidence["review_history"] = review_history[-MAX_MEMBERSHIP_HISTORY:]
+        if history:
+            evidence["membership_history"] = history[-MAX_MEMBERSHIP_HISTORY:]
+        # The name and review status are the analyst's anchors on this
+        # campaign; only the derived membership, confidence and summary move.
+        name = existing["name"]
         conn.execute(
             campaigns.update()
             .where(campaigns.c.id == campaign_id)
@@ -537,6 +861,7 @@ def _upsert_campaign(
                 updated_at=iso(now),
                 member_count=len(members),
                 ip_count=len(ips),
+                archived_at=None if reactivated else existing.get("archived_at"),
             )
         )
     else:
@@ -555,7 +880,7 @@ def _upsert_campaign(
                 ip_count=len(ips),
             )
         )
-    return campaign_id, name
+    return campaign_id, name, membership_changed
 
 
 def _upsert_campaign_node(
@@ -583,6 +908,20 @@ def _upsert_campaign_node(
                 last_seen=iso(now),
             )
         )
+    # Membership edges of sessions that left the campaign must go too, or the
+    # graph would show a session inside a campaign it no longer belongs to.
+    placeholders = ", ".join(f":m{index}" for index in range(len(members)))
+    member_params: dict[str, Any] = {
+        f"m{index}": f"session:{member}" for index, member in enumerate(members)
+    }
+    member_params["node"] = node_id
+    conn.execute(
+        text(
+            "DELETE FROM graph_edges WHERE kind = 'campaign_contains' "
+            f"AND src_id = :node AND dst_id NOT IN ({placeholders})"
+        ),
+        member_params,
+    )
     for member in members:
         _upsert_edge_row(
             conn,

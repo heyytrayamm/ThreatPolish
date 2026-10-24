@@ -258,6 +258,37 @@ def _migration_008_revoked_sessions(conn: Connection) -> None:
     revoked_sessions.create(bind=conn, checkfirst=True)
 
 
+def _migration_009_campaign_lifecycle(conn: Connection) -> None:
+    """Keep campaign identity stable while membership changes.
+
+    Feedback and investigations referenced a campaign by an identifier derived
+    from its member list, so one added session produced a new identifier and
+    the review was orphaned when the old row was cleaned up.  These columns
+    let a campaign be archived and superseded instead of deleted, and record
+    when an analyst last changed its status.
+    """
+    from sqlalchemy import inspect
+
+    existing = {column["name"] for column in inspect(conn).get_columns("campaigns")}
+    if "status_updated_at" not in existing:
+        conn.execute(text("ALTER TABLE campaigns ADD COLUMN status_updated_at VARCHAR(40)"))
+    if "superseded_by" not in existing:
+        conn.execute(text("ALTER TABLE campaigns ADD COLUMN superseded_by VARCHAR(40)"))
+    if "archived_at" not in existing:
+        conn.execute(text("ALTER TABLE campaigns ADD COLUMN archived_at VARCHAR(40)"))
+    conn.execute(
+        text("CREATE INDEX IF NOT EXISTS ix_campaigns_archived ON campaigns (archived_at)")
+    )
+    # Existing reviews were recorded only as a status.  Use the last update as
+    # the best available timestamp for when that decision was made.
+    conn.execute(
+        text(
+            "UPDATE campaigns SET status_updated_at = updated_at "
+            "WHERE status_updated_at IS NULL AND status <> 'candidate'"
+        )
+    )
+
+
 MIGRATIONS: list[tuple[int, str, Any]] = [
     (1, "initial schema", _migration_001_initial),
     (2, "event retention index", _migration_002_events_retention_index),
@@ -267,6 +298,7 @@ MIGRATIONS: list[tuple[int, str, Any]] = [
     (6, "account session versions", _migration_006_session_versions),
     (7, "unique open investigations", _migration_007_unique_open_investigations),
     (8, "per-session revocation", _migration_008_revoked_sessions),
+    (9, "campaign lifecycle", _migration_009_campaign_lifecycle),
 ]
 
 

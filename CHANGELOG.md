@@ -2,6 +2,52 @@
 
 All notable changes to this project are recorded here. Dates use ISO 8601.
 
+## 1.0.2 — 2026-10-24
+
+### Changed
+
+- Campaign identity is now independent of membership. A new component inherits
+  an existing campaign when at least half of its member set survives, so adding
+  or losing a session no longer produces a new identifier and orphans the
+  analyst's review; added and removed sessions are recorded in
+  `membership_history`. When two campaigns merge, feedback and response
+  references move to the survivor, a single review decision is carried forward
+  and conflicting decisions become `uncertain` (`test_correlation.py`).
+- Scored pairs are streamed through a bounded heap instead of retained as a
+  dictionary of full results. At 800 sessions the previous code held more than
+  1.6 GB before writing an edge; peak memory no longer grows with the square of
+  the window. The run reports how many candidate pairs and how many links the
+  per-run edge cap removed, so the cap can be judged on what it drops.
+- The session cap rises from 400 to 800 and the per-run edge cap from 2,000 to
+  8,000, from measurements in `docs/research/correlation-runtime.md`: 788
+  sessions score 310,078 pairs in about 28 s, and the 2,000-edge cap was
+  dropping 2,211 links at that size.
+
+### Added
+
+- `GET /campaigns?include_archived=true` lists archived campaigns. Campaign
+  detail returns `status_updated_at`, `superseded_by`, `archived_at`,
+  `archived` and the full stored `evidence`, including membership and review
+  history.
+- A CI job audits dependencies with `pip-audit` over the installed backend
+  environment and `npm audit --audit-level=high` over the dashboard lockfile;
+  `make audit` runs the same checks locally.
+- `backend/scripts/benchmark_correlation.py` measures end-to-end correlation at
+  increasing session counts and writes `docs/research/correlation-runtime.md`.
+- Migration 9 adds the campaign lifecycle columns.
+
+### Fixed
+
+- A reviewed campaign was deleted, along with the feedback that pointed at it,
+  when its links expired or fell below the persistence cut. Reviewed campaigns,
+  and those an investigation or response refers to, are archived instead;
+  untouched automatic candidates are still removed. Expiry of an edge whose
+  sessions were scored in the run is now decided from the stored endpoints, so
+  the engine does not need to retain every pair key.
+- The synthetic scenario generator produced invalid IP octets above 244
+  sessions (`203.0.113.256`), breaking volume benchmarks above that size;
+  addresses now come from the benchmark range 198.18.0.0/15.
+
 ## 1.0.1 — 2026-10-24
 
 ### Changed

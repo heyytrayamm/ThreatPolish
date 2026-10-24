@@ -97,12 +97,16 @@ def generate_dataset(
     base = datetime.now(timezone.utc) - timedelta(hours=6)
     sessions: list[dict[str, Any]] = []
     truth: dict[str, str] = {}
-    ip_counter = 10
+    ip_counter = 0
 
     def next_ip() -> str:
+        # 198.18.0.0/15 is reserved for benchmarking, so the generator can
+        # address tens of thousands of hosts without leaving documentation
+        # space or repeating an address.  The old scheme ran out after 244
+        # sessions and produced invalid octets in the volume runs.
         nonlocal ip_counter
         ip_counter += 1
-        return f"203.0.113.{ip_counter}"
+        return f"198.18.{ip_counter // 250}.{ip_counter % 250 + 1}"
 
     # ---- coordinated campaigns --------------------------------------- #
     # Each campaign has a distinctive toolset: unique client banner, unique

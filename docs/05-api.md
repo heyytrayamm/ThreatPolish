@@ -44,7 +44,7 @@ recorded in the audit log.
 | POST | `/correlate` | analyst | Rebuild edges and campaigns for a window |
 | GET | `/correlation/latest` | viewer | Summary of the last run |
 | GET | `/graph` | viewer | Nodes and edges for visualisation |
-| GET | `/campaigns`, `/campaigns/{id}` | viewer | Campaign list and detail |
+| GET | `/campaigns`, `/campaigns/{id}` | viewer | Campaign list and detail; archived rows are excluded unless `include_archived=true` |
 | GET | `/edges/{id}` | viewer | Full evidence for one edge |
 | POST/GET | `/feedback` | analyst | Confirm or reject an edge |
 | GET | `/honeypot/profiles` | viewer | Decoy profile catalogue |
@@ -94,7 +94,18 @@ Correlate and read a campaign:
 curl -sX POST localhost:8000/api/v1/correlate -H "Authorization: Bearer $T" \
   -H 'content-type: application/json' -d '{"window_hours":24}'
 curl -s localhost:8000/api/v1/campaigns -H "Authorization: Bearer $T"
+curl -s "localhost:8000/api/v1/campaigns?include_archived=true" \
+  -H "Authorization: Bearer $T"
 ```
+
+A campaign keeps its identifier while at least half of its membership survives,
+so a review remains attached as sessions come and go. Campaign detail includes
+`status_updated_at`, `superseded_by`, `archived_at`, `archived` and the stored
+`evidence` with `membership_history` and `review_history`. When two campaigns
+merge, feedback and response references move to the survivor; a review sent to
+the absorbed identifier is recorded against the survivor and the response says
+`redirected_from`. Archived campaigns stay readable but are not scanned for new
+work; their reviews are preserved rather than deleted.
 
 Propose a response. The target must already appear in ingested telemetry;
 policy refuses to act on a host the platform has never observed.

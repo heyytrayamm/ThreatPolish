@@ -258,6 +258,24 @@ block it. The platform does not trust `X-Forwarded-For`, so behind a reverse
 proxy every sign-in appears to come from the proxy address and no alert fires;
 this detection suits deployments where clients reach the API directly.
 
+## Dependency audit
+
+CI audits both dependency sets on every push and pull request: `pip-audit`
+against the installed backend environment and `npm audit --audit-level=high`
+against the dashboard lockfile. Run the same checks locally after changing a
+lockfile or a requirements file:
+
+```bash
+make audit
+```
+
+A finding fails the job. Read the advisory before acting: upgrade the affected
+package inside its compatibility range, or pin the release that fixes it, then
+rerun the suite. Do not suppress a finding to get a green build. If no fixed
+release exists, record the exposure and the compensating control in the
+security notes, and add a dated ignore for that advisory identifier with the
+reason it cannot affect this deployment; review it at each upgrade.
+
 ## Retention
 
 Events carry `retention_until` (`TP_RETENTION_DAYS`, default 90). Enforce it:
@@ -273,7 +291,6 @@ Run it on a schedule and confirm deletions against the database size trend.
 
 - Cowrie was exercised with connection attempts, not a full interactive shell
   session; validate the fake filesystem against your image version.
-- No automated dependency scanning is configured in this repository.
 - Single-node deployment; correlation does not scale horizontally (it processes
-  at most 400 sessions per run), and the API runs one worker so startup
+  at most 800 sessions per run), and the API runs one worker so startup
   migrations cannot race.

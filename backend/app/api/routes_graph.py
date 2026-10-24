@@ -83,10 +83,16 @@ def last_run(principal: Principal = Depends(require("graph:read"))) -> dict[str,
 @router.get("/campaigns")
 def campaigns(
     status: str | None = Query(default=None, max_length=24),
+    include_archived: bool = Query(default=False),
     limit: int = Query(default=50, ge=1, le=200),
     principal: Principal = Depends(require("campaigns:read")),
 ) -> dict[str, Any]:
-    return {"items": list_campaigns(limit=limit, status=status), "algorithm_version": ALGORITHM_VERSION}
+    return {
+        "items": list_campaigns(
+            limit=limit, status=status, include_archived=include_archived
+        ),
+        "algorithm_version": ALGORITHM_VERSION,
+    }
 
 
 @router.get("/campaigns/{campaign_id}")

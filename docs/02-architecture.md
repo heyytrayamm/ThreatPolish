@@ -88,9 +88,24 @@ sequenceDiagram
 ```
 
 Correlation is deterministic for a fixed window, corpus and algorithm version.
-It is bounded to the 400 most recent sessions (`MAX_SESSIONS_PER_RUN`) so an
+It is bounded to the 800 most recent sessions (`MAX_SESSIONS_PER_RUN`) so an
 analyst cannot trigger an unbounded quadratic computation; truncation is
-reported in the run summary.
+reported in the run summary. Scored pairs are streamed through a heap of at
+most `MAX_EDGES_PER_RUN` results instead of being retained, so peak memory stays
+bounded as the window grows; the run reports how many pairs and how many links
+the edge cap removed.
+
+Campaign identity is separate from membership. A new component inherits an
+existing campaign when at least half of its membership survives (Jaccard
+overlap), matched one-to-one so a split cannot hand one identity to two
+components; added and removed sessions are recorded in `membership_history`.
+When a component absorbs two campaigns, feedback and response references move
+to the survivor, open investigations on the absorbed row are marked
+`superseded`, a single analyst decision is carried forward, and conflicting
+decisions become `uncertain`. A campaign that loses its links is archived when
+an analyst reviewed it or an investigation or response refers to it, and
+deleted only when it is untouched automation. Archived rows stay readable and
+are excluded from the default listing.
 
 ## Data model
 
@@ -162,7 +177,7 @@ rows, so the limit holds even when two requests are planned at the same moment.
 | --- | --- |
 | Database unavailable | Readiness returns 503; data endpoints fail without partial writes |
 | Sensor token invalid or revoked | 401, nothing stored |
-| Correlation window too large | The 400 most recent sessions are used; truncation is reported in the run summary |
+| Correlation window too large | The 800 most recent sessions are used; truncation is reported in the run summary |
 | Web target out of scope | 403 before any connection |
 | Web target private address | 403 unless local test explicitly enabled |
 | Decoy request body large | Rejected with 413 at the configured bound |
@@ -171,9 +186,14 @@ rows, so the limit holds even when two requests are planned at the same moment.
 
 ## Capacity
 
-Correlation is quadratic in the number of sessions: the 400-session cap implies
-79,800 pairs. The evaluation's 165-session volume run (13,530 pairs) took 18.7 s
-and peaked at 112 MB, so a full capped run takes roughly a minute on one core.
-The cap keeps a request bounded. Additional throughput would come from
+Correlation is quadratic in the number of sessions: the 800-session cap implies
+up to 319,600 pairs. Measured on the benchmark host (SQLite), 788 sessions and
+310,078 pairs complete in about 28 s, and the 8,000-edge cap retains every
+linked pair. At 982 sessions the same edge cap starts discarding links (1,953),
+which is why the session cap stops at 800 rather than following the runtime
+budget further. Peak memory is bounded by the 8,000 retained results instead of
+by the pair count, because the engine streams scores through a heap rather than
+keeping a full result for every pair. Additional throughput would come from
 restricting pairs by shared low-specificity keys, which is the next step if the
-cap becomes restrictive.
+cap becomes restrictive. Full measurements are in
+`docs/research/correlation-runtime.md`.

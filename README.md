@@ -147,6 +147,10 @@ benefit.
 Resources: 60.3 s and 18.90 MB peak for the full seed-7 run including ablations;
 131.7 s and 129.19 MB for the 165-session volume run (9.7 ms per pair). Full tables, subsets and
 method notes are in [`docs/research/evaluation-results.md`](docs/research/evaluation-results.md).
+The correlation caps are sized by measurement too:
+[`docs/research/correlation-runtime.md`](docs/research/correlation-runtime.md)
+records 788 sessions and 310,078 pairs in about 28 s, the largest window at
+which the 8,000-edge cap retains every linked pair.
 
 ## Verification
 
@@ -156,12 +160,13 @@ every stage and dashboard view to its implementation, test and measured result.
 
 | Check | Result |
 | --- | --- |
-| Backend suite · SQLite | **134 passed** (three of them drive Chrome) |
+| Backend suite · SQLite | **139 passed** (three of them drive Chrome) |
 | Backend suite · PostgreSQL 16 | the same suite, run in CI on a fresh service database |
 | Static analysis | Ruff `F,E9` clean; `compileall` clean |
+| Dependency audit | `pip-audit` and `npm audit --audit-level=high` report no known vulnerabilities, run locally and in CI |
 | Dashboard | TypeScript and Vite production build pass |
 | Container | Multi-stage image builds; API runs as uid 10001 |
-| Upgrade path | Schema v3 → v5 and v7 → v8 upgraded on copies with data intact |
+| Upgrade path | Schema v3 → v5 and v7 → v8 upgraded on copies with data intact; v8 → v9 is covered by a migration test that starts from a v8-shaped table |
 
 ```bash
 cd backend
@@ -172,7 +177,7 @@ npm run build
 ```
 
 CI repeats these checks on every push and pull request, including the full suite
-against PostgreSQL and a container image build.
+against PostgreSQL, both dependency audits and a container image build.
 
 ## Capabilities
 
@@ -180,7 +185,7 @@ against PostgreSQL and a container image build.
 | --- | --- |
 | Telemetry | Versioned contract, validation, normalization, deduplication, quarantine, retention, source health |
 | Deception | HTTP/API decoy, Cowrie JSON adapter with idempotent tailing, database-backed profiles |
-| Correlation | Session features, corpus-relative weighting, six evidence families, contradictions, specificity anchors, graph, campaigns, feedback |
+| Correlation | Session features, corpus-relative weighting, six evidence families, contradictions, specificity anchors, graph, campaigns with stable identity and archived reviews, feedback |
 | Adaptive investigation | Uncertainty-driven profile selection, persisted activation, bounded TTL, before/after re-evaluation, honest outcomes |
 | Risk | Separate severity, confidence and asset risk with a published formula and per-factor explanation |
 | Web security | Explicit authorization scopes, SSRF and redirect guards, non-destructive checks, opt-in active probes, remediation guidance |

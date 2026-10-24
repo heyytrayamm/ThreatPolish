@@ -104,12 +104,16 @@ def graph_view(
     }
 
 
-def list_campaigns(*, limit: int = 50, status: str | None = None) -> list[dict[str, Any]]:
+def list_campaigns(
+    *, limit: int = 50, status: str | None = None, include_archived: bool = False
+) -> list[dict[str, Any]]:
     # Build the optional predicate instead of passing an untyped NULL: on
     # PostgreSQL ``:status IS NULL`` fails with "could not determine data type
     # of parameter" because the driver cannot infer the parameter type.
     clauses = ["1 = 1"]
     params: dict[str, Any] = {"limit": limit}
+    if not include_archived:
+        clauses.append("archived_at IS NULL")
     if status:
         clauses.append("status = :status")
         params["status"] = status
@@ -117,7 +121,8 @@ def list_campaigns(*, limit: int = 50, status: str | None = None) -> list[dict[s
         rows = conn.execute(
             text(
                 "SELECT id, name, status, confidence, summary, created_at, updated_at, "
-                "member_count, ip_count, algorithm_version FROM campaigns "
+                "member_count, ip_count, algorithm_version, status_updated_at, "
+                "superseded_by, archived_at FROM campaigns "
                 f"WHERE {' AND '.join(clauses)} "
                 "ORDER BY confidence DESC, updated_at DESC LIMIT :limit"
             ),
@@ -135,6 +140,9 @@ def list_campaigns(*, limit: int = 50, status: str | None = None) -> list[dict[s
             "member_count": row[7],
             "ip_count": row[8],
             "algorithm_version": row[9],
+            "status_updated_at": row[10],
+            "superseded_by": row[11],
+            "archived_at": row[12],
         }
         for row in rows
     ]
@@ -265,11 +273,16 @@ def get_campaign(campaign_id: str) -> dict[str, Any]:
             "member_count": row["member_count"],
             "ip_count": row["ip_count"],
             "algorithm_version": row["algorithm_version"],
+            "status_updated_at": row["status_updated_at"],
+            "superseded_by": row["superseded_by"],
+            "archived_at": row["archived_at"],
+            "archived": bool(row["archived_at"]),
         },
         "sessions": sessions,
         "edges": edges,
         "ips": evidence.get("ips", []),
         "categories": evidence.get("categories", {}),
+        "evidence": evidence,
         "explanation": explanation,
     }
 
@@ -316,15 +329,22 @@ def add_feedback(
     *, actor_id: str, object_type: str, object_id: str, label: str, note: str
 ) -> dict[str, Any]:
     _assert_feedback_target(object_type, object_id)
+    # Feedback follows a merged campaign instead of pointing at the absorbed
+    # row.  The review was about this relationship, and the relationship now
+    # lives under the surviving identifier.
+    resolved_id = (
+        _resolve_campaign_alias(object_id) if object_type == "campaign" else object_id
+    )
+    now = utcnow()
     feedback_id = new_id("fbk")
     with connection() as conn:
         conn.execute(
             feedback.insert().values(
                 id=feedback_id,
-                ts=iso(utcnow()),
+                ts=iso(now),
                 actor_id=actor_id,
                 object_type=object_type,
-                object_id=object_id,
+                object_id=resolved_id,
                 label=label,
                 note=note,
                 algorithm_version=ALGORITHM_VERSION,
@@ -333,9 +353,28 @@ def add_feedback(
         if object_type == "campaign":
             status = {"supported": "confirmed", "rejected": "rejected", "uncertain": "uncertain"}[label]
             conn.execute(
-                campaigns.update().where(campaigns.c.id == object_id).values(status=status)
+                campaigns.update()
+                .where(campaigns.c.id == resolved_id)
+                .values(status=status, status_updated_at=iso(now))
             )
-    return {"id": feedback_id, "status": "recorded", "label": label}
+    result = {"id": feedback_id, "status": "recorded", "label": label, "object_id": resolved_id}
+    if resolved_id != object_id:
+        result["redirected_from"] = object_id
+    return result
+
+
+def _resolve_campaign_alias(campaign_id: str) -> str:
+    """Follow merge pointers to the campaign that currently holds the cluster."""
+    current = campaign_id
+    with connection() as conn:
+        for _ in range(8):
+            row = conn.execute(
+                select(campaigns.c.superseded_by).where(campaigns.c.id == current)
+            ).fetchone()
+            if not row or not row[0]:
+                return current
+            current = row[0]
+    return current
 
 
 def _assert_feedback_target(object_type: str, object_id: str) -> None:

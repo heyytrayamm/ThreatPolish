@@ -1,4 +1,4 @@
-.PHONY: install test evaluate build serve decoy clean
+.PHONY: install test audit benchmark evaluate build serve decoy clean
 
 install:
 	cd backend && pip install -r requirements-dev.txt
@@ -6,6 +6,13 @@ install:
 
 test:
 	cd backend && python -m pytest -q
+
+audit:
+	cd backend && pip-audit --skip-editable
+	cd frontend && npm audit --audit-level=high
+
+benchmark:
+	cd backend && python scripts/benchmark_correlation.py
 
 evaluate:
 	cd backend && python scripts/evaluate.py

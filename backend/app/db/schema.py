@@ -259,6 +259,14 @@ campaigns = Table(
     Column("algorithm_version", String(24), nullable=False),
     Column("member_count", Integer, nullable=False, default=0),
     Column("ip_count", Integer, nullable=False, default=0),
+    # Lifecycle.  A campaign keeps its identifier while membership evolves, so
+    # analyst feedback keeps pointing at it.  When membership changes
+    # materially the old row is archived rather than deleted, and when two
+    # campaigns merge the absorbed row records which one took over.
+    Column("status_updated_at", String(40), nullable=True),
+    Column("superseded_by", String(40), nullable=True),
+    Column("archived_at", String(40), nullable=True),
+    Index("ix_campaigns_archived", "archived_at"),
 )
 
 feedback = Table(

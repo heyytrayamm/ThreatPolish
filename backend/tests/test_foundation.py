@@ -96,6 +96,50 @@ def test_legacy_session_pair_edges_are_rekeyed(client):
     assert [row[0] for row in stored] == [expected]
 
 
+def test_campaign_lifecycle_migration_upgrades_a_v8_table(tmp_path):
+    """Migration 9 must add nullable columns and keep existing reviews."""
+    from sqlalchemy import create_engine, inspect, text
+
+    from app.db.database import _migration_009_campaign_lifecycle
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'v8.db'}")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "CREATE TABLE campaigns ("
+                "id VARCHAR(40) PRIMARY KEY, name VARCHAR(120) NOT NULL, "
+                "status VARCHAR(24) NOT NULL, confidence FLOAT NOT NULL, "
+                "summary TEXT NOT NULL, evidence TEXT NOT NULL, "
+                "created_at VARCHAR(40) NOT NULL, updated_at VARCHAR(40) NOT NULL, "
+                "algorithm_version VARCHAR(24) NOT NULL, "
+                "member_count INTEGER NOT NULL, ip_count INTEGER NOT NULL)"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO campaigns VALUES ('cmp_v8', 'old campaign', 'confirmed', "
+                "0.9, 'kept', '{}', '2026-01-01T00:00:00+00:00', "
+                "'2026-01-02T00:00:00+00:00', 'corr-1.3.0', 2, 2)"
+            )
+        )
+        _migration_009_campaign_lifecycle(conn)
+        # Running it twice must not fail on the columns it just added.
+        _migration_009_campaign_lifecycle(conn)
+        columns = {column["name"] for column in inspect(conn).get_columns("campaigns")}
+        row = conn.execute(
+            text(
+                "SELECT status, status_updated_at, superseded_by, archived_at "
+                "FROM campaigns WHERE id = 'cmp_v8'"
+            )
+        ).fetchone()
+    engine.dispose()
+
+    assert {"status_updated_at", "superseded_by", "archived_at"} <= columns
+    assert row[0] == "confirmed"
+    assert row[1] == "2026-01-02T00:00:00+00:00"
+    assert row[2] is None and row[3] is None
+
+
 def test_invalid_severity_filter_is_rejected(client, admin_headers):
     response = client.get("/api/v1/events?min_severity=bogus", headers=admin_headers)
     assert response.status_code == 422

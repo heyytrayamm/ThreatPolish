@@ -30,7 +30,7 @@ when the bundle is missing, stale or Playwright is absent.
 | File | Covers |
 | --- | --- |
 | `test_foundation.py` | Health, auth, tokens, RBAC, audit, event contract validation, migration re-keying |
-| `test_correlation.py` | Feature extraction, corpus weighting, containment scoring, thresholds, anchors, contradictions, campaign construction, campaign membership after demotion or expiry, preserved expiry evidence |
+| `test_correlation.py` | Feature extraction, corpus weighting, containment scoring, thresholds, anchors, contradictions, campaign construction, campaign membership after demotion or expiry, preserved expiry evidence, identity across membership growth, archiving a reviewed campaign, merging campaigns with one or conflicting analyst decisions |
 | `test_deception.py` | Decoy profiles, HTTP decoy responses, Cowrie adaptation, password hashing |
 | `test_adaptive.py` | Investigation lifecycle, eligibility limits, before/after recording, no evidence creation, concurrent planning against the one-open-investigation constraint |
 | `test_websec.py` | Scope authorization, SSRF refusal, redirect targets, response bounds, finding persistence |
@@ -46,7 +46,7 @@ when the bundle is missing, stale or Playwright is absent.
 
 ## Measured behaviour
 
-Latest full run: **134 passed on SQLite**, including the three browser cases.
+Latest full run: **139 passed on SQLite**, including the three browser cases.
 CI runs the same suite against SQLite and PostgreSQL 16 on every push; the
 PostgreSQL job starts a service database and the fixture resets its schema per
 test, so isolation matches the SQLite path.
@@ -61,9 +61,19 @@ passes Ruff and compiles with `compileall`.
 | --- | --- |
 | Backend tests (SQLite) | Ruff `F,E9`; full pytest suite |
 | Backend tests (PostgreSQL) | Full pytest suite against a PostgreSQL 16 service |
+| Dependency audit | `pip-audit` over the installed backend environment; `npm audit --audit-level=high` over the dashboard lockfile |
 | Dashboard build | `npm ci`; TypeScript build and Vite bundle |
 | Dashboard end-to-end | Builds the bundle, installs Playwright, drives the password, session, token and investigation flows in Chromium against a live API |
 | Container image | Multi-stage Docker build |
+
+Runtime limits are measured too. `backend/scripts/benchmark_correlation.py`
+fills a scratch database with the synthetic dataset and times `correlate` at
+increasing sizes; results are in
+[`research/correlation-runtime.md`](research/correlation-runtime.md). At 788
+sessions (310,078 pairs) a run takes about 28 s, and the 8,000-edge cap retains
+every linked pair. At 982 sessions the same cap starts discarding links (1,953),
+so the session cap is 800 — the largest measured window that keeps all links —
+rather than the largest that fits a time budget.
 
 Benchmark, 63 sessions / 1953 pairs, two seeds, algorithm `corr-1.3.0`:
 
