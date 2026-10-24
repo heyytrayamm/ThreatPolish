@@ -58,7 +58,12 @@ def run(
 
     methods: list[str] = ["ip_only", "rule_based", "proposed"]
     if include_ablations:
-        methods += ["ablation_no_intel", "ablation_no_timing", "ablation_no_toolchain"]
+        methods += [
+            "ablation_no_intel",
+            "ablation_no_timing",
+            "ablation_no_toolchain",
+            "ablation_uniform_weights",
+        ]
 
     passive_decisions: dict[str, dict[str, Any]] = {}
     for method in methods:
@@ -77,7 +82,13 @@ def run(
                     "ablation_no_timing": {"timing"},
                     "ablation_no_toolchain": {"toolchain"},
                 }.get(method, set())
-                result = compare(left, right, disabled_families=disabled, context=context)
+                result = compare(
+                    left,
+                    right,
+                    disabled_families=disabled,
+                    context=context,
+                    uniform_family_weights=method == "ablation_uniform_weights",
+                )
                 if method == "proposed":
                     passive_decisions[key] = result
                 predictions[key] = result["decision"] == "linked"
@@ -104,6 +115,7 @@ def run(
         for session_id in enrich_ids
     }
     resolved_correctly = resolved_incorrectly = evaluated = 0
+    lost_correctly = lost_incorrectly = unchanged = 0
     for left_id, right_id in pairs:
         if left_id not in enrich_ids or right_id not in enrich_ids:
             continue
@@ -113,11 +125,22 @@ def run(
         updated = compare(enriched[left_id], enriched[right_id], context=context)
         now_linked = updated["decision"] == "linked"
         adaptive_decisions[key] = now_linked
+        if key not in evaluable_keys:
+            continue
+        # Additional observation can move a pair either way; both directions are
+        # counted, so a promotion cannot be reported without its demotions.
         if now_linked and not was_linked:
             if labels[key] == 1:
                 resolved_correctly += 1
             else:
                 resolved_incorrectly += 1
+        elif was_linked and not now_linked:
+            if labels[key] == 1:
+                lost_correctly += 1
+            else:
+                lost_incorrectly += 1
+        else:
+            unchanged += 1
     timings["proposed_adaptive"] = round(time.perf_counter() - adaptive_start, 3)
     results["proposed_adaptive"] = _metrics(adaptive_decisions, labels, keys=evaluable_keys)
 
@@ -156,11 +179,15 @@ def run(
             "pairs_recomputed": evaluated,
             "resolved_correctly": resolved_correctly,
             "resolved_incorrectly": resolved_incorrectly,
-            "unchanged": evaluated - resolved_correctly - resolved_incorrectly,
+            "lost_correctly": lost_correctly,
+            "lost_incorrectly": lost_incorrectly,
+            "unchanged": unchanged,
             "note": (
-                "Additional observation is simulated by appending one decoy interaction "
-                "to sessions in the largest uncertain clusters only. Production adaptation "
-                "records real decoy traffic and cannot create evidence."
+                "Additional observation is simulated by replaying one command the session "
+                "already used, for sessions in the largest uncertain clusters only. The "
+                "replay adds only behaviour the actor showed; the earlier simulation also "
+                "added a category-derived request path, which manufactured similarity "
+                "between unrelated sessions. Counts cover evaluable pairs."
             ),
         },
         "resources": {

@@ -43,7 +43,7 @@ from .features import (
     weighted_jaccard,
 )
 
-ALGORITHM_VERSION = "corr-1.1.0"
+ALGORITHM_VERSION = "corr-1.2.0"
 LINK_CONFIDENCE = 0.70
 MIN_SCORE_TO_STORE = 0.30
 MIN_INDEPENDENT_FAMILIES = 2
@@ -132,12 +132,15 @@ def compare(
     *,
     disabled_families: set[str] | None = None,
     context: CorrelationContext | None = None,
+    uniform_family_weights: bool = False,
 ) -> dict[str, Any]:
     """Compare two sessions.
 
     ``disabled_families`` supports ablation studies: a disabled family is treated
     as unavailable, which also reduces coverage rather than silently
-    redistributing its weight.
+    redistributing its weight.  ``uniform_family_weights`` disables the
+    corpus-relative scaling of family weights, so the contribution of that
+    scaling can be measured rather than asserted.
     """
     disabled = disabled_families or set()
     components: list[Component] = []
@@ -282,11 +285,19 @@ def compare(
 
     # ---- family aggregation ------------------------------------------- #
     families: dict[str, dict[str, Any]] = {}
+    weights = _effective_weights(
+        None if uniform_family_weights else context
+    )
+    # Coverage counts evidence that could discriminate in this window, so it
+    # uses the same corpus-scaled weights as support.  A family whose tokens are
+    # all ubiquitous is not missing data — it is data that cannot separate these
+    # sessions — and charging a pair for it would penalise the corpus, not the
+    # pair.
     active_weight = {
-        family: weight for family, weight in FAMILY_WEIGHT.items() if family not in disabled
+        family: weight for family, weight in weights.items() if family not in disabled
     }
     total_weight = sum(active_weight.values())
-    for family, weight in FAMILY_WEIGHT.items():
+    for family, weight in weights.items():
         if family in disabled:
             families[family] = {
                 "weight": 0.0,
@@ -377,6 +388,8 @@ def compare(
     return {
         "algorithm_version": ALGORITHM_VERSION,
         "context": context.summary() if context else None,
+        "family_weights": {name: round(weight, 4) for name, weight in weights.items()},
+        "family_weighting": "uniform" if uniform_family_weights else "corpus",
         "score": round(score, 4),
         "confidence": round(confidence, 4),
         "support": round(support, 4),
@@ -417,6 +430,38 @@ def compare(
             ),
         },
     }
+
+
+FAMILY_FIELDS: dict[str, tuple[str, ...]] = {
+    "behavior": ("action", "command", "category"),
+    "targeting": ("endpoint",),
+    "identity": ("username",),
+    "intel": ("indicator",),
+    "toolchain": ("client",),
+}
+
+
+def _effective_weights(context: CorrelationContext | None) -> dict[str, float]:
+    """Scale each family by how specific its tokens are in this window.
+
+    Corpus-relative weighting already discards ubiquitous tokens; this applies
+    the same idea one level up.  When almost every token of a family is
+    ubiquitous — generic shell commands, a stock client string — agreement on
+    that family says little about a common actor, so the family contributes
+    less to the score.  Families whose tokens survive the filter keep their
+    full weight.  ``timing`` has no tokens and is left unchanged.
+    """
+    if context is None:
+        return dict(FAMILY_WEIGHT)
+    weights: dict[str, float] = {}
+    for name, base in FAMILY_WEIGHT.items():
+        fields = FAMILY_FIELDS.get(name)
+        if not fields:
+            weights[name] = base
+            continue
+        specificity = context.specificity(fields)
+        weights[name] = base * specificity
+    return weights
 
 
 def _detail(

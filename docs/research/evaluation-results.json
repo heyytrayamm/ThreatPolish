@@ -1,23 +1,25 @@
 {
-  "generated_at": "2026-10-23T12:04:14.713212+00:00",
+  "generated_at": "2026-10-24T09:22:35.261321+00:00",
   "runs": [
     {
       "adaptive": {
-        "ambiguous_pairs": 197,
+        "ambiguous_pairs": 180,
         "candidate_components": 7,
         "components_investigated": 7,
-        "note": "Additional observation is simulated by appending one decoy interaction to sessions in the largest uncertain clusters only. Production adaptation records real decoy traffic and cannot create evidence.",
+        "lost_correctly": 1,
+        "lost_incorrectly": 0,
+        "note": "Additional observation is simulated by replaying one command the session already used, for sessions in the largest uncertain clusters only. The replay adds only behaviour the actor showed; the earlier simulation also added a category-derived request path, which manufactured similarity between unrelated sessions. Counts cover evaluable pairs.",
         "pairs_recomputed": 1953,
-        "resolved_correctly": 5,
-        "resolved_incorrectly": 17,
+        "resolved_correctly": 1,
+        "resolved_incorrectly": 0,
         "sessions_enriched": 63,
-        "unchanged": 1931
+        "unchanged": 1594
       },
-      "algorithm_version": "corr-1.1.0",
+      "algorithm_version": "corr-1.2.0",
       "campaign_analysis": {
-        "campaign_recall": 0.6667,
+        "campaign_recall": 0.75,
         "cluster_purity": 1.0,
-        "groups_recovered_exactly": 8,
+        "groups_recovered_exactly": 9,
         "note": "Recovery requires every member of a true group to appear in exactly one predicted cluster (no fragmentation, no contamination).",
         "predicted_clusters": 10,
         "pure_clusters": 10,
@@ -65,6 +67,18 @@
             "tp": 6
           },
           "ablation_no_toolchain": {
+            "accuracy": 0.4,
+            "f1": 0.5714,
+            "false_negative_rate": 0.0,
+            "false_positive_rate": 1.0,
+            "fn": 0,
+            "fp": 9,
+            "precision": 0.4,
+            "recall": 1.0,
+            "tn": 0,
+            "tp": 6
+          },
+          "ablation_uniform_weights": {
             "accuracy": 0.4,
             "f1": 0.5714,
             "false_negative_rate": 0.0,
@@ -129,17 +143,18 @@
       "positives": 38,
       "resources": {
         "method_seconds": {
-          "ablation_no_intel": 1.11,
-          "ablation_no_timing": 1.066,
-          "ablation_no_toolchain": 1.066,
-          "ip_only": 0.006,
-          "proposed": 1.354,
-          "proposed_adaptive": 1.353,
-          "rule_based": 0.004
+          "ablation_no_intel": 8.308,
+          "ablation_no_timing": 8.154,
+          "ablation_no_toolchain": 8.123,
+          "ablation_uniform_weights": 8.123,
+          "ip_only": 0.039,
+          "proposed": 8.696,
+          "proposed_adaptive": 9.606,
+          "rule_based": 0.067
         },
-        "peak_memory_mb": 16.4,
-        "sessions_per_second": 10.4,
-        "total_seconds": 6.075
+        "peak_memory_mb": 18.2,
+        "sessions_per_second": 1.2,
+        "total_seconds": 52.254
       },
       "results": {
         "ablation_no_intel": {
@@ -167,15 +182,27 @@
           "tp": 25
         },
         "ablation_no_toolchain": {
-          "accuracy": 0.99,
-          "f1": 0.7576,
+          "accuracy": 0.995,
+          "f1": 0.8571,
+          "false_negative_rate": 0.25,
+          "false_positive_rate": 0.0,
+          "fn": 8,
+          "fp": 0,
+          "precision": 1.0,
+          "recall": 0.75,
+          "tn": 1564,
+          "tp": 24
+        },
+        "ablation_uniform_weights": {
+          "accuracy": 0.9956,
+          "f1": 0.8772,
           "false_negative_rate": 0.2188,
-          "false_positive_rate": 0.0058,
+          "false_positive_rate": 0.0,
           "fn": 7,
-          "fp": 9,
-          "precision": 0.7353,
+          "fp": 0,
+          "precision": 1.0,
           "recall": 0.7812,
-          "tn": 1555,
+          "tn": 1564,
           "tp": 25
         },
         "ip_only": {
@@ -191,28 +218,28 @@
           "tp": 0
         },
         "proposed": {
-          "accuracy": 0.9956,
-          "f1": 0.8772,
-          "false_negative_rate": 0.2188,
+          "accuracy": 0.9962,
+          "f1": 0.8966,
+          "false_negative_rate": 0.1875,
           "false_positive_rate": 0.0,
-          "fn": 7,
+          "fn": 6,
           "fp": 0,
           "precision": 1.0,
-          "recall": 0.7812,
+          "recall": 0.8125,
           "tn": 1564,
-          "tp": 25
+          "tp": 26
         },
         "proposed_adaptive": {
-          "accuracy": 0.9881,
-          "f1": 0.7595,
-          "false_negative_rate": 0.0625,
-          "false_positive_rate": 0.0109,
-          "fn": 2,
-          "fp": 17,
-          "precision": 0.6383,
-          "recall": 0.9375,
-          "tn": 1547,
-          "tp": 30
+          "accuracy": 0.9962,
+          "f1": 0.8966,
+          "false_negative_rate": 0.1875,
+          "false_positive_rate": 0.0,
+          "fn": 6,
+          "fp": 0,
+          "precision": 1.0,
+          "recall": 0.8125,
+          "tn": 1564,
+          "tp": 26
         },
         "rule_based": {
           "accuracy": 0.7331,
@@ -273,18 +300,18 @@
           "tp": 0
         },
         "same_campaign": {
-          "accuracy": 0.8333,
-          "f1": 0.9091,
-          "false_negative_rate": 0.1667,
+          "accuracy": 0.8667,
+          "f1": 0.9286,
+          "false_negative_rate": 0.1333,
           "false_positive_rate": 0.0,
-          "fn": 5,
+          "fn": 4,
           "fp": 0,
           "pairs": 30,
           "positives": 30,
           "precision": 1.0,
-          "recall": 0.8333,
+          "recall": 0.8667,
           "tn": 0,
-          "tp": 25
+          "tp": 26
         },
         "same_ip": {
           "accuracy": 1.0,
@@ -304,17 +331,19 @@
     },
     {
       "adaptive": {
-        "ambiguous_pairs": 188,
+        "ambiguous_pairs": 178,
         "candidate_components": 6,
         "components_investigated": 6,
-        "note": "Additional observation is simulated by appending one decoy interaction to sessions in the largest uncertain clusters only. Production adaptation records real decoy traffic and cannot create evidence.",
-        "pairs_recomputed": 1711,
-        "resolved_correctly": 10,
-        "resolved_incorrectly": 16,
-        "sessions_enriched": 59,
-        "unchanged": 1685
+        "lost_correctly": 1,
+        "lost_incorrectly": 0,
+        "note": "Additional observation is simulated by replaying one command the session already used, for sessions in the largest uncertain clusters only. The replay adds only behaviour the actor showed; the earlier simulation also added a category-derived request path, which manufactured similarity between unrelated sessions. Counts cover evaluable pairs.",
+        "pairs_recomputed": 1770,
+        "resolved_correctly": 1,
+        "resolved_incorrectly": 0,
+        "sessions_enriched": 60,
+        "unchanged": 1429
       },
-      "algorithm_version": "corr-1.1.0",
+      "algorithm_version": "corr-1.2.0",
       "campaign_analysis": {
         "campaign_recall": 0.3333,
         "cluster_purity": 1.0,
@@ -377,6 +406,18 @@
             "tn": 0,
             "tp": 6
           },
+          "ablation_uniform_weights": {
+            "accuracy": 0.4,
+            "f1": 0.5714,
+            "false_negative_rate": 0.0,
+            "false_positive_rate": 1.0,
+            "fn": 0,
+            "fp": 9,
+            "precision": 0.4,
+            "recall": 1.0,
+            "tn": 0,
+            "tp": 6
+          },
           "ip_only": {
             "accuracy": 0.6,
             "f1": 0.0,
@@ -430,30 +471,31 @@
       "positives": 38,
       "resources": {
         "method_seconds": {
-          "ablation_no_intel": 1.161,
-          "ablation_no_timing": 1.078,
-          "ablation_no_toolchain": 1.071,
-          "ip_only": 0.003,
-          "proposed": 1.327,
-          "proposed_adaptive": 1.173,
-          "rule_based": 0.004
+          "ablation_no_intel": 8.087,
+          "ablation_no_timing": 7.951,
+          "ablation_no_toolchain": 7.98,
+          "ablation_uniform_weights": 7.93,
+          "ip_only": 0.04,
+          "proposed": 8.519,
+          "proposed_adaptive": 8.472,
+          "rule_based": 0.069
         },
-        "peak_memory_mb": 16.27,
-        "sessions_per_second": 10.6,
-        "total_seconds": 5.926
+        "peak_memory_mb": 18.09,
+        "sessions_per_second": 1.3,
+        "total_seconds": 50.112
       },
       "results": {
         "ablation_no_intel": {
-          "accuracy": 0.9931,
-          "f1": 0.7925,
-          "false_negative_rate": 0.3438,
+          "accuracy": 0.9937,
+          "f1": 0.8148,
+          "false_negative_rate": 0.3125,
           "false_positive_rate": 0.0,
-          "fn": 11,
+          "fn": 10,
           "fp": 0,
           "precision": 1.0,
-          "recall": 0.6562,
+          "recall": 0.6875,
           "tn": 1564,
-          "tp": 21
+          "tp": 22
         },
         "ablation_no_timing": {
           "accuracy": 0.9912,
@@ -468,16 +510,28 @@
           "tp": 18
         },
         "ablation_no_toolchain": {
-          "accuracy": 0.985,
-          "f1": 0.5714,
+          "accuracy": 0.99,
+          "f1": 0.6667,
           "false_negative_rate": 0.5,
-          "false_positive_rate": 0.0051,
+          "false_positive_rate": 0.0,
           "fn": 16,
-          "fp": 8,
-          "precision": 0.6667,
+          "fp": 0,
+          "precision": 1.0,
           "recall": 0.5,
-          "tn": 1556,
+          "tn": 1564,
           "tp": 16
+        },
+        "ablation_uniform_weights": {
+          "accuracy": 0.9912,
+          "f1": 0.72,
+          "false_negative_rate": 0.4375,
+          "false_positive_rate": 0.0,
+          "fn": 14,
+          "fp": 0,
+          "precision": 1.0,
+          "recall": 0.5625,
+          "tn": 1564,
+          "tp": 18
         },
         "ip_only": {
           "accuracy": 0.9774,
@@ -504,16 +558,16 @@
           "tp": 18
         },
         "proposed_adaptive": {
-          "accuracy": 0.9875,
-          "f1": 0.7368,
-          "false_negative_rate": 0.125,
-          "false_positive_rate": 0.0102,
-          "fn": 4,
-          "fp": 16,
-          "precision": 0.6364,
-          "recall": 0.875,
-          "tn": 1548,
-          "tp": 28
+          "accuracy": 0.9912,
+          "f1": 0.72,
+          "false_negative_rate": 0.4375,
+          "false_positive_rate": 0.0,
+          "fn": 14,
+          "fp": 0,
+          "precision": 1.0,
+          "recall": 0.5625,
+          "tn": 1564,
+          "tp": 18
         },
         "rule_based": {
           "accuracy": 0.7356,
@@ -606,21 +660,23 @@
   ],
   "volume_run": {
     "adaptive": {
-      "ambiguous_pairs": 1428,
+      "ambiguous_pairs": 1257,
       "candidate_components": 8,
       "components_investigated": 8,
-      "note": "Additional observation is simulated by appending one decoy interaction to sessions in the largest uncertain clusters only. Production adaptation records real decoy traffic and cannot create evidence.",
+      "lost_correctly": 3,
+      "lost_incorrectly": 0,
+      "note": "Additional observation is simulated by replaying one command the session already used, for sessions in the largest uncertain clusters only. The replay adds only behaviour the actor showed; the earlier simulation also added a category-derived request path, which manufactured similarity between unrelated sessions. Counts cover evaluable pairs.",
       "pairs_recomputed": 12246,
-      "resolved_correctly": 9,
-      "resolved_incorrectly": 28,
+      "resolved_correctly": 4,
+      "resolved_incorrectly": 0,
       "sessions_enriched": 157,
-      "unchanged": 12209
+      "unchanged": 11318
     },
-    "algorithm_version": "corr-1.1.0",
+    "algorithm_version": "corr-1.2.0",
     "campaign_analysis": {
-      "campaign_recall": 0.7619,
+      "campaign_recall": 0.7857,
       "cluster_purity": 1.0,
-      "groups_recovered_exactly": 32,
+      "groups_recovered_exactly": 33,
       "note": "Recovery requires every member of a true group to appear in exactly one predicted cluster (no fragmentation, no contamination).",
       "predicted_clusters": 39,
       "pure_clusters": 39,
@@ -656,15 +712,15 @@
           "tp": 0
         },
         "proposed": {
-          "accuracy": 0.4,
-          "f1": 0.5714,
+          "accuracy": 0.6,
+          "f1": 0.6667,
           "false_negative_rate": 0.0,
-          "false_positive_rate": 1.0,
+          "false_positive_rate": 0.6667,
           "fn": 0,
-          "fp": 9,
-          "precision": 0.4,
+          "fp": 6,
+          "precision": 0.5,
           "recall": 1.0,
-          "tn": 0,
+          "tn": 3,
           "tp": 6
         },
         "rule_based": {
@@ -696,14 +752,14 @@
     "positives": 128,
     "resources": {
       "method_seconds": {
-        "ip_only": 0.024,
-        "proposed": 9.531,
-        "proposed_adaptive": 8.373,
-        "rule_based": 0.035
+        "ip_only": 0.269,
+        "proposed": 62.932,
+        "proposed_adaptive": 58.688,
+        "rule_based": 0.582
       },
-      "peak_memory_mb": 111.8,
-      "sessions_per_second": 9.0,
-      "total_seconds": 18.339
+      "peak_memory_mb": 124.4,
+      "sessions_per_second": 1.3,
+      "total_seconds": 126.234
     },
     "results": {
       "ip_only": {
@@ -719,28 +775,28 @@
         "tp": 0
       },
       "proposed": {
-        "accuracy": 0.9984,
-        "f1": 0.9107,
-        "false_negative_rate": 0.1639,
+        "accuracy": 0.9986,
+        "f1": 0.9204,
+        "false_negative_rate": 0.1475,
         "false_positive_rate": 0.0,
-        "fn": 20,
+        "fn": 18,
         "fp": 0,
         "precision": 1.0,
-        "recall": 0.8361,
+        "recall": 0.8525,
         "tn": 12439,
-        "tp": 102
+        "tp": 104
       },
       "proposed_adaptive": {
-        "accuracy": 0.9969,
-        "f1": 0.8506,
-        "false_negative_rate": 0.0902,
-        "false_positive_rate": 0.0023,
-        "fn": 11,
-        "fp": 28,
-        "precision": 0.7986,
-        "recall": 0.9098,
-        "tn": 12411,
-        "tp": 111
+        "accuracy": 0.9986,
+        "f1": 0.9251,
+        "false_negative_rate": 0.1393,
+        "false_positive_rate": 0.0,
+        "fn": 17,
+        "fp": 0,
+        "precision": 1.0,
+        "recall": 0.8607,
+        "tn": 12439,
+        "tp": 105
       },
       "rule_based": {
         "accuracy": 0.4356,
@@ -801,18 +857,18 @@
         "tp": 0
       },
       "same_campaign": {
-        "accuracy": 0.85,
-        "f1": 0.9189,
-        "false_negative_rate": 0.15,
+        "accuracy": 0.8667,
+        "f1": 0.9286,
+        "false_negative_rate": 0.1333,
         "false_positive_rate": 0.0,
-        "fn": 18,
+        "fn": 16,
         "fp": 0,
         "pairs": 120,
         "positives": 120,
         "precision": 1.0,
-        "recall": 0.85,
+        "recall": 0.8667,
         "tn": 0,
-        "tp": 102
+        "tp": 104
       },
       "same_ip": {
         "accuracy": 1.0,

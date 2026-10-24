@@ -28,6 +28,7 @@ METHOD_LABELS = {
     "ablation_no_intel": "Ablation: no threat-intel family",
     "ablation_no_timing": "Ablation: no timing family",
     "ablation_no_toolchain": "Ablation: no toolchain family",
+    "ablation_uniform_weights": "Ablation: uniform family weights",
 }
 
 
@@ -75,7 +76,10 @@ def _markdown(runs: list[dict], volume: dict) -> str:
         "  coordinated scenario (campaign), not necessarily the same person.",
         "- Positive pair: both sessions belong to the same true scenario.",
         "- `linked` decisions are counted as positive; hypotheses are not.",
-        "- Thresholds were fixed before running the benchmark and were not tuned on it.",
+        "- Link thresholds are unchanged from the previous revision and were not tuned",
+        "  on this benchmark. The corpus-relative family weighting added in",
+        "  `corr-1.2.0` was evaluated on the same benchmark it is reported on; there is",
+        "  no separate validation set, so its gain is reported as preliminary.",
         "- Every run is deterministic from its seed. The generator is synthetic;",
         "  absolute performance on production traffic will differ.",
         "",
@@ -138,9 +142,11 @@ def _markdown(runs: list[dict], volume: dict) -> str:
             f"Adaptive experiment: {adaptive['ambiguous_pairs']} ambiguous pairs in "
             f"{adaptive['candidate_components']} candidate clusters; "
             f"{adaptive['components_investigated']} clusters investigated, "
-            f"{adaptive['pairs_recomputed']} pairs recomputed, "
-            f"{adaptive['resolved_correctly']} correctly resolved, "
-            f"{adaptive['resolved_incorrectly']} incorrectly resolved, "
+            f"{adaptive['pairs_recomputed']} pairs recomputed; of the evaluable pairs, "
+            f"{adaptive['resolved_correctly']} links gained correctly, "
+            f"{adaptive['resolved_incorrectly']} gained incorrectly, "
+            f"{adaptive['lost_correctly']} lost correctly and "
+            f"{adaptive['lost_incorrectly']} lost incorrectly; "
             f"{adaptive['unchanged']} unchanged. {adaptive['note']}",
             "",
             f"Resources: total {resources['total_seconds']:.3f}s, peak memory "

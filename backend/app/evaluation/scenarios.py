@@ -434,46 +434,64 @@ def adaptive_probe_events(
 ) -> list[dict[str, Any]]:
     """Synthetic 'additional observation' for the adaptive experiment.
 
-    A real adaptive investigation activates a decoy profile for the source
-    address and records actual interactions.  This models the extra observation
-    using only information already visible for that session: its dominant
-    activity category selects a plausible decoy path and its observed client
-    signature is carried through.  No shared constant is injected, so the
-    simulation cannot manufacture similarity between unrelated sessions.
+    A real investigation activates a decoy profile for the source address and
+    records whatever the actor does next: it repeats its toolkit, with the same
+    credential and client signature.  This models that repetition — it replays
+    one command the session already used — instead of inventing a shared path
+    for every session in an activity category.  A constant applied by category
+    would manufacture similarity that observation cannot produce; replaying the
+    actor's own behaviour can only show similarity that is already there.
     """
     events = session["events"]
     if not events:
         return []
+    commands = [
+        str((event.get("features") or {}).get("command") or "")
+        for event in events
+        if (event.get("features") or {}).get("command")
+    ]
+    if not commands:
+        return []
     last = datetime.fromisoformat(events[-1]["occurred_at"])
-    path = {
-        "recon": "/admin",
-        "download": "/api/v1/health",
-        "credential": "/login",
-        "http_probe": "/api/v1/users",
-    }.get(category or "", "/")
-    features: dict[str, Any] = {
-        "method": "GET",
-        "path": path,
-        "status": 200,
-    }
-    if client:
-        features["user_agent"] = client
+    username = next(
+        (
+            str((event.get("features") or {}).get("username"))
+            for event in events
+            if (event.get("features") or {}).get("username")
+        ),
+        "root",
+    )
+    observed_client = next(
+        (
+            str((event.get("features") or {}).get("client_version"))
+            for event in events
+            if (event.get("features") or {}).get("client_version")
+        ),
+        client or "",
+    )
+    replay = [commands[-1]]
     return [
         {
             "schema_version": "1.0",
-            "occurred_at": (last + timedelta(seconds=90)).isoformat(),
+            "occurred_at": (last + timedelta(seconds=90 + 30 * index)).isoformat(),
             "source_module": "honeypot",
-            "event_type": "honeypot.http.request",
+            "event_type": "honeypot.ssh.command",
             "source_ip": session["ip"],
             "session_id": session["id"],
-            "target_id": "decoy-http-1",
+            "target_id": "decoy-ssh-1",
             "severity": "low",
             "provenance": {
                 "collector": "eval-adaptive",
-                "source": "http-decoy",
-                "reliability": 0.8,
+                "source": "cowrie",
+                "reliability": 0.9,
                 "synthetic": True,
             },
-            "features": features,
+            "features": {
+                "command": command,
+                "username": username,
+                "success": True,
+                "client_version": observed_client,
+            },
         }
+        for index, command in enumerate(replay)
     ]

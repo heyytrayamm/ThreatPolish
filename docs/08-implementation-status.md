@@ -13,9 +13,9 @@ why.
 | Database models for all modules | Done | `app/db/` |
 | Event contract and validation | Done | `app/schemas/event.py`, `test_foundation.py` |
 | Ingestion with hashing, dedup, quarantine | Done | `app/telemetry/ingest.py`, `test_pipeline.py` |
-| Auth, RBAC, audit trail | Done | `app/auth/`, `test_foundation.py`, `test_security.py`; password change and the admin session revocation both act on the account session version, the session history is derived from the audit trail with client, address and validity, one device can be signed out through a revocation list keyed by token id, an administrator can sign one device out of another account while its other sessions continue, and a second live session from another network raises `auth.signin.anomaly` (`test_signin_alerts.py`) |
+| Auth, RBAC, audit trail | Done | `app/auth/`, `test_foundation.py`, `test_security.py`; password change and the admin session revocation both act on the account session version, the session history is derived from the audit trail with client, address and validity, one device can be signed out through a revocation list keyed by token id, an administrator can sign one device out of another account while its other sessions continue, and a second live session from another network raises `auth.signin.anomaly` (`test_signin_alerts.py`). Session and target identifiers reject control characters, so a sensor cannot craft a session id that collides with the relationship-key separator (`test_properties.py`) |
 | Dashboard shell and navigation | Done | `frontend/` builds cleanly; the account page rotates the password, keeps the replacement token, lists recent sign-ins and signs out one device, the Overview page raises recent sign-in alerts, administration opens any account's session history, signs one device out of it and manages sensor tokens, and `test_browser.py` drives the password, plan/activate, session-management and token flows in Chrome |
-| Test harness | Done | 121 tests passing on SQLite and on PostgreSQL 16 in CI, isolated per test, three of them driving Chrome against a live API |
+| Test harness | Done | 130 tests passing on SQLite, isolated per test, three of them driving Chrome against a live API; CI runs the same suite against PostgreSQL 16 |
 | Reproducible benchmark | Done | `backend/scripts/evaluate.py` |
 | Audit, novelty review, architecture, threat model | Done | `docs/00`–`docs/03` |
 | License | Done | Proprietary notice, all rights reserved by the project team |
@@ -28,7 +28,7 @@ why.
 | HTTP decoy service | Done | `http_decoy.py`, exercised over HTTP |
 | Cowrie log adapter | Done | ran against a real Cowrie container; offset persisted outside the read-only log volume |
 | Password capture as hashes | Done | `test_deception.py` |
-| Uncertainty-directed investigation | Partial | persisted activation shared with the decoy process and real before/after records; the *benefit* is measured with a simulated observation in the benchmark, field measurement pending |
+| Uncertainty-directed investigation | Partial | persisted activation shared with the decoy process and real before/after records. The benchmark simulation now replays only behaviour the actor already showed; under it additional observation moves almost no decisions (one link gained, one lost per seed; four gained, two lost at volume) and adds no false positives, so the benefit is **not demonstrated** and field measurement is still required |
 | Automatic decoy rotation from attacker tooling | Not done | the investigation mutates profile choice and records it, but there is no live adaptive server reconfiguration |
 
 ## Correlation and risk
@@ -39,6 +39,7 @@ why.
 | Corpus-relative token weighting | Done | `scoring.py`, unit tested |
 | Six-family evidence scoring | Done | weights sum to 1.0, tested |
 | Specificity anchors and contradiction penalty | Done | `test_correlation.py` |
+| Corpus-relative family weighting | Done | `_effective_weights` scales each family by the share of its tokens that survive the ubiquity filter, recorded per edge; measured against the `ablation_uniform_weights` run, which reproduces the previous model |
 | Edge persistence with full evidence | Done | `graph_edges`, `test_correlation.py` |
 | Campaign construction | Done | `engine.py` |
 | Risk, severity, journey escalation | Done | `app/risk/scoring.py` |
@@ -51,7 +52,7 @@ why.
 
 | Item | Status | Evidence |
 | --- | --- | --- |
-| Explicit scope with authorization and expiry | Done | `websec/scope.py` |
+| Explicit scope with authorization and expiry | Done | `websec/scope.py`; when scopes overlap, the narrowest live one governs, so a broad grant cannot relax the limits set for a specific host (`test_properties.py`) |
 | SSRF guards (scheme, DNS, private ranges) | Done | `test_websec.py` |
 | Non-destructive checks | Done | headers, TLS, exposed paths, cookies |
 | Findings flow into the shared event contract | Done | same ingestion path |

@@ -41,14 +41,16 @@ when the bundle is missing, stale or Playwright is absent.
 | `test_security.py` | Auth bypass attempts, injection strings, oversized payloads, token tampering |
 | `test_advanced.py` | Non-finite and unencodable payloads, hostile feature shapes, request-body bounds, login spraying, session revocation on password change, per-device sign-out, foreign-session refusal, an administrator signing one device out of another account, session history states, concurrent duplicate ingestion, redirect scope bypass, decoy request framing |
 | `test_signin_alerts.py` | Network-change and distance alerts: same-network silence, window and revoked-session suppression, distant and nearby geolocation, unlocatable fallback |
+| `test_properties.py` | Invariants rather than scenarios: score symmetry and determinism, bounded outputs, monotone confidence, unique relationship keys for every accepted identifier, rejection of control characters in session and target ids, isolation of legacy corrupt ids, corpus-relative family weights against the uniform-weight ablation, and the narrowest authorization governing a host |
 | `test_browser.py` | Chrome-driven dashboard flow against a live API: every view renders without console errors, the duplicate-resolution note shows on the Deception page, the Account page changes the password, the replacement token survives a reload and an earlier token is refused; a second run plans and activates an investigation through the Campaigns and Deception pages; a third signs a device out from the session table, opens the admin session panel, signs another account's device out from it, creates and revokes a sensor token on the same page and checks the Overview attention card |
 
 ## Measured behaviour
 
-Latest full run: **121 passed on SQLite and 121 passed on PostgreSQL 16** in CI
-(run `40077471087`, commit `bdd593f`), including the three browser cases. The
-PostgreSQL job starts a service database and the fixture resets its schema per
-test, so isolation matches the SQLite path.
+Latest full run: **130 passed on SQLite**, including the three browser cases.
+The 121-test revision immediately before this one also passed on PostgreSQL 16
+in CI (run `40077471087`), and the same suite runs against PostgreSQL on every
+push; the PostgreSQL job starts a service database and the fixture resets its
+schema per test, so isolation matches the SQLite path.
 Static checks: the frontend builds with `tsc -b` and `vite build`; the backend
 passes Ruff and compiles with `compileall`.
 
@@ -64,24 +66,27 @@ passes Ruff and compiles with `compileall`.
 | Dashboard end-to-end | Builds the bundle, installs Playwright, drives the password, session, token and investigation flows in Chromium against a live API |
 | Container image | Multi-stage Docker build |
 
-Benchmark, 63 sessions / 1953 pairs, two seeds, algorithm `corr-1.1.0`:
+Benchmark, 63 sessions / 1953 pairs, two seeds, algorithm `corr-1.2.0`:
 
 | Metric | Seed 7 | Seed 2026 |
 | --- | --- | --- |
 | Precision (proposed) | 1.000 | 1.000 |
-| Recall (proposed) | 0.781 | 0.562 |
+| Recall (proposed) | 0.812 | 0.562 |
+| Recall (uniform family weights, previous model) | 0.781 | 0.562 |
 | Precision (rule baseline) | 0.066 | 0.067 |
 | False positives (proposed / rule) | 0 / 424 | 0 / 420 |
-| Campaign-level exact recovery | 8 of 12 | 4 of 12 |
+| Campaign-level exact recovery | 9 of 12 | 4 of 12 |
 
-Resources: about 6.3 s total, 16.4 MB peak for a full run including all
-ablations.
+Resources: 18 MB peak for a full run including all ablations. Wall time on
+this host was about 50 s for the same workload that took about 6 s when the
+benchmark was first run, so treat the seconds as host-dependent and the
+memory as the stable figure.
 Full tables, per-subset breakdowns, the deliberately hard subset and the
 adaptive experiment are in `docs/research/evaluation-results.md`.
 
 ## Interpretation
 
-- Precision of 1.000 with recall 0.56–0.78 is a conservative operating point:
+- Precision of 1.000 with recall 0.56–0.81 is a conservative operating point:
   the method prefers missed links over false accusations, which is appropriate
   for attribution support.
 - The rule baseline achieves high recall with roughly 27% false positives,
@@ -93,10 +98,20 @@ adaptive experiment are in `docs/research/evaluation-results.md`.
   weight to behavioural evidence. This is reported rather than hidden; it is
   evidence that the intelligence family is under-informative in this benchmark,
   not that intelligence is useless in production.
-- Adaptive observation raises recall (0.78→0.94 and 0.56→0.88) but adds false
-  positives, because simulated observation can create similarity that real
-  observation would not. The production path records real decoy traffic and
-  cannot add evidence, and every investigation stores before/after values.
+- Corpus-relative family weighting raises seed-7 recall from 0.781 to 0.812
+  and volume recall from 0.836 to 0.853 with precision unchanged, and it is
+  measured against the uniform-weight ablation rather than asserted. The gain
+  is small and was observed on the benchmark it was introduced for, so it is
+  reported as preliminary; there is no held-out set.
+- The earlier adaptive numbers came from a simulation that gave every session
+  in an activity category the same synthetic request path, which manufactured
+  similarity that observation cannot produce. With observation that only
+  replays behaviour the actor already showed, additional decoy time moves
+  almost no decisions: one link gained and one lost on each seed, four gained
+  and two lost in the volume run, with no new false positives. The adaptive
+  clause of the hypothesis is therefore **not supported** by this benchmark;
+  the production path records real decoy traffic and cannot add evidence, and
+  every investigation stores before/after values.
 
 ## Container deployment verification
 

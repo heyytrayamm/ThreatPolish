@@ -105,14 +105,14 @@ Benchmark: 63 labelled synthetic sessions, 1,953 pairs (38 positive), algorithm
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | IP-only grouping | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 |
 | Rule-based matching | 0.066 | 0.938 | 0.123 | 0.067 | 0.938 | 0.124 |
-| **Evidence-weighted correlation** | **1.000** | **0.781** | **0.877** | **1.000** | **0.562** | **0.720** |
+| **Evidence-weighted correlation** | **1.000** | **0.812** | **0.897** | **1.000** | **0.562** | **0.720** |
 
 | Method | False positives · seed 7 | False positives · seed 2026 | False-positive rate · seed 7 |
 | --- | ---: | ---: | ---: |
 | Rule-based matching | 424 | 420 | 27.1% |
 | **Evidence-weighted correlation** | **0** | **0** | **0.0%** |
 
-Campaign-level exact recovery: **8 of 12** (seed 7) and **4 of 12** (seed 2026),
+Campaign-level exact recovery: **9 of 12** (seed 7) and **4 of 12** (seed 2026),
 with 10 predicted clusters and **purity 1.000** in both runs.
 
 Volume run — 165 sessions, 13,530 pairs:
@@ -131,9 +131,11 @@ missed links over false accusations. The rule baseline finds more true pairs but
 is unusable at scale because more than a quarter of its positive decisions are
 wrong. Ablating the toolchain family costs precision; ablating threat intelligence
 raises recall on this sparse synthetic corpus, which is reported rather than
-hidden. Simulated adaptive observation raises recall (0.78 → 0.94, 0.56 → 0.88)
-but adds false positives; the production path records real decoy traffic and
-cannot synthesize evidence.
+hidden. Weighting each family by how much of its evidence survives the
+ubiquity filter raises recall at unchanged precision, and is measured against
+an ablation that reproduces the previous model. Adaptive observation is now
+simulated without invented constants, and it moves almost no decisions — the
+benefit is not demonstrated, which the report states rather than hides.
 
 Resources: 6.29 s and 16.39 MB peak for the full seed-7 run including ablations;
 18.68 s and 111.83 MB for the 165-session volume run. Full tables, subsets and
@@ -143,8 +145,8 @@ method notes are in [`docs/research/evaluation-results.md`](docs/research/evalua
 
 | Check | Result |
 | --- | --- |
-| Backend suite · SQLite | **121 passed** (three of them drive Chrome) |
-| Backend suite · PostgreSQL 16 | **121 passed** in CI, on a fresh service database |
+| Backend suite · SQLite | **130 passed** (three of them drive Chrome) |
+| Backend suite · PostgreSQL 16 | the same suite, run in CI on a fresh service database |
 | Static analysis | Ruff `F,E9` clean; `compileall` clean |
 | Dashboard | TypeScript and Vite production build pass |
 | Container | Multi-stage image builds; API runs as uid 10001 |

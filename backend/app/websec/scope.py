@@ -112,18 +112,30 @@ def list_scopes() -> list[dict[str, Any]]:
 
 
 def find_active_scope(host: str) -> dict[str, Any]:
+    """Return the authorization that governs this host.
+
+    Several scopes can cover one host (``example.com`` and
+    ``api.example.com``).  The narrowest live one governs, because otherwise a
+    broad authorization would silently relax the tighter limits an owner set
+    for a specific host — including whether active checks are allowed at all.
+    Ties and row order cannot decide it: the match is sorted by specificity.
+    """
     normalized = normalize_domain(host)
     now = iso(utcnow())
     with connection() as conn:
         rows = conn.execute(select(watch_scopes)).fetchall()
-    for row in rows:
-        domain = row.domain
-        if normalized == domain or normalized.endswith("." + domain):
-            if row.expires_at <= now:
-                continue
-            data = dict(row._mapping)
-            data["allow_active"] = bool(data["allow_active"])
-            return data
+    matches = [
+        row
+        for row in rows
+        if normalized == row.domain or normalized.endswith("." + row.domain)
+    ]
+    matches.sort(key=lambda row: (-len(row.domain), row.domain))
+    for row in matches:
+        if row.expires_at <= now:
+            continue
+        data = dict(row._mapping)
+        data["allow_active"] = bool(data["allow_active"])
+        return data
     raise AuthorizationFailure(
         "no active assessment authorization covers this host",
         details={"host": normalized, "hint": "create a scope with an explicit authorizer first"},

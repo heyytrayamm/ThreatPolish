@@ -50,6 +50,17 @@ Initial release.
 - The dashboard end-to-end job now also plans and activates an investigation
   through the Campaigns and Deception pages, signs another account's device out
   from the administration session panel, and creates and revokes a sensor token.
+- Evidence families are weighted by the corpus, not only tokens (`corr-1.2.0`):
+  a family whose tokens are almost all ubiquitous in the analysed window
+  contributes less, and the effective weights are recorded on every edge. A
+  uniform-weight ablation reproduces the previous model so the effect is
+  measured rather than asserted.
+- `tests/test_properties.py` checks invariants instead of scenarios: symmetric
+  and deterministic scoring, bounded outputs, monotone confidence, unique
+  relationship keys for every accepted identifier, rejection of control
+  characters in identifiers, isolation of legacy corrupt identifiers,
+  corpus-relative family weights, and the narrowest authorization governing a
+  host.
 - Docker/Compose deployment, CLI, schema migrations, backup and recovery
   runbooks.
 - CI pipeline covering lint, the full suite on SQLite and PostgreSQL 16, the
@@ -58,8 +69,30 @@ Initial release.
   a volume run.
 - Dashboard screenshots and a documentation index for review.
 
+### Changed
+
+- The adaptive experiment no longer gives every session in an activity category
+  the same synthetic request path. That constant manufactured similarity which
+  observation cannot produce, and it inflated the reported benefit. The
+  simulation now replays one command the actor already executed, and the report
+  counts links gained and lost in both directions. With the corrected
+  simulation additional observation moves almost no decisions, so the adaptive
+  clause of the hypothesis is stated as unsupported rather than supported.
+- Benchmark numbers were regenerated for `corr-1.2.0`: seed 7 recall 0.781 →
+  0.812 with precision 1.000, campaign recovery 8 → 9 of 12, and volume recall
+  0.836 → 0.853.
+
 ### Fixed
 
+- Assessment scopes that overlap were resolved in row order, so a broad
+  authorization could re-enable active probes that a scope for the specific host
+  forbade. The narrowest live scope now governs, and the choice cannot depend on
+  insertion order.
+- A sensor could submit a session identifier containing the relationship-key
+  separator, which let two different session pairs share one key and overwrite
+  each other's evidence. Session and target identifiers now reject control
+  characters at ingestion, and identifiers stored before that check degrade to
+  one-event sessions instead of being merged.
 - Adaptive activation is persisted on the investigation row and loaded by the
   decoy process; expired activations are marked `expired` and release their
   subject instead of blocking it indefinitely.
@@ -118,6 +151,9 @@ Initial release.
 - Untrusted numeric and Unicode input is bounded at the event and provider
   boundaries before it reaches storage or a JSON response.
 - Login endpoints enforce both account-level and address-level attempt budgets.
+- Session identifiers are validated at the contract boundary so a crafted id
+  cannot corrupt the relationship graph, and overlapping assessment scopes are
+  resolved by specificity rather than by row order.
 - Web-assessment probes are constrained by the authorization scope of every
   host they touch, including redirect destinations.
 - Build context excludes secrets, local data and build artefacts.

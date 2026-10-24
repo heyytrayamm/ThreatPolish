@@ -34,6 +34,28 @@ _CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 _MAX_STRING = 4000
 
 
+def _identifier(value: str | None, *, limit: int, field: str) -> str | None:
+    """Validate an identifier that later becomes part of a storage key.
+
+    Session identifiers are joined into relationship keys, so a control
+    character — specifically the pair separator — would let two different
+    session pairs share one key and overwrite each other's evidence.  Sensors
+    choose these values, so they are rejected at the contract boundary rather
+    than sanitized: rewriting an identifier could make two distinct sessions
+    collide, which is the same defect with a quieter failure mode.
+    """
+    if value is None:
+        return None
+    cleaned = value.strip()
+    if not cleaned:
+        return None
+    if _CONTROL_RE.search(cleaned):
+        raise ValueError(f"{field} contains control characters")
+    if len(cleaned) > limit:
+        raise ValueError(f"{field} is longer than {limit} characters")
+    return cleaned
+
+
 def _clean(value: str, *, limit: int = _MAX_STRING) -> str:
     normalized = unicodedata.normalize("NFC", value)
     normalized = _CONTROL_RE.sub("", normalized)
@@ -123,6 +145,16 @@ class EventIn(BaseModel):
     features: dict[str, Any] = Field(default_factory=dict)
     evidence_refs: list[str] = Field(default_factory=list, max_length=50)
     raw: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("session_id")
+    @classmethod
+    def _valid_session_id(cls, value: str | None) -> str | None:
+        return _identifier(value, limit=120, field="session_id")
+
+    @field_validator("target_id")
+    @classmethod
+    def _valid_target_id(cls, value: str | None) -> str | None:
+        return _identifier(value, limit=200, field="target_id")
 
     @field_validator("event_id")
     @classmethod
