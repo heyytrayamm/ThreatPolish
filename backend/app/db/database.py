@@ -289,6 +289,25 @@ def _migration_009_campaign_lifecycle(conn: Connection) -> None:
     )
 
 
+def _migration_010_graph_retention(conn: Connection) -> None:
+    """Indexes backing graph retention.
+
+    Retention deletes expired edges by age and then drops session nodes that
+    no longer touch any edge; both queries need indexes the uniqueness
+    constraint does not provide.
+    """
+    conn.execute(text("CREATE INDEX IF NOT EXISTS ix_edges_dst ON graph_edges (dst_id)"))
+    conn.execute(
+        text(
+            "CREATE INDEX IF NOT EXISTS ix_edges_status_updated "
+            "ON graph_edges (status, updated_at)"
+        )
+    )
+    conn.execute(
+        text("CREATE INDEX IF NOT EXISTS ix_nodes_last_seen ON graph_nodes (last_seen)")
+    )
+
+
 MIGRATIONS: list[tuple[int, str, Any]] = [
     (1, "initial schema", _migration_001_initial),
     (2, "event retention index", _migration_002_events_retention_index),
@@ -299,6 +318,7 @@ MIGRATIONS: list[tuple[int, str, Any]] = [
     (7, "unique open investigations", _migration_007_unique_open_investigations),
     (8, "per-session revocation", _migration_008_revoked_sessions),
     (9, "campaign lifecycle", _migration_009_campaign_lifecycle),
+    (10, "graph retention indexes", _migration_010_graph_retention),
 ]
 
 

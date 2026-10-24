@@ -27,6 +27,7 @@ normally change.
 | `TP_DECOY_ENABLED`, `TP_DECOY_PORT` | `true`, `8022` | HTTP decoy listener |
 | `TP_DECOY_MAX_SESSIONS_PER_HOUR` | `120` | Decoy admission limit |
 | `TP_RETENTION_DAYS` | `90` | Event retention horizon |
+| `TP_GRAPH_RETENTION_DAYS` | `30` | Age at which retired graph evidence is deleted |
 | `TP_MAX_EVENT_BYTES` | `65536` | Per-event payload cap |
 | `TP_INGEST_RATE_LIMIT_PER_MINUTE` | `6000` | Per-principal ingestion limit |
 | `TP_CORRELATION_WINDOW_HOURS` | `72` | Default correlation window |
@@ -284,8 +285,23 @@ Events carry `retention_until` (`TP_RETENTION_DAYS`, default 90). Enforce it:
 docker compose exec app python -m app.cli purge
 ```
 
-Run it on a schedule and confirm deletions against the database size trend.
-`python -m app.cli status` shows configuration and schema state.
+The evidence graph outlives the events that produced it, so it has its own
+horizon (`TP_GRAPH_RETENTION_DAYS`, default 30). Correlation retires edges when
+links stop holding, but a deployment that stops correlating keeps them:
+
+```bash
+docker compose exec app python -m app.cli purge-graph
+```
+
+This deletes only edges already retired and older than the horizon, plus
+observation records (`observed_from`, `targeted_asset`, `matched_indicator`)
+for sessions past the horizon that no live similarity or campaign edge still
+uses. Nodes are then removed when their last activity is older than the horizon
+and nothing references them. Hypotheses, active edges, campaign membership and
+archived reviews are kept — an archived campaign is the record of an analyst's
+decision, not evidence. Run both commands from the same
+schedule and confirm deletions against the database size trend.
+`python -m app.cli status` shows configuration, retention and schema state.
 
 ## Known limitations
 

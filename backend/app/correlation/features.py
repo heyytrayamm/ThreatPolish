@@ -11,6 +11,8 @@ so this module never interprets raw attacker input directly.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import math
 import re
 from collections import Counter
@@ -140,6 +142,25 @@ class CorrelationContext:
             },
         }
 
+    def fingerprint(self) -> str:
+        """Stable hash of everything a pair score depends on outside the pair.
+
+        Document frequencies, the ubiquity threshold and the number of sessions
+        all move every pair's corpus-relative weights, so a change in any of
+        them invalidates cached decisions.  The summary only records token
+        cardinalities and would not detect a frequency shift, hence the full
+        table here.
+        """
+        payload = {
+            "version": self.version,
+            "n_sessions": self.n_sessions,
+            "informative_threshold": self.informative_threshold,
+            "document_frequency": self.document_frequency,
+        }
+        return hashlib.sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+
 
 @dataclass
 class Session:
@@ -179,6 +200,34 @@ class Session:
         if not total:
             return [0.0] * 24
         return [self.hours.get(hour, 0) / total for hour in range(24)]
+
+    def fingerprint(self) -> str:
+        """Hash of every field ``compare`` reads from this session.
+
+        Two sessions with the same fingerprint would score identically against
+        any third session, which is what makes it safe to reuse a stored pair
+        decision.  Fields no scoring component reads (targets, auth counters)
+        are omitted so a redundant event does not invalidate the cache.
+        """
+        payload = {
+            "actions": self.actions,
+            "commands": self.commands,
+            "categories": dict(sorted(self.categories.items())),
+            "endpoints": dict(sorted(self.endpoints.items())),
+            "usernames": sorted(self.usernames),
+            "clients": sorted(self.clients),
+            "indicators": sorted(self.indicators),
+            "source_ips": sorted(self.source_ips),
+            "event_count": len(self.event_ids),
+            "first_seen": self.first_seen.isoformat() if self.first_seen else None,
+            "last_seen": self.last_seen.isoformat() if self.last_seen else None,
+            "hours": dict(sorted(self.hours.items())),
+            "interarrivals": self.interarrivals,
+            "severity_max": self.severity_max,
+        }
+        return hashlib.sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
 
     def to_summary(self) -> dict[str, Any]:
         return {

@@ -7,6 +7,7 @@ from typing import Any
 
 from sqlalchemy import select, text
 
+from ..core.config import get_settings
 from ..core.errors import NotFound
 from ..core.security import iso, new_id, utcnow
 from ..db.database import connection, loads, query_one
@@ -472,3 +473,61 @@ def _asset_criticality(targets: list[str]) -> str:
 def _max_severity(values: list[str]) -> str:
     order = {"info": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
     return max(values or ["info"], key=lambda value: order.get(value, 0))
+
+
+def purge_graph(*, days: int | None = None) -> dict[str, Any]:
+    """Delete expired graph evidence past the graph retention window.
+
+    Correlation retires stale edges when it runs, but a deployment that stops
+    correlating would otherwise keep every edge forever.  Only edges already
+    retired are removed: hypotheses are open leads, and campaign membership
+    edges belong to a review that is deleted with its campaign.
+
+    Observation edges are permanent while their session is in play, so they are
+    removed with the session once it is past the horizon and no live similarity
+    or campaign edge still uses it.  Nodes are then removed only when they are
+    older than the window *and* no edge still references them, so a recent
+    session keeps the old addresses it touched.  Archived campaign rows are
+    never touched; they are the record of an analyst's decision.
+    """
+    retention = get_settings().graph_retention_days if days is None else int(days)
+    if retention < 1:
+        raise ValueError("graph retention must be at least one day")
+    cutoff = iso(utcnow() - timedelta(days=retention))
+    with connection() as conn:
+        edges = conn.execute(
+            text(
+                "DELETE FROM graph_edges WHERE status = 'expired' AND updated_at < :cutoff"
+            ),
+            {"cutoff": cutoff},
+        ).rowcount
+        observations = conn.execute(
+            text(
+                "DELETE FROM graph_edges "
+                "WHERE kind IN ('observed_from', 'targeted_asset', 'matched_indicator') "
+                "AND src_id IN ("
+                "SELECT n.id FROM graph_nodes n "
+                "WHERE n.kind = 'session' AND n.last_seen < :cutoff "
+                "AND NOT EXISTS ("
+                "SELECT 1 FROM graph_edges e "
+                "WHERE e.kind IN ('session_similarity', 'campaign_contains') "
+                "AND e.status IN ('active', 'hypothesis') "
+                "AND (e.src_id = n.id OR e.dst_id = n.id)))"
+            ),
+            {"cutoff": cutoff},
+        ).rowcount
+        nodes = conn.execute(
+            text(
+                "DELETE FROM graph_nodes WHERE last_seen < :cutoff AND NOT EXISTS ("
+                "SELECT 1 FROM graph_edges e "
+                "WHERE e.src_id = graph_nodes.id OR e.dst_id = graph_nodes.id)"
+            ),
+            {"cutoff": cutoff},
+        ).rowcount
+    return {
+        "days": retention,
+        "cutoff": cutoff,
+        "edges": int(edges or 0),
+        "observations": int(observations or 0),
+        "nodes": int(nodes or 0),
+    }

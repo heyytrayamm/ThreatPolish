@@ -222,6 +222,7 @@ graph_nodes = Table(
     Column("first_seen", String(40), nullable=False),
     Column("last_seen", String(40), nullable=False),
     Index("ix_nodes_kind", "kind"),
+    Index("ix_nodes_last_seen", "last_seen"),
 )
 
 graph_edges = Table(
@@ -243,6 +244,10 @@ graph_edges = Table(
     Column("campaign_id", String(40), nullable=True),
     UniqueConstraint("src_id", "dst_id", "kind", name="uq_edge"),
     Index("ix_edges_campaign", "campaign_id"),
+    # Retention walks endpoints and age; the uniqueness index already covers
+    # ``src_id`` as a prefix, but not ``dst_id`` or the status filter.
+    Index("ix_edges_dst", "dst_id"),
+    Index("ix_edges_status_updated", "status", "updated_at"),
 )
 
 campaigns = Table(

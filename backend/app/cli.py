@@ -7,6 +7,7 @@ Examples:
     python -m app.cli cowrie-tail --path /var/log/cowrie/cowrie.json
     python -m app.cli correlate --window-hours 72
     python -m app.cli purge
+    python -m app.cli purge-graph
 """
 
 from __future__ import annotations
@@ -114,6 +115,19 @@ def _purge(args: argparse.Namespace) -> int:
     return 0
 
 
+def _purge_graph(args: argparse.Namespace) -> int:
+    from .correlation.repository import purge_graph
+
+    init_db()
+    result = purge_graph(days=args.days)
+    print(
+        f"removed {result['edges']} retired edges, {result['observations']} stale "
+        f"observations and {result['nodes']} orphan nodes older than "
+        f"{result['days']} days (cutoff {result['cutoff']})"
+    )
+    return 0
+
+
 def _display_db_url(url: str) -> str:
     """Never print a password embedded in a database URL."""
     from sqlalchemy.engine import make_url
@@ -133,6 +147,7 @@ def _status(_: argparse.Namespace) -> int:
     print(f"database:      {_display_db_url(settings.db_url)}")
     print(f"schema:        {schema_version()}")
     print(f"retention:     {settings.retention_days} days")
+    print(f"graph:         {settings.graph_retention_days} days")
     print(f"decoy enabled: {settings.decoy_enabled}")
     return 0
 
@@ -178,6 +193,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     purge = sub.add_parser("purge", help="delete events past the retention window")
     purge.set_defaults(func=_purge)
+
+    purge_graph = sub.add_parser(
+        "purge-graph", help="delete retired graph evidence past the graph retention window"
+    )
+    purge_graph.add_argument("--days", type=int, default=None)
+    purge_graph.set_defaults(func=_purge_graph)
 
     status = sub.add_parser("status", help="show configuration and schema state")
     status.set_defaults(func=_status)

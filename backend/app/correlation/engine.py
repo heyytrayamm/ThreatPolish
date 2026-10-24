@@ -82,6 +82,7 @@ def correlate(
         truncated = True
 
     context = CorrelationContext.from_sessions(sessions.values())
+    context_fingerprint = context.fingerprint()
     created = updated = expired = 0
     campaign_ids: list[str] = []
     # Scores are streamed into a bounded heap instead of being retained for
@@ -89,18 +90,52 @@ def correlate(
     # quadratic memory: at 800 sessions that was more than a gigabyte before a
     # single edge was written.  Only the strongest MAX_EDGES_PER_RUN results
     # can be persisted, so only those are kept.
-    scored_count = candidate_count = linked_candidates = 0
+    scored_count = candidate_count = linked_candidates = reused_count = reused_candidates = 0
     heap: list[tuple[float, int, str, dict[str, Any]]] = []
+    fingerprints = {session_id: session.fingerprint() for session_id, session in sessions.items()}
 
     with connection() as conn:
+        previous_run = conn.execute(
+            select(correlation_runs).order_by(correlation_runs.c.finished_at.desc()).limit(1)
+        ).fetchone()
+        previous_metrics = loads(previous_run._mapping["metrics"], {}) if previous_run else {}
+        # Reuse is only sound when the corpus that produced the weights and the
+        # two sessions themselves are unchanged.  A change to any document
+        # frequency moves every pair's corpus-relative weight, so the context
+        # fingerprint gates incremental runs rather than each pair deciding.
+        incremental = bool(
+            previous_run
+            and previous_run._mapping["algorithm_version"] == ALGORITHM_VERSION
+            and previous_metrics.get("context_fingerprint") == context_fingerprint
+            # Edge expiry is derived from the window length, and retained edges
+            # are not rewritten, so a changed window needs a full pass.
+            and previous_metrics.get("window_hours") == hours
+        )
+        previous_run_id = previous_run._mapping["id"] if previous_run and incremental else None
+        prior_sessions = (
+            _prior_session_state(conn, list(sessions)) if incremental else {}
+        )
         existing_similarity_edges = conn.execute(
-            select(graph_edges.c.id, graph_edges.c.src_id, graph_edges.c.dst_id).where(
-                graph_edges.c.kind == "session_similarity"
-            )
+            select(
+                graph_edges.c.id,
+                graph_edges.c.src_id,
+                graph_edges.c.dst_id,
+                graph_edges.c.status,
+                graph_edges.c.confidence,
+            ).where(graph_edges.c.kind == "session_similarity")
         ).fetchall()
+        existing_by_key = {
+            pair_key(
+                str(src).removeprefix("session:"), str(dst).removeprefix("session:")
+            ): (edge_id, status, confidence)
+            for edge_id, src, dst, status, confidence in existing_similarity_edges
+        }
 
         for session in sessions.values():
-            _upsert_session_node(conn, session, started_at)
+            _upsert_session_node(conn, session, started_at, run_id, fingerprints[session.id])
+
+        retained_edge_ids: set[str] = set()
+        reused_links: dict[str, float] = {}
 
         ordered_sessions = list(sessions.values())
         for left_index in range(len(ordered_sessions)):
@@ -109,8 +144,27 @@ def correlate(
                 right = ordered_sessions[right_index]
                 if left.id == right.id:
                     continue
-                result = compare(left, right, context=context)
                 key = pair_key(left.id, right.id)
+                if incremental and prior_sessions.get(left.id) == (
+                    previous_run_id,
+                    fingerprints[left.id],
+                ) and prior_sessions.get(right.id) == (
+                    previous_run_id,
+                    fingerprints[right.id],
+                ):
+                    # Both sessions and the corpus are unchanged, so this pair
+                    # would produce exactly the stored decision.  Keep an
+                    # existing edge and skip the comparison.
+                    reused_count += 1
+                    existing = existing_by_key.get(key)
+                    if existing:
+                        edge_id, status, confidence = existing
+                        retained_edge_ids.add(edge_id)
+                        reused_candidates += 1
+                        if status == "active":
+                            reused_links[key] = confidence
+                    continue
+                result = compare(left, right, context=context)
                 scored_count += 1
                 if result["score"] >= MIN_SCORE_TO_STORE:
                     candidate_count += 1
@@ -144,6 +198,7 @@ def correlate(
             1 for _, item in persistable if item["result"]["decision"] == "linked"
         )
         persisted_edge_ids = {f"edg_{_digest(key)}" for key, _ in persistable}
+        retained_edge_ids.update(persisted_edge_ids)
 
         for _, item in persistable:
             was_created = _upsert_edge(
@@ -156,8 +211,8 @@ def correlate(
         # make the persistence cut is no longer supported by current evidence.
         # Deriving that from the endpoints avoids keeping every pair key.
         current_session_ids = set(sessions)
-        for edge_id, src, dst in existing_similarity_edges:
-            if edge_id in persisted_edge_ids:
+        for edge_id, src, dst, _status, _confidence in existing_similarity_edges:
+            if edge_id in retained_edge_ids:
                 continue
             left_id = str(src).removeprefix("session:")
             right_id = str(dst).removeprefix("session:")
@@ -167,7 +222,10 @@ def correlate(
 
         # ---- campaign candidates over linked pairs ---------------------- #
         union = UnionFind()
-        edge_confidence: dict[str, float] = {}
+        edge_confidence: dict[str, float] = dict(reused_links)
+        for key, confidence in reused_links.items():
+            first, second = key.split(PAIR_SEPARATOR)
+            union.union(first, second)
         for key, item in persistable:
             if item["result"]["decision"] != "linked":
                 continue
@@ -239,7 +297,10 @@ def correlate(
         expired += _expire_stale(conn, started_at)
         archived, removed = _cleanup_stale_campaigns(conn, started_at)
 
-        below_threshold = max(0, scored_count - candidate_count)
+        total_pairs = len(sessions) * (len(sessions) - 1) // 2
+        below_threshold = max(
+            0, (scored_count - candidate_count) + (reused_count - reused_candidates)
+        )
         conn.execute(
             correlation_runs.insert().values(
                 id=run_id,
@@ -257,7 +318,12 @@ def correlate(
                 metrics=dumps(
                     {
                         "events": len(events),
+                        "window_hours": hours,
+                        "pairs_total": total_pairs,
                         "pairs_scored": scored_count,
+                        "pairs_reused": reused_count,
+                        "incremental": incremental,
+                        "context_fingerprint": context_fingerprint,
                         "pairs_persisted": len(persistable),
                         "pairs_dropped_by_cap": dropped,
                         "links_dropped_by_cap": dropped_links,
@@ -279,7 +345,11 @@ def correlate(
         "window_hours": hours,
         "events": len(events),
         "sessions": len(sessions),
+        "pairs_total": total_pairs,
         "pairs_scored": scored_count,
+        "pairs_reused": reused_count,
+        "incremental": incremental,
+        "context_fingerprint": context_fingerprint,
         "edges_created": created,
         "edges_updated": updated,
         "edges_expired": expired,
@@ -299,11 +369,21 @@ def correlate(
     return result
 
 
-def _upsert_session_node(conn: Connection, session: Session, now: datetime) -> None:
+def _upsert_session_node(
+    conn: Connection,
+    session: Session,
+    now: datetime,
+    run_id: str,
+    fingerprint: str,
+) -> None:
     node_id = f"session:{session.id}"
     summary = session.to_summary()
     summary.pop("event_ids", None)
     summary["event_sample"] = session.event_ids[:20]
+    # The next run uses the fingerprint and run marker to decide whether this
+    # session's pairs can reuse their stored decisions.
+    summary["fingerprint"] = fingerprint
+    summary["last_run_id"] = run_id
     props = dumps(summary)
     existing = conn.execute(
         select(graph_nodes.c.id).where(graph_nodes.c.id == node_id)
@@ -537,6 +617,31 @@ def _expire_stale(conn: Connection, now: datetime) -> int:
         {"now": iso(now)},
     )
     return int(result.rowcount or 0)
+
+
+def _prior_session_state(
+    conn: Connection, session_ids: list[str]
+) -> dict[str, tuple[str | None, str | None]]:
+    """Fingerprint and last-run marker for sessions that already exist."""
+    state: dict[str, tuple[str | None, str | None]] = {}
+    for start in range(0, len(session_ids), 400):
+        chunk = session_ids[start : start + 400]
+        placeholders = ", ".join(f":s{index}" for index in range(len(chunk)))
+        params = {f"s{index}": f"session:{value}" for index, value in enumerate(chunk)}
+        rows = conn.execute(
+            text(
+                "SELECT id, props FROM graph_nodes WHERE kind = 'session' "
+                f"AND id IN ({placeholders})"
+            ),
+            params,
+        ).fetchall()
+        for node_id, props in rows:
+            data = loads(props, {})
+            state[str(node_id).removeprefix("session:")] = (
+                data.get("last_run_id"),
+                data.get("fingerprint"),
+            )
+    return state
 
 
 def _load_campaigns(conn: Connection) -> list[dict[str, Any]]:

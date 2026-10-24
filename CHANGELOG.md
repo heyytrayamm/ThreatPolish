@@ -2,6 +2,21 @@
 
 All notable changes to this project are recorded here. Dates use ISO 8601.
 
+## 1.0.3 — 2026-10-25
+
+### Added
+
+- Evidence graph retention is separate from event retention. Correlation
+  retires stale links, but a deployment that stops correlating kept every edge
+  forever; `python -m app.cli purge-graph` now deletes retired edges past
+  `TP_GRAPH_RETENTION_DAYS` (default 30), the observation records of sessions
+  that old with no live similarity or campaign edge, and nodes nothing
+  references. Hypotheses, active evidence, campaign membership and archived
+  reviews are kept, so an analyst's decision outlives the evidence behind it
+  (`test_correlation.py`).
+- Migration 10 adds the indexes retention needs; `IF NOT EXISTS` makes it safe
+  on a database that already has them.
+
 ## 1.0.2 — 2026-10-24
 
 ### Changed

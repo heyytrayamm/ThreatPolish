@@ -80,6 +80,7 @@ class Settings:
     decoy_enabled: bool
     decoy_port: int
     retention_days: int
+    graph_retention_days: int
     log_level: str
     max_event_bytes: int
     correlation_window_hours: int
@@ -140,6 +141,7 @@ def build_settings() -> Settings:
         decoy_enabled=_bool("TP_DECOY_ENABLED", True),
         decoy_port=_int("TP_DECOY_PORT", 8022, 1, 65535),
         retention_days=_int("TP_RETENTION_DAYS", 90, 1, 3650),
+        graph_retention_days=_int("TP_GRAPH_RETENTION_DAYS", 30, 1, 3650),
         log_level=os.environ.get("TP_LOG_LEVEL", "INFO").upper(),
         max_event_bytes=_int("TP_MAX_EVENT_BYTES", 65536, 1024, 1_048_576),
         correlation_window_hours=_int("TP_CORRELATION_WINDOW_HOURS", 72, 1, 24 * 30),

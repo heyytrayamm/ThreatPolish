@@ -160,13 +160,13 @@ every stage and dashboard view to its implementation, test and measured result.
 
 | Check | Result |
 | --- | --- |
-| Backend suite · SQLite | **139 passed** (three of them drive Chrome) |
+| Backend suite · SQLite | **143 passed** (three of them drive Chrome) |
 | Backend suite · PostgreSQL 16 | the same suite, run in CI on a fresh service database |
 | Static analysis | Ruff `F,E9` clean; `compileall` clean |
 | Dependency audit | `pip-audit` and `npm audit --audit-level=high` report no known vulnerabilities, run locally and in CI |
 | Dashboard | TypeScript and Vite production build pass |
 | Container | Multi-stage image builds; API runs as uid 10001 |
-| Upgrade path | Schema v3 → v5 and v7 → v8 upgraded on copies with data intact; v8 → v9 is covered by a migration test that starts from a v8-shaped table |
+| Upgrade path | Schema v3 → v5 and v7 → v8 upgraded on copies with data intact; v8 → v9 is covered by a migration test that starts from a v8-shaped table; v9 → v10 recreated the retention indexes on an existing SQLite database |
 
 ```bash
 cd backend

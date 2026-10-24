@@ -753,3 +753,273 @@ def test_conflicting_merged_reviews_become_uncertain(client, sensor_headers, adm
     assert carried[-1]["to"] == "uncertain"
     overview = client.get("/api/v1/feedback", headers=admin_headers).json()
     assert {item["object_id"] for item in overview["recent"]} == {survivor_id}
+
+
+def _incremental_seed(client, sensor_headers) -> list[str]:
+    # Repeated commands keep the n-gram vocabulary stable when a later event
+    # repeats one, which lets the test isolate a session change from a corpus
+    # change.
+    commands = ["uname -a"] * 3
+    ids = []
+    for index in range(3):
+        session_id = f"sess-inc-{index}"
+        ids.append(session_id)
+        _ingest(
+            client,
+            sensor_headers,
+            _ssh_events(
+                session_id=session_id,
+                ip=f"203.0.113.{160 + index}",
+                commands=commands,
+                usernames=["root"],
+                start_minutes=70 - index,
+                indicators=["ja3:incremental"],
+            ),
+        )
+    return ids
+
+
+def test_second_run_reuses_pairs_when_nothing_changed(client, sensor_headers, admin_headers):
+    _incremental_seed(client, sensor_headers)
+    first = client.post("/api/v1/correlate", json={}, headers=admin_headers).json()
+    assert first["incremental"] is False
+    assert first["pairs_total"] == 3
+    assert first["pairs_scored"] == 3
+    assert first["pairs_reused"] == 0
+    campaigns = _campaigns(client, admin_headers)
+    assert len(campaigns) == 1
+
+    second = client.post("/api/v1/correlate", json={}, headers=admin_headers).json()
+    assert second["incremental"] is True
+    assert second["pairs_scored"] == 0
+    assert second["pairs_reused"] == 3
+    assert second["edges_expired"] == 0
+    again = _campaigns(client, admin_headers)
+    assert [item["id"] for item in again] == [item["id"] for item in campaigns]
+    assert again[0]["member_count"] == 3
+
+
+def test_changed_session_rescores_only_its_pairs(client, sensor_headers, admin_headers):
+    ids = _incremental_seed(client, sensor_headers)
+    client.post("/api/v1/correlate", json={}, headers=admin_headers)
+    # One more command from a new address changes that session's fingerprint
+    # but repeats vocabulary already present, so the corpus fingerprint and
+    # the other sessions stay put.
+    _ingest(
+        client,
+        sensor_headers,
+        [
+            {
+                "schema_version": "1.0",
+                "occurred_at": _ts(5),
+                "source_module": "honeypot",
+                "event_type": "honeypot.ssh.command",
+                "source_ip": "203.0.113.190",
+                "session_id": ids[0],
+                "target_id": "decoy-ssh-1",
+                "severity": "medium",
+                "provenance": {
+                    "collector": "test-collector",
+                    "source": "cowrie",
+                    "reliability": 0.9,
+                    "synthetic": True,
+                    "indicators": ["ja3:incremental"],
+                },
+                "features": {
+                    "command": "uname -a",
+                    "username": "root",
+                    "success": True,
+                    "client_version": "SSH-2.0-libssh_0.9.6",
+                },
+            }
+        ],
+    )
+    run = client.post("/api/v1/correlate", json={}, headers=admin_headers).json()
+    assert run["incremental"] is True
+    assert run["pairs_total"] == 3
+    assert run["pairs_reused"] == 1
+    assert run["pairs_scored"] == 2
+
+
+def test_new_session_changes_the_corpus_and_forces_a_full_rescan(client, sensor_headers, admin_headers):
+    _incremental_seed(client, sensor_headers)
+    client.post("/api/v1/correlate", json={}, headers=admin_headers)
+    _ingest(
+        client,
+        sensor_headers,
+        _ssh_events(
+            session_id="sess-inc-new",
+            ip="203.0.113.199",
+            commands=["uname -a", "ifconfig", "netstat -ant"],
+            usernames=["ops"],
+            start_minutes=30,
+            client="SSH-2.0-other",
+        ),
+    )
+    run = client.post("/api/v1/correlate", json={}, headers=admin_headers).json()
+    assert run["incremental"] is False
+    assert run["pairs_total"] == 6
+    assert run["pairs_reused"] == 0
+    assert run["pairs_scored"] == 6
+
+
+def test_graph_retention_keeps_open_evidence_and_archived_reviews(client):
+    """Retention must delete only retired evidence past the horizon."""
+    import pytest
+    from sqlalchemy import select
+
+    from app.correlation.repository import purge_graph
+    from app.core.security import iso, utcnow
+    from app.db.database import connection, dumps
+    from app.db.schema import campaigns, graph_edges, graph_nodes
+
+    old = iso(utcnow() - timedelta(days=60))
+    recent = iso(utcnow() - timedelta(hours=6))
+    campaigns_row = {
+        "id": "cmp_retained",
+        "name": "archived review",
+        "status": "rejected",
+        "confidence": 0.8,
+        "summary": "test",
+        "evidence": dumps({"sessions": []}),
+        "created_at": old,
+        "updated_at": old,
+        "algorithm_version": ALGORITHM_VERSION,
+        "member_count": 1,
+        "ip_count": 1,
+        "archived_at": old,
+    }
+    nodes = {
+        "session:purged": "session",
+        "ip:purged": "ip",
+        "session:recently_retired": "session",
+        "ip:recently_retired": "ip",
+        "session:active": "session",
+        "ip:active": "ip",
+        "campaign:cmp_retained": "campaign",
+        "session:stale_observation": "session",
+        "ip:stale_observation": "ip",
+        "ip:observation_kept": "ip",
+    }
+    edges = [
+        # Retired long ago: delete the edge, then any endpoint left orphaned.
+        ("edg_purge", "session_similarity", "session:purged", "ip:purged", "expired", old),
+        # Retired, but inside the window: keep edge and its endpoints even
+        # though the nodes themselves are older than the horizon.
+        (
+            "edg_recent",
+            "session_similarity",
+            "session:recently_retired",
+            "ip:recently_retired",
+            "expired",
+            recent,
+        ),
+        # Open evidence is never deleted by age.
+        ("edg_active", "session_similarity", "session:active", "ip:active", "active", old),
+        (
+            "edg_hypothesis",
+            "session_similarity",
+            "session:active",
+            "session:purged",
+            "hypothesis",
+            old,
+        ),
+        (
+            "edg_contains",
+            "campaign_contains",
+            "campaign:cmp_retained",
+            "session:active",
+            "active",
+            old,
+        ),
+        # Observation records are permanent while their session is live, so
+        # they leave with a session that is past the horizon and unreferenced.
+        (
+            "edg_observation_stale",
+            "observed_from",
+            "session:stale_observation",
+            "ip:stale_observation",
+            "active",
+            old,
+        ),
+        # The same record for a session still carrying live similarity evidence
+        # must stay, even though the session itself is old.
+        (
+            "edg_observation_kept",
+            "observed_from",
+            "session:active",
+            "ip:observation_kept",
+            "active",
+            old,
+        ),
+    ]
+    with connection() as conn:
+        conn.execute(campaigns.insert().values(**campaigns_row))
+        for node_id, kind in nodes.items():
+            conn.execute(
+                graph_nodes.insert().values(
+                    id=node_id,
+                    kind=kind,
+                    label=node_id.split(":", 1)[1],
+                    props="{}",
+                    first_seen=old,
+                    last_seen=old,
+                )
+            )
+        for edge_id, kind, src, dst, status, updated in edges:
+            conn.execute(
+                graph_edges.insert().values(
+                    id=edge_id,
+                    kind=kind,
+                    src_id=src,
+                    dst_id=dst,
+                    confidence=0.9,
+                    score=0.9,
+                    evidence=dumps({"explanation": "test"}),
+                    contradictions=dumps([]),
+                    algorithm_version=ALGORITHM_VERSION,
+                    created_at=updated,
+                    updated_at=updated,
+                    expires_at=None,
+                    status=status,
+                )
+            )
+
+    with pytest.raises(ValueError):
+        purge_graph(days=0)
+    result = purge_graph(days=30)
+    assert result["days"] == 30
+    assert result["edges"] == 1
+    assert result["observations"] == 1
+    # ``session:purged`` survives because the open hypothesis still uses it;
+    # ``ip:purged`` and both stale-observation nodes lose their last reference.
+    assert result["nodes"] == 3
+
+    with connection() as conn:
+        remaining_edges = {
+            row[0] for row in conn.execute(select(graph_edges.c.id)).fetchall()
+        }
+        remaining_nodes = {
+            row[0] for row in conn.execute(select(graph_nodes.c.id)).fetchall()
+        }
+        review = conn.execute(
+            select(campaigns.c.status).where(campaigns.c.id == "cmp_retained")
+        ).fetchone()
+    assert remaining_edges == {
+        "edg_recent",
+        "edg_active",
+        "edg_hypothesis",
+        "edg_contains",
+        "edg_observation_kept",
+    }
+    # ``session:purged`` is still referenced by the open hypothesis, so it stays.
+    assert remaining_nodes == {
+        "session:recently_retired",
+        "ip:recently_retired",
+        "session:active",
+        "ip:active",
+        "session:purged",
+        "campaign:cmp_retained",
+        "ip:observation_kept",
+    }
+    assert review is not None and review[0] == "rejected"
