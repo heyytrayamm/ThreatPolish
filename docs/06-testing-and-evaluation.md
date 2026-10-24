@@ -30,7 +30,7 @@ when the bundle is missing, stale or Playwright is absent.
 | File | Covers |
 | --- | --- |
 | `test_foundation.py` | Health, auth, tokens, RBAC, audit, event contract validation, migration re-keying |
-| `test_correlation.py` | Feature extraction, corpus weighting, thresholds, anchors, contradictions, campaign construction |
+| `test_correlation.py` | Feature extraction, corpus weighting, containment scoring, thresholds, anchors, contradictions, campaign construction, campaign membership after demotion or expiry, preserved expiry evidence |
 | `test_deception.py` | Decoy profiles, HTTP decoy responses, Cowrie adaptation, password hashing |
 | `test_adaptive.py` | Investigation lifecycle, eligibility limits, before/after recording, no evidence creation, concurrent planning against the one-open-investigation constraint |
 | `test_websec.py` | Scope authorization, SSRF refusal, redirect targets, response bounds, finding persistence |
@@ -46,7 +46,7 @@ when the bundle is missing, stale or Playwright is absent.
 
 ## Measured behaviour
 
-Latest full run: **131 passed on SQLite**, including the three browser cases.
+Latest full run: **134 passed on SQLite**, including the three browser cases.
 CI runs the same suite against SQLite and PostgreSQL 16 on every push; the
 PostgreSQL job starts a service database and the fixture resets its schema per
 test, so isolation matches the SQLite path.
@@ -65,21 +65,22 @@ passes Ruff and compiles with `compileall`.
 | Dashboard end-to-end | Builds the bundle, installs Playwright, drives the password, session, token and investigation flows in Chromium against a live API |
 | Container image | Multi-stage Docker build |
 
-Benchmark, 63 sessions / 1953 pairs, two seeds, algorithm `corr-1.2.0`:
+Benchmark, 63 sessions / 1953 pairs, two seeds, algorithm `corr-1.3.0`:
 
 | Metric | Seed 7 | Seed 2026 |
 | --- | --- | --- |
 | Precision (proposed) | 1.000 | 1.000 |
-| Recall (proposed) | 0.812 | 0.562 |
-| Recall (uniform family weights, previous model) | 0.781 | 0.562 |
+| Recall (proposed) | 0.906 | 0.812 |
+| Recall (Jaccard-only sequence comparison, previous model) | 0.812 | 0.562 |
+| Recall (uniform family weights) | 0.875 | 0.812 |
 | Precision (rule baseline) | 0.066 | 0.067 |
 | False positives (proposed / rule) | 0 / 424 | 0 / 420 |
-| Campaign-level exact recovery | 9 of 12 | 4 of 12 |
-| Time to detection, median (groups reached) | 541 s (10 of 12) | 822 s (10 of 12) |
+| Campaign-level exact recovery | 10 of 12 | 8 of 12 |
+| Time to detection, median (groups reached) | 541 s (10 of 12) | 614 s (10 of 12) |
 
-Resources: 18 MB peak, 26 ms per scored pair, CPU time equal to wall time, for
-a full run including all ablations. Wall time on this host was about 50 s for
-the same workload that took about 6 s when the benchmark was first run, so
+Resources: 19 MB peak, 31 ms per scored pair, CPU time equal to wall time, for
+a full run including all ablations. Wall time on this host was about a minute
+for the same workload that took about 6 s when the benchmark was first run, so
 treat the seconds as host-dependent and the memory and per-pair cost as the
 stable figures.
 
@@ -92,7 +93,7 @@ adaptive experiment are in `docs/research/evaluation-results.md`.
 
 ## Interpretation
 
-- Precision of 1.000 with recall 0.56–0.81 is a conservative operating point:
+- Precision of 1.000 with recall 0.81–0.91 is a conservative operating point:
   the method prefers missed links over false accusations, which is appropriate
   for attribution support.
 - The rule baseline achieves high recall with roughly 27% false positives,
@@ -104,20 +105,26 @@ adaptive experiment are in `docs/research/evaluation-results.md`.
   weight to behavioural evidence. This is reported rather than hidden; it is
   evidence that the intelligence family is under-informative in this benchmark,
   not that intelligence is useless in production.
-- Corpus-relative family weighting raises seed-7 recall from 0.781 to 0.812
-  and volume recall from 0.836 to 0.853 with precision unchanged, and it is
-  measured against the uniform-weight ablation rather than asserted. The gain
-  is small and was observed on the benchmark it was introduced for, so it is
-  reported as preliminary; there is no held-out set.
+- Comparing action sequences by overlap as well as Jaccard is the largest
+  change in this revision: a session that recorded fewer commands should not
+  count as evidence of different behaviour, and Jaccard treats the missing
+  n-grams as disagreement. The Jaccard-only ablation scores 0.812 and 0.562,
+  against 0.906 and 0.812 with overlap, at identical precision — so the gain is
+  attributable to the comparison and not to a threshold. It also raises campaign
+  recovery from 9 to 10 of 12 and from 4 to 8 of 12.
+- Corpus-relative family weighting still contributes (0.875 → 0.906 on seed 7)
+  and is measured against the uniform-weight ablation. Both changes were
+  observed on the benchmark they were introduced for; there is no held-out set,
+  so the gains are preliminary.
 - The earlier adaptive numbers came from a simulation that gave every session
   in an activity category the same synthetic request path, which manufactured
   similarity that observation cannot produce. With observation that only
-  replays behaviour the actor already showed, additional decoy time moves
-  almost no decisions: one link gained and one lost on each seed, four gained
-  and two lost in the volume run, with no new false positives. The adaptive
-  clause of the hypothesis is therefore **not supported** by this benchmark;
-  the production path records real decoy traffic and cannot add evidence, and
-  every investigation stores before/after values.
+  replays behaviour the actor already showed, additional decoy time gains one
+  link on seed 7, two on seed 2026 and two in the volume run, loses none and adds
+  no false positives. That is consistent with the hypothesis but far too small a
+  sample to call a demonstrated benefit; the production path records real decoy
+  traffic and cannot add evidence, and every investigation stores before/after
+  values.
 
 ## Container deployment verification
 

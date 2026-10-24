@@ -149,7 +149,7 @@ def get_campaign(campaign_id: str) -> dict[str, Any]:
             text(
                 "SELECT id, src_id, dst_id, confidence, score, status, evidence, contradictions, "
                 "updated_at FROM graph_edges WHERE campaign_id = :id AND kind = 'session_similarity' "
-                "ORDER BY confidence DESC"
+                "AND status = 'active' ORDER BY confidence DESC"
             ),
             {"id": campaign_id},
         ).fetchall()

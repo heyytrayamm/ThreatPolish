@@ -66,6 +66,7 @@ def run(
             "ablation_no_timing",
             "ablation_no_toolchain",
             "ablation_uniform_weights",
+            "ablation_jaccard_only",
         ]
 
     passive_decisions: dict[str, dict[str, Any]] = {}
@@ -91,6 +92,7 @@ def run(
                     disabled_families=disabled,
                     context=context,
                     uniform_family_weights=method == "ablation_uniform_weights",
+                    sequence_overlap=method != "ablation_jaccard_only",
                 )
                 if method == "proposed":
                     passive_decisions[key] = result

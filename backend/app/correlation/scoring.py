@@ -43,7 +43,7 @@ from .features import (
     weighted_jaccard,
 )
 
-ALGORITHM_VERSION = "corr-1.2.0"
+ALGORITHM_VERSION = "corr-1.3.0"
 LINK_CONFIDENCE = 0.70
 MIN_SCORE_TO_STORE = 0.30
 MIN_INDEPENDENT_FAMILIES = 2
@@ -133,14 +133,16 @@ def compare(
     disabled_families: set[str] | None = None,
     context: CorrelationContext | None = None,
     uniform_family_weights: bool = False,
+    sequence_overlap: bool = True,
 ) -> dict[str, Any]:
     """Compare two sessions.
 
     ``disabled_families`` supports ablation studies: a disabled family is treated
     as unavailable, which also reduces coverage rather than silently
     redistributing its weight.  ``uniform_family_weights`` disables the
-    corpus-relative scaling of family weights, so the contribution of that
-    scaling can be measured rather than asserted.
+    corpus-relative scaling of family weights and ``sequence_overlap`` restricts
+    sequence comparison to Jaccard, so the contribution of each can be measured
+    rather than asserted.
     """
     disabled = disabled_families or set()
     components: list[Component] = []
@@ -157,9 +159,19 @@ def compare(
     level_parts: list[tuple[float, float]] = []
     for level, weight in level_weights.items():
         if left_levels[level] and right_levels[level]:
-            level_parts.append(
-                (weight, _set_similarity(left_levels[level], right_levels[level], "action", context))
-            )
+            left_tokens, right_tokens = left_levels[level], right_levels[level]
+            # Jaccard answers "how similar are these sequences overall"; the
+            # overlap coefficient answers "is the shorter one contained in the
+            # longer one".  A truncated session loses commands and therefore
+            # n-grams, which Jaccard punishes as disagreement even when every
+            # action it did record appears in the other session.
+            jaccard_score = _set_similarity(left_tokens, right_tokens, "action", context)
+            if sequence_overlap:
+                containment = len(left_tokens & right_tokens) / min(
+                    len(left_tokens), len(right_tokens)
+                )
+                jaccard_score = max(jaccard_score, containment)
+            level_parts.append((weight, jaccard_score))
     sequence_available = bool(level_parts)
     sequence_score = (
         sum(weight * value for weight, value in level_parts)
@@ -390,6 +402,7 @@ def compare(
         "context": context.summary() if context else None,
         "family_weights": {name: round(weight, 4) for name, weight in weights.items()},
         "family_weighting": "uniform" if uniform_family_weights else "corpus",
+        "sequence_similarity": "overlap" if sequence_overlap else "jaccard",
         "score": round(score, 4),
         "confidence": round(confidence, 4),
         "support": round(support, 4),

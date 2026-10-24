@@ -29,6 +29,7 @@ METHOD_LABELS = {
     "ablation_no_timing": "Ablation: no timing family",
     "ablation_no_toolchain": "Ablation: no toolchain family",
     "ablation_uniform_weights": "Ablation: uniform family weights",
+    "ablation_jaccard_only": "Ablation: Jaccard sequence comparison only",
 }
 
 
@@ -81,9 +82,10 @@ def _markdown(runs: list[dict], volume: dict) -> str:
         "- Positive pair: both sessions belong to the same true scenario.",
         "- `linked` decisions are counted as positive; hypotheses are not.",
         "- Link thresholds are unchanged from the previous revision and were not tuned",
-        "  on this benchmark. The corpus-relative family weighting added in",
-        "  `corr-1.2.0` was evaluated on the same benchmark it is reported on; there is",
-        "  no separate validation set, so its gain is reported as preliminary.",
+        "  on this benchmark. The overlap-based sequence comparison and",
+        "  corpus-relative family weighting added in `corr-1.3.0` were evaluated on",
+        "  the same benchmark they are reported on; there is no separate validation",
+        "  set, so their gains are reported as preliminary.",
         "- Every run is deterministic from its seed. The generator is synthetic;",
         "  absolute performance on production traffic will differ.",
         "",
@@ -182,6 +184,15 @@ def _markdown(runs: list[dict], volume: dict) -> str:
         f"a link, median {_seconds(volume['time_to_detection']['median_seconds'])}, "
         f"mean {_seconds(volume['time_to_detection']['mean_seconds'])}, "
         f"worst {_seconds(volume['time_to_detection']['max_seconds'])}.",
+        "",
+        f"Campaign-level: {volume['campaign_analysis']['groups_recovered_exactly']} of "
+        f"{volume['campaign_analysis']['true_multi_session_groups']} true groups recovered "
+        f"exactly; {volume['campaign_analysis']['predicted_clusters']} predicted clusters, "
+        f"purity {volume['campaign_analysis']['cluster_purity']:.3f}. Adaptive experiment: "
+        f"{volume['adaptive']['resolved_correctly']} links gained correctly, "
+        f"{volume['adaptive']['resolved_incorrectly']} gained incorrectly, "
+        f"{volume['adaptive']['lost_correctly']} lost correctly, "
+        f"{volume['adaptive']['lost_incorrectly']} lost incorrectly.",
         "",
         "| Method | Precision | Recall | F1 | FPR |",
         "| --- | --- | --- | --- | --- |",

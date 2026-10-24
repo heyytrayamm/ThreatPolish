@@ -99,23 +99,23 @@ remain visible. No view presents an IP address as an identity.
 ## Results
 
 Benchmark: 63 labelled synthetic sessions, 1,953 pairs (38 positive), algorithm
-`corr-1.1.0`. Thresholds were fixed before measurement.
+`corr-1.3.0`. Thresholds were fixed before measurement.
 
 | Method | P · seed 7 | R · seed 7 | F1 | P · seed 2026 | R · seed 2026 | F1 |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | IP-only grouping | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 |
 | Rule-based matching | 0.066 | 0.938 | 0.123 | 0.067 | 0.938 | 0.124 |
-| **Evidence-weighted correlation** | **1.000** | **0.812** | **0.897** | **1.000** | **0.562** | **0.720** |
+| **Evidence-weighted correlation** | **1.000** | **0.906** | **0.951** | **1.000** | **0.812** | **0.897** |
 
 | Method | False positives · seed 7 | False positives · seed 2026 | False-positive rate · seed 7 |
 | --- | ---: | ---: | ---: |
 | Rule-based matching | 424 | 420 | 27.1% |
 | **Evidence-weighted correlation** | **0** | **0** | **0.0%** |
 
-Campaign-level exact recovery: **9 of 12** (seed 7) and **4 of 12** (seed 2026),
+Campaign-level exact recovery: **10 of 12** (seed 7) and **8 of 12** (seed 2026),
 with 10 predicted clusters and **purity 1.000** in both runs. Time to detection —
 the elapsed campaign time until two members of a true group link — has a median
-of **541 s** (10 of 12 groups reached) on seed 7 and **822 s** (10 of 12) on
+of **541 s** (10 of 12 groups reached) on seed 7 and **614 s** (10 of 12) on
 seed 2026.
 
 Volume run — 165 sessions, 13,530 pairs:
@@ -123,7 +123,7 @@ Volume run — 165 sessions, 13,530 pairs:
 | Method | Precision | Recall | F1 | FPR |
 | --- | ---: | ---: | ---: | ---: |
 | Rule-based matching | 0.017 | 0.984 | 0.033 | 56.97% |
-| **Evidence-weighted correlation** | **1.000** | **0.836** | **0.911** | **0.00%** |
+| **Evidence-weighted correlation** | **1.000** | **0.918** | **0.957** | **0.00%** |
 
 The generic-scanner hard subset is reported separately: every method scores
 `P 0.400 / R 1.000`, because the labels are not recoverable from the available
@@ -132,16 +132,20 @@ telemetry. This keeps an easy subgroup from inflating the headline.
 **Interpretation.** The operating point is deliberately conservative: it prefers
 missed links over false accusations. The rule baseline finds more true pairs but
 is unusable at scale because more than a quarter of its positive decisions are
-wrong. Ablating the toolchain family costs precision; ablating threat intelligence
-raises recall on this sparse synthetic corpus, which is reported rather than
-hidden. Weighting each family by how much of its evidence survives the
-ubiquity filter raises recall at unchanged precision, and is measured against
-an ablation that reproduces the previous model. Adaptive observation is now
-simulated without invented constants, and it moves almost no decisions — the
-benefit is not demonstrated, which the report states rather than hides.
+wrong. Comparing action sequences by overlap rather than Jaccard alone is the
+largest single gain (0.812 → 0.906 and 0.562 → 0.812 at identical precision),
+and it is measured against an ablation that reproduces the previous comparison.
+Weighting each family by how much of its evidence survives the ubiquity filter
+adds a further 0.03 on seed 7. Ablating the toolchain and timing families costs
+recall; ablating threat intelligence scores marginally higher on both seeds,
+which is reported rather than hidden — the family is kept because it is the only
+one that can link sessions with no shared behaviour, and tuning it here would be
+fitting to the benchmark. Adaptive observation, simulated without invented
+constants, gains one or two links and loses none, too small a sample to claim a
+benefit.
 
-Resources: 6.29 s and 16.39 MB peak for the full seed-7 run including ablations;
-18.68 s and 111.83 MB for the 165-session volume run. Full tables, subsets and
+Resources: 60.3 s and 18.90 MB peak for the full seed-7 run including ablations;
+131.7 s and 129.19 MB for the 165-session volume run (9.7 ms per pair). Full tables, subsets and
 method notes are in [`docs/research/evaluation-results.md`](docs/research/evaluation-results.md).
 
 ## Verification
@@ -152,7 +156,7 @@ every stage and dashboard view to its implementation, test and measured result.
 
 | Check | Result |
 | --- | --- |
-| Backend suite · SQLite | **131 passed** (three of them drive Chrome) |
+| Backend suite · SQLite | **134 passed** (three of them drive Chrome) |
 | Backend suite · PostgreSQL 16 | the same suite, run in CI on a fresh service database |
 | Static analysis | Ruff `F,E9` clean; `compileall` clean |
 | Dashboard | TypeScript and Vite production build pass |

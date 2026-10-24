@@ -399,6 +399,10 @@ def _upsert_edge_row(
                 updated_at=iso(now),
                 expires_at=iso(expires_at) if expires_at else None,
                 status=status,
+                # Campaign membership is recomputed from linked pairs on every
+                # run.  Keeping the previous campaign here would leave a
+                # hypothesis or expired edge listed as campaign evidence.
+                campaign_id=None,
             )
         )
         return False
@@ -425,6 +429,15 @@ def _upsert_edge_row(
 
 def _expire_pair(conn: Connection, key: str, now: datetime) -> None:
     edge_id = f"edg_{_digest(key)}"
+    row = conn.execute(
+        select(graph_edges.c.evidence).where(graph_edges.c.id == edge_id)
+    ).fetchone()
+    # Expiry retires a relationship; it does not erase why it was proposed.
+    # The original evidence stays readable with the expiry recorded on top, so
+    # an analyst can still see what the model believed and when it changed.
+    evidence = loads(row[0], {}) if row else {}
+    evidence["expired_at"] = iso(now)
+    evidence["expiry_reason"] = "relationship no longer supported by current evidence"
     conn.execute(
         graph_edges.update()
         .where(graph_edges.c.id == edge_id)
@@ -432,12 +445,7 @@ def _expire_pair(conn: Connection, key: str, now: datetime) -> None:
             status="expired",
             campaign_id=None,
             updated_at=iso(now),
-            evidence=dumps(
-                {
-                    "explanation": "relationship no longer supported by current evidence",
-                    "expired_at": iso(now),
-                }
-            ),
+            evidence=dumps(evidence),
         )
     )
 
@@ -445,7 +453,7 @@ def _expire_pair(conn: Connection, key: str, now: datetime) -> None:
 def _expire_stale(conn: Connection, now: datetime) -> int:
     result = conn.execute(
         text(
-            "UPDATE graph_edges SET status = 'expired' "
+            "UPDATE graph_edges SET status = 'expired', campaign_id = NULL "
             "WHERE status IN ('active', 'hypothesis') AND expires_at IS NOT NULL "
             "AND expires_at < :now"
         ),

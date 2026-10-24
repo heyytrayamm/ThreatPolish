@@ -365,3 +365,134 @@ def test_small_corpus_does_not_filter_shared_evidence():
     assert context.n_sessions == 6
     assert context.is_informative("username", "root")
     assert context.is_informative("client", "SSH-2.0-libssh_0.9.6")
+
+
+def test_retired_and_demoted_edges_leave_their_campaign(client):
+    """Campaign evidence must be the edges that currently support it."""
+    from sqlalchemy import select
+
+    from app.correlation.engine import _digest, _upsert_edge_row
+    from app.correlation.repository import get_campaign
+    from app.correlation.scoring import pair_key
+    from app.core.security import iso, utcnow
+    from app.db.database import connection, dumps
+    from app.db.schema import campaigns, graph_edges
+
+    now = utcnow()
+    campaign_id = "cmp_retired"
+    with connection() as conn:
+        conn.execute(
+            campaigns.insert().values(
+                id=campaign_id,
+                name="candidate test",
+                status="candidate",
+                confidence=0.9,
+                summary="test",
+                evidence=dumps({"sessions": ["alpha", "beta"]}),
+                created_at=iso(now),
+                updated_at=iso(now),
+                algorithm_version=ALGORITHM_VERSION,
+                member_count=2,
+                ip_count=2,
+            )
+        )
+        for label, status in (("kept", "active"), ("retired", "hypothesis")):
+            left, right = f"alpha-{label}", f"beta-{label}"
+            conn.execute(
+                graph_edges.insert().values(
+                    id=f"edg_{_digest(pair_key(left, right))}",
+                    kind="session_similarity",
+                    src_id=f"session:{left}",
+                    dst_id=f"session:{right}",
+                    confidence=0.9,
+                    score=0.9,
+                    evidence=dumps({"explanation": "test"}),
+                    contradictions=dumps([]),
+                    algorithm_version=ALGORITHM_VERSION,
+                    created_at=iso(now),
+                    updated_at=iso(now),
+                    expires_at=None,
+                    status=status,
+                    campaign_id=campaign_id,
+                )
+            )
+
+    detail = get_campaign(campaign_id)
+    assert [edge["status"] for edge in detail["edges"]] == ["active"]
+
+    # A relationship that loses its link loses its campaign too, so a later
+    # campaign view cannot present it as supporting evidence.
+    with connection() as conn:
+        _upsert_edge_row(
+            conn,
+            edge_id=f"edg_{_digest(pair_key('alpha-kept', 'beta-kept'))}",
+            kind="session_similarity",
+            src="session:alpha-kept",
+            dst="session:beta-kept",
+            confidence=0.4,
+            score=0.4,
+            evidence={"explanation": "demoted"},
+            contradictions=[],
+            now=now,
+            expires_at=None,
+            status="hypothesis",
+        )
+        row = conn.execute(
+            select(graph_edges.c.status, graph_edges.c.campaign_id).where(
+                graph_edges.c.id == f"edg_{_digest(pair_key('alpha-kept', 'beta-kept'))}"
+            )
+        ).fetchone()
+    assert row[0] == "hypothesis"
+    assert row[1] is None
+    assert get_campaign(campaign_id)["edges"] == []
+
+
+def test_expiry_retires_a_relationship_without_erasing_its_evidence(client):
+    from sqlalchemy import select
+
+    from app.correlation.engine import _digest, _expire_pair
+    from app.correlation.scoring import pair_key
+    from app.core.security import iso, utcnow
+    from app.db.database import connection, dumps, loads
+    from app.db.schema import graph_edges
+
+    now = utcnow()
+    key = pair_key("gamma-one", "gamma-two")
+    edge_id = f"edg_{_digest(key)}"
+    original = {
+        "components": [{"name": "action_sequence", "score": 0.91}],
+        "explanation": "linked as related activity",
+        "algorithm_version": ALGORITHM_VERSION,
+    }
+    with connection() as conn:
+        conn.execute(
+            graph_edges.insert().values(
+                id=edge_id,
+                kind="session_similarity",
+                src_id="session:gamma-one",
+                dst_id="session:gamma-two",
+                confidence=0.92,
+                score=0.9,
+                evidence=dumps(original),
+                contradictions=dumps([]),
+                algorithm_version=ALGORITHM_VERSION,
+                created_at=iso(now),
+                updated_at=iso(now),
+                expires_at=None,
+                status="active",
+                campaign_id="cmp_gamma",
+            )
+        )
+        _expire_pair(conn, key, now)
+        row = conn.execute(
+            select(graph_edges.c.status, graph_edges.c.campaign_id, graph_edges.c.evidence).where(
+                graph_edges.c.id == edge_id
+            )
+        ).fetchone()
+
+    assert row[0] == "expired"
+    assert row[1] is None
+    evidence = loads(row[2], {})
+    assert evidence["components"] == original["components"]
+    assert evidence["explanation"] == original["explanation"]
+    assert evidence["expired_at"]

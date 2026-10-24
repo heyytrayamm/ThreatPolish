@@ -15,7 +15,7 @@ why.
 | Ingestion with hashing, dedup, quarantine | Done | `app/telemetry/ingest.py`, `test_pipeline.py` |
 | Auth, RBAC, audit trail | Done | `app/auth/`, `test_foundation.py`, `test_security.py`; password change and the admin session revocation both act on the account session version, the session history is derived from the audit trail with client, address and validity, one device can be signed out through a revocation list keyed by token id, an administrator can sign one device out of another account while its other sessions continue, and a second live session from another network raises `auth.signin.anomaly` (`test_signin_alerts.py`). Session and target identifiers reject control characters, so a sensor cannot craft a session id that collides with the relationship-key separator (`test_properties.py`) |
 | Dashboard shell and navigation | Done | `frontend/` builds cleanly; the Deception page lists decoy sessions with their addresses and event counts; the account page rotates the password, keeps the replacement token, lists recent sign-ins and signs out one device, the Overview page raises recent sign-in alerts, administration opens any account's session history, signs one device out of it and manages sensor tokens, and `test_browser.py` drives the password, plan/activate, session-management and token flows in Chrome |
-| Test harness | Done | 131 tests passing on SQLite, isolated per test, three of them driving Chrome against a live API; CI runs the same suite against PostgreSQL 16 |
+| Test harness | Done | 134 tests passing on SQLite, isolated per test, three of them driving Chrome against a live API; CI runs the same suite against PostgreSQL 16 |
 | Reproducible benchmark | Done | `backend/scripts/evaluate.py`; reports precision, recall, false-positive and false-negative rates, campaign recovery, time to detection, wall and CPU time, memory and milliseconds per pair |
 | Audit, novelty review, architecture, threat model | Done | `docs/00`–`docs/03` |
 | License | Done | Proprietary notice, all rights reserved by the project team |
@@ -28,7 +28,7 @@ why.
 | HTTP decoy service | Done | `http_decoy.py`, exercised over HTTP |
 | Cowrie log adapter | Done | ran against a real Cowrie container; offset persisted outside the read-only log volume |
 | Password capture as hashes | Done | `test_deception.py` |
-| Uncertainty-directed investigation | Partial | persisted activation shared with the decoy process and real before/after records. The benchmark simulation now replays only behaviour the actor already showed; under it additional observation moves almost no decisions (one link gained, one lost per seed; four gained, two lost at volume) and adds no false positives, so the benefit is **not demonstrated** and field measurement is still required |
+| Uncertainty-directed investigation | Partial | persisted activation shared with the decoy process and real before/after records. The benchmark simulation now replays only behaviour the actor already showed; under it additional observation gains one link on seed 7, two on seed 2026 and two at volume, loses none and adds no false positives, so the effect points the right way but is too small to call demonstrated and field measurement is still required |
 | Automatic decoy rotation from attacker tooling | Not done | the investigation mutates profile choice and records it, but there is no live adaptive server reconfiguration |
 
 ## Correlation and risk
@@ -40,6 +40,8 @@ why.
 | Six-family evidence scoring | Done | weights sum to 1.0, tested |
 | Specificity anchors and contradiction penalty | Done | `test_correlation.py` |
 | Corpus-relative family weighting | Done | `_effective_weights` scales each family by the share of its tokens that survive the ubiquity filter, recorded per edge; measured against the `ablation_uniform_weights` run, which reproduces the previous model |
+| Overlap-based sequence comparison | Done | action sequences score by containment as well as Jaccard, so a session that recorded fewer commands is not read as disagreement; `sequence_similarity` is recorded per edge and the `ablation_jaccard_only` run reproduces the previous comparison (seed 7 recall 0.812 vs 0.906, seed 2026 0.562 vs 0.812, precision unchanged at 1.000) |
+| Campaign membership follows edge state | Done | edges that become hypotheses or expire lose their campaign and campaign views count only active links (`campaign_id=None` on expiry, `status = 'active'` in `get_campaign`); expiry keeps the original evidence and records why and when it was retired (`test_correlation.py`) |
 | Edge persistence with full evidence | Done | `graph_edges`, `test_correlation.py` |
 | Campaign construction | Done | `engine.py` |
 | Risk, severity, journey escalation | Done | `app/risk/scoring.py` |

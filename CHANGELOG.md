@@ -2,6 +2,37 @@
 
 All notable changes to this project are recorded here. Dates use ISO 8601.
 
+## 1.0.1 — 2026-10-24
+
+### Changed
+
+- Sequence comparison scores containment as well as Jaccard (`corr-1.3.0`), so a
+  session that recorded fewer commands is no longer read as evidence of
+  different behaviour. It is measured against a new `ablation_jaccard_only` run
+  that reproduces the previous comparison: seed 7 recall 0.812 → 0.906 and seed
+  2026 0.562 → 0.812 at unchanged precision, with campaign recovery rising from
+  9 to 10 of 12 and from 4 to 8 of 12. The comparison used is recorded as
+  `sequence_similarity` on every edge.
+- Benchmark tables, campaign recovery, time to detection and cost figures were
+  regenerated for `corr-1.3.0` in the README, the traceability map and
+  `docs/research/`.
+
+### Fixed
+
+- Campaign views presented hypotheses and expired relationships as campaign
+  evidence: an edge that stopped being supported kept its campaign identifier,
+  and the campaign detail query did not filter by edge state. Membership is now
+  cleared when an edge becomes a hypothesis or expires, and the campaign view
+  counts only active links.
+- Expiring a pair replaced its stored evidence with a two-key stub, discarding
+  the reasons the model had proposed the link. Expiry now keeps the original
+  evidence and records when and why the relationship was retired.
+
+### Added
+
+- Tests for containment scoring of truncated sessions, for campaign membership
+  after an edge is demoted or expired, and for expiry preserving evidence.
+
 ## 1.0.0 — 2026-10-23
 
 Initial release.
