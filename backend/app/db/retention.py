@@ -8,15 +8,17 @@ that still hold.
 
 from __future__ import annotations
 
+import time
 from datetime import timedelta
 from typing import Any
 
-from sqlalchemy import text
+from sqlalchemy import select, text
 
+from ..core.audit import record_audit
 from ..core.config import get_settings
-from ..core.security import iso, utcnow
+from ..core.security import iso, new_id, utcnow
 from .database import connection
-from .schema import events
+from .schema import events, retention_runs
 
 # Observation edges are permanent while their session is in play.  They are
 # retained only as long as the session can still be reached from live evidence.
@@ -157,6 +159,7 @@ def retention_status() -> dict[str, Any]:
         "generated_at": event_cutoff,
         "overdue": overdue,
         "grace_days": settings.retention_grace_days,
+        "history": retention_history(),
         "events": {
             "retention_days": settings.retention_days,
             "total": int(event_totals[0] or 0),
@@ -173,4 +176,101 @@ def retention_status() -> dict[str, Any]:
             "stale_observations": int(stale_observations or 0),
             "orphan_nodes": int(orphan_nodes or 0),
         },
+    }
+
+
+def retention_history(limit: int = 14) -> list[dict[str, Any]]:
+    """Most recent retention runs, newest first, for the dashboard trend."""
+    bounded = max(1, min(int(limit), 100))
+    with connection() as conn:
+        rows = conn.execute(
+            select(retention_runs)
+            .order_by(retention_runs.c.ran_at.desc())
+            .limit(bounded)
+        ).fetchall()
+    return [
+        {
+            "id": row._mapping["id"],
+            "ran_at": row._mapping["ran_at"],
+            "trigger": row._mapping["trigger"],
+            "duration_ms": row._mapping["duration_ms"],
+            "events_removed": row._mapping["events_removed"],
+            "edges_removed": row._mapping["edges_removed"],
+            "observations_removed": row._mapping["observations_removed"],
+            "nodes_removed": row._mapping["nodes_removed"],
+            "events_expired": row._mapping["events_expired"],
+            "retired_edges": row._mapping["retired_edges"],
+            "stale_observations": row._mapping["stale_observations"],
+            "graph_nodes": row._mapping["graph_nodes"],
+            "graph_edges": row._mapping["graph_edges"],
+            "overdue": bool(row._mapping["overdue"]),
+        }
+        for row in rows
+    ]
+
+
+def run_retention(*, trigger: str = "manual") -> dict[str, Any]:
+    """Run both horizons, record the pre-run backlog and audit the run.
+
+    ``purge_all`` stays side-effect free so callers can enforce retention
+    without creating history; this wrapper is what the CLI and the scheduled
+    Compose service use.
+    """
+    if trigger not in {"manual", "scheduled"}:
+        raise ValueError("retention trigger must be 'manual' or 'scheduled'")
+    started = time.perf_counter()
+    before = retention_status()
+    purged = purge_all()
+    duration_ms = int(round((time.perf_counter() - started) * 1000))
+    run_id = new_id("rtn")
+    events_result = purged["events"]
+    graph_result = purged["graph"]
+    detail = {
+        "trigger": trigger,
+        "duration_ms": duration_ms,
+        "events_removed": events_result["events"],
+        "edges_removed": graph_result["edges"],
+        "observations_removed": graph_result["observations"],
+        "nodes_removed": graph_result["nodes"],
+        "events_expired": before["events"]["expired"],
+        "retired_edges": before["graph"]["retired_edges"],
+        "stale_observations": before["graph"]["stale_observations"],
+        "graph_nodes": before["graph"]["nodes"],
+        "graph_edges": before["graph"]["edges"],
+        "overdue": before["overdue"],
+    }
+    with connection() as conn:
+        conn.execute(
+            retention_runs.insert().values(
+                id=run_id,
+                ran_at=before["generated_at"],
+                trigger=trigger,
+                duration_ms=duration_ms,
+                events_removed=detail["events_removed"],
+                edges_removed=detail["edges_removed"],
+                observations_removed=detail["observations_removed"],
+                nodes_removed=detail["nodes_removed"],
+                events_expired=detail["events_expired"],
+                retired_edges=detail["retired_edges"],
+                stale_observations=detail["stale_observations"],
+                graph_nodes=detail["graph_nodes"],
+                graph_edges=detail["graph_edges"],
+                overdue=1 if detail["overdue"] else 0,
+            )
+        )
+        record_audit(
+            conn,
+            action="retention.run",
+            actor_role="system",
+            object_type="retention_run",
+            object_id=run_id,
+            detail=detail,
+        )
+    return {
+        "run_id": run_id,
+        "trigger": trigger,
+        "duration_ms": duration_ms,
+        "overdue": before["overdue"],
+        "events": events_result,
+        "graph": graph_result,
     }

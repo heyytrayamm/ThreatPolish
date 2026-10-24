@@ -460,10 +460,28 @@ export interface AuditEntry {
   request_ip: string | null;
 }
 
+export interface RetentionRun {
+  id: string;
+  ran_at: string;
+  trigger: "manual" | "scheduled";
+  duration_ms: number;
+  events_removed: number;
+  edges_removed: number;
+  observations_removed: number;
+  nodes_removed: number;
+  events_expired: number;
+  retired_edges: number;
+  stale_observations: number;
+  graph_nodes: number;
+  graph_edges: number;
+  overdue: boolean;
+}
+
 export interface RetentionStatus {
   generated_at: string;
   overdue: boolean;
   grace_days: number;
+  history: RetentionRun[];
   events: {
     retention_days: number;
     total: number;

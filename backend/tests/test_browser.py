@@ -246,6 +246,66 @@ def test_dashboard_password_change_keeps_this_tab_and_revokes_the_others(live_se
             page.get_by_label("Password", exact=True).fill(ADMIN_PASSWORD)
             page.get_by_role("button", name="Sign in").click()
             page.wait_for_selector(".sidebar")
+            page.route(
+                "**/api/v1/retention",
+                lambda route: route.fulfill(
+                    json={
+                        "generated_at": "2026-10-24T10:00:00+00:00",
+                        "overdue": False,
+                        "grace_days": 2,
+                        "events": {
+                            "retention_days": 90,
+                            "total": 12,
+                            "expired": 1,
+                            "oldest_occurred_at": "2026-07-24T00:00:00+00:00",
+                            "oldest_retention_until": "2026-10-22T00:00:00+00:00",
+                        },
+                        "graph": {
+                            "retention_days": 30,
+                            "cutoff": "2026-09-24T00:00:00+00:00",
+                            "nodes": 8,
+                            "edges": 6,
+                            "retired_edges": 1,
+                            "stale_observations": 1,
+                            "orphan_nodes": 0,
+                        },
+                        "history": [
+                            {
+                                "id": "rtn_2",
+                                "ran_at": "2026-10-24T09:00:00+00:00",
+                                "trigger": "scheduled",
+                                "duration_ms": 12,
+                                "events_removed": 2,
+                                "edges_removed": 1,
+                                "observations_removed": 1,
+                                "nodes_removed": 1,
+                                "events_expired": 2,
+                                "retired_edges": 1,
+                                "stale_observations": 1,
+                                "graph_nodes": 8,
+                                "graph_edges": 6,
+                                "overdue": False,
+                            },
+                            {
+                                "id": "rtn_1",
+                                "ran_at": "2026-10-23T09:00:00+00:00",
+                                "trigger": "scheduled",
+                                "duration_ms": 10,
+                                "events_removed": 4,
+                                "edges_removed": 2,
+                                "observations_removed": 0,
+                                "nodes_removed": 2,
+                                "events_expired": 4,
+                                "retired_edges": 2,
+                                "stale_observations": 0,
+                                "graph_nodes": 9,
+                                "graph_edges": 8,
+                                "overdue": True,
+                            },
+                        ],
+                    }
+                ),
+            )
 
             # Every view must render against the live API without console
             # errors, including the Deception page's superseded-investigation
@@ -270,8 +330,9 @@ def test_dashboard_password_change_keeps_this_tab_and_revokes_the_others(live_se
                     assert badge.count() == 1, badge.count()
                 if view == "Administration":
                     # The retention card reads the admin-only endpoint; the
-                    # graph horizon row only exists once that response landed.
+                    # horizon row and trend only exist once that response landed.
                     page.get_by_text("Graph horizon").wait_for()
+                    page.get_by_text("Backlog before each run").wait_for()
             assert console_errors == [], console_errors
 
             page.get_by_role("button", name="Account").click()

@@ -296,7 +296,7 @@ that value in `.env` and recreate the service after changing it
 cron, for example daily at 03:15:
 
 ```cron
-15 3 * * * cd /opt/threatpolish && docker compose exec -T app python -m app.cli retention
+15 3 * * * cd /opt/threatpolish && docker compose exec -T app python -m app.cli retention --scheduled
 ```
 
 `purge` and `purge-graph` remain available for one horizon at a time. Graph
@@ -314,7 +314,10 @@ current graph size. `overdue: true` means work has waited longer than
 `TP_RETENTION_GRACE_DAYS` (default 2), which points at a missed schedule rather
 than the normal backlog between daily runs; alert on that field. Administration
 shows the same backlog, and the Overview raises an alert to administrators once
-it is overdue.
+it is overdue. Each `retention` run records the pre-run backlog in
+`retention_runs` and writes a `retention.run` audit entry with actor role
+`system`; Administration charts the last 14 runs and `GET /retention` returns
+them as `history`.
 `python -m app.cli status` shows configuration, retention and schema state.
 
 ## Known limitations

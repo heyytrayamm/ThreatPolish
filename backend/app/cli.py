@@ -126,14 +126,16 @@ def _purge_graph(args: argparse.Namespace) -> int:
     return 0
 
 
-def _retention(_: argparse.Namespace) -> int:
-    from .db.retention import purge_all
+def _retention(args: argparse.Namespace) -> int:
+    from .db.retention import run_retention
 
     init_db()
-    result = purge_all()
+    trigger = "scheduled" if args.scheduled else "manual"
+    result = run_retention(trigger=trigger)
     events_result = result["events"]
     graph_result = result["graph"]
     print(
+        f"retention run {result['run_id']} ({trigger}, {result['duration_ms']} ms): "
         f"removed {events_result['events']} events past the "
         f"{events_result['days']}-day window (cutoff {events_result['cutoff']}); "
         f"removed {graph_result['edges']} retired edges, "
@@ -218,6 +220,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     retention = sub.add_parser(
         "retention", help="run event and graph retention; safe to schedule"
+    )
+    retention.add_argument(
+        "--scheduled", action="store_true", help="mark this as the scheduled service run"
     )
     retention.set_defaults(func=_retention)
 

@@ -63,7 +63,7 @@ recorded in the audit log.
 | POST | `/responses/evaluate` | analyst | Dry-run a policy decision |
 | GET | `/responses/policies` | viewer | Policy matrix |
 | GET | `/audit` | admin | Audit trail |
-| GET | `/retention` | admin | Retention lag and graph size |
+| GET | `/retention` | admin | Retention lag, graph size and the last 14 runs |
 
 ## Examples
 

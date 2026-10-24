@@ -4,7 +4,7 @@ from datetime import timedelta
 
 from app.core.security import iso, utcnow
 from app.db.database import connection, dumps
-from app.db.retention import purge_all, retention_status
+from app.db.retention import purge_all, retention_history, retention_status, run_retention
 from app.db.schema import events, graph_edges, graph_nodes
 
 
@@ -122,3 +122,33 @@ def test_retention_reports_lag_and_purge_clears_it(client, admin_headers):
     assert cleared["graph"]["nodes"] == 0
     assert cleared["graph"]["edges"] == 0
     assert retention_status()["overdue"] is False
+
+
+def test_scheduled_retention_records_history_and_audit(client, admin_headers):
+    import pytest
+
+    _insert_event(iso(utcnow() - timedelta(days=10)))
+    with pytest.raises(ValueError):
+        run_retention(trigger="bogus")
+
+    result = run_retention(trigger="scheduled")
+    assert result["run_id"].startswith("rtn_")
+    assert result["trigger"] == "scheduled"
+    assert result["events"]["events"] == 1
+
+    history = retention_history()
+    assert history[0]["id"] == result["run_id"]
+    assert history[0]["trigger"] == "scheduled"
+    assert history[0]["events_removed"] == 1
+    assert history[0]["events_expired"] == 1
+    assert history[0]["overdue"] is True
+
+    status = client.get("/api/v1/retention", headers=admin_headers).json()
+    assert status["history"][0]["id"] == result["run_id"]
+
+    audit = client.get("/api/v1/audit?action=retention", headers=admin_headers).json()
+    entry = next(item for item in audit["items"] if item["action"] == "retention.run")
+    assert entry["actor_role"] == "system"
+    assert entry["object_id"] == result["run_id"]
+    assert entry["detail"]["trigger"] == "scheduled"
+    assert entry["detail"]["events_removed"] == 1

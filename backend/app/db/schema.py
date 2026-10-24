@@ -395,6 +395,28 @@ correlation_runs = Table(
     Column("trigger", String(32), nullable=False, default="manual"),
 )
 
+retention_runs = Table(
+    "retention_runs",
+    metadata,
+    Column("id", String(40), primary_key=True),
+    Column("ran_at", String(40), nullable=False),
+    Column("trigger", String(24), nullable=False),
+    Column("duration_ms", Integer, nullable=False, default=0),
+    Column("events_removed", Integer, nullable=False, default=0),
+    Column("edges_removed", Integer, nullable=False, default=0),
+    Column("observations_removed", Integer, nullable=False, default=0),
+    Column("nodes_removed", Integer, nullable=False, default=0),
+    # Backlog seen before the run, so the dashboard can show a trend rather
+    # than an always-zero count after cleanup.
+    Column("events_expired", Integer, nullable=False, default=0),
+    Column("retired_edges", Integer, nullable=False, default=0),
+    Column("stale_observations", Integer, nullable=False, default=0),
+    Column("graph_nodes", Integer, nullable=False, default=0),
+    Column("graph_edges", Integer, nullable=False, default=0),
+    Column("overdue", Integer, nullable=False, default=0),
+    Index("ix_retention_runs_ran_at", "ran_at"),
+)
+
 schema_migrations = Table(
     "schema_migrations",
     MetaData(),

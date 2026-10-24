@@ -23,8 +23,14 @@ All notable changes to this project are recorded here. Dates use ISO 8601.
   daily backlog does not raise an alarm.
 - Administration shows the retention backlog and graph size. The Overview
   raises an alert for administrators once that backlog is overdue.
+- Each retention run records its pre-run backlog in `retention_runs`, returns
+  the last 14 runs from `GET /retention`, and charts them on the Administration
+  page, so an operator can see whether the backlog is growing.
+- Scheduled runs are audited as `retention.run` with actor role `system`; the
+  Compose service passes `--scheduled` so the trigger is recorded.
 - CI runs `tests/test_retention.py` explicitly against PostgreSQL, after the
   full suite, so a retention regression is attributed to its own step.
+- Migration 11 adds the retention run history table.
 - Migration 10 adds the indexes retention needs; `IF NOT EXISTS` makes it safe
   on a database that already has them.
 

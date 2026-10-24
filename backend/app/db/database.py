@@ -308,6 +308,18 @@ def _migration_010_graph_retention(conn: Connection) -> None:
     )
 
 
+def _migration_011_retention_runs(conn: Connection) -> None:
+    """Record each retention run and the backlog it cleared.
+
+    Without history the dashboard can only show the current backlog, which is
+    zero immediately after a run.  The stored pre-run counts give operators a
+    trend and leave an audit trail of scheduled maintenance.
+    """
+    from .schema import retention_runs
+
+    retention_runs.create(bind=conn, checkfirst=True)
+
+
 MIGRATIONS: list[tuple[int, str, Any]] = [
     (1, "initial schema", _migration_001_initial),
     (2, "event retention index", _migration_002_events_retention_index),
@@ -319,6 +331,7 @@ MIGRATIONS: list[tuple[int, str, Any]] = [
     (8, "per-session revocation", _migration_008_revoked_sessions),
     (9, "campaign lifecycle", _migration_009_campaign_lifecycle),
     (10, "graph retention indexes", _migration_010_graph_retention),
+    (11, "retention run history", _migration_011_retention_runs),
 ]
 
 

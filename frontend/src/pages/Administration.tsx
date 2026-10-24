@@ -22,6 +22,14 @@ export default function Administration() {
   const audit = useAsync(() => api.audit(), [tick]);
   const tokens = useAsync(() => api.agentTokens(), [tick]);
   const retention = useAsync(() => api.retention(), [tick]);
+  // The API returns the newest run first; a chart reads left to right.
+  const retentionHistory = [...(retention.data?.history ?? [])].reverse();
+  const maxBacklog = Math.max(
+    1,
+    ...retentionHistory.map(
+      (run) => run.events_expired + run.retired_edges + run.stale_observations,
+    ),
+  );
 
   async function inspect(user: User) {
     setAudited(user);
@@ -240,6 +248,53 @@ export default function Administration() {
                 </tr>
               </tbody>
             </table>
+            {retentionHistory.length > 0 && (
+              <>
+                <h3>Backlog before each run</h3>
+                <svg
+                  className="bars"
+                  viewBox="0 0 620 120"
+                  role="img"
+                  aria-label="Retention backlog before each run"
+                >
+                  <line x1={10} y1={100} x2={610} y2={100} className="bar-axis" />
+                  {retentionHistory.map((run, index) => {
+                    const slot = 600 / retentionHistory.length;
+                    const width = Math.max(2, Math.min(44, slot - 4));
+                    const backlog =
+                      run.events_expired + run.retired_edges + run.stale_observations;
+                    const height = (backlog / maxBacklog) * 90;
+                    const x = 10 + index * slot + (slot - width) / 2;
+                    return (
+                      <g key={run.id}>
+                        <rect
+                          x={x}
+                          y={100 - height}
+                          width={width}
+                          height={height}
+                          rx={2}
+                          className="bar"
+                        />
+                        <title>
+                          {`${formatTime(run.ran_at)} — ${backlog} items (${run.trigger})`}
+                        </title>
+                      </g>
+                    );
+                  })}
+                </svg>
+                <p className="muted small">
+                  Expired events plus retired edges and stale observations seen before the last{" "}
+                  {retentionHistory.length} runs. Graph size now: {retention.data.graph.nodes} nodes,{" "}
+                  {retention.data.graph.edges} edges.
+                </p>
+              </>
+            )}
+            {retentionHistory.length === 0 && (
+              <p className="muted small">
+                No retention run has been recorded yet. The scheduled service writes one on each
+                run.
+              </p>
+            )}
           </>
         )}
       </Card>
