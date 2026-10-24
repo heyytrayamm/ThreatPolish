@@ -63,6 +63,10 @@ def main() -> int:
     return 0
 
 
+def _seconds(value: float | None) -> str:
+    return "not reached" if value is None else f"{value:.1f}s"
+
+
 def _markdown(runs: list[dict], volume: dict) -> str:
     lines: list[str] = [
         "# Correlation evaluation",
@@ -103,6 +107,7 @@ def _markdown(runs: list[dict], volume: dict) -> str:
                 f"{metrics['tp']} | {metrics['fp']} | {metrics['fn']} |"
             )
         campaign = result["campaign_analysis"]
+        detection = result["time_to_detection"]
         adaptive = result["adaptive"]
         resources = result["resources"]
         lines += [
@@ -139,6 +144,12 @@ def _markdown(runs: list[dict], volume: dict) -> str:
             f"{campaign['predicted_clusters']} predicted clusters, purity "
             f"{campaign['cluster_purity']:.3f}. {campaign['note']}",
             "",
+            f"Time to detection: {detection['groups_with_a_link']} of "
+            f"{detection['groups_measured']} multi-session groups produced a link, "
+            f"median {_seconds(detection['median_seconds'])}, "
+            f"mean {_seconds(detection['mean_seconds'])}, "
+            f"worst {_seconds(detection['max_seconds'])}. {detection['note']}",
+            "",
             f"Adaptive experiment: {adaptive['ambiguous_pairs']} ambiguous pairs in "
             f"{adaptive['candidate_components']} candidate clusters; "
             f"{adaptive['components_investigated']} clusters investigated, "
@@ -149,8 +160,11 @@ def _markdown(runs: list[dict], volume: dict) -> str:
             f"{adaptive['lost_incorrectly']} lost incorrectly; "
             f"{adaptive['unchanged']} unchanged. {adaptive['note']}",
             "",
-            f"Resources: total {resources['total_seconds']:.3f}s, peak memory "
-            f"{resources['peak_memory_mb']:.2f} MB, {resources['sessions_per_second']} sessions/s.",
+            f"Resources: total {resources['total_seconds']:.3f}s wall, "
+            f"{resources['cpu_seconds']:.3f}s CPU, peak memory "
+            f"{resources['peak_memory_mb']:.2f} MB, "
+            f"{resources['sessions_per_second']} sessions/s, "
+            f"{resources['milliseconds_per_pair']} ms/pair.",
             "",
         ]
 
@@ -158,8 +172,16 @@ def _markdown(runs: list[dict], volume: dict) -> str:
         f"## Volume run (seed {volume['seed']})",
         "",
         f"{volume['sessions']} sessions and {volume['pairs']} pairs: "
-        f"total {volume['resources']['total_seconds']:.3f}s, peak memory "
-        f"{volume['resources']['peak_memory_mb']:.2f} MB.",
+        f"total {volume['resources']['total_seconds']:.3f}s wall, "
+        f"{volume['resources']['cpu_seconds']:.3f}s CPU, peak memory "
+        f"{volume['resources']['peak_memory_mb']:.2f} MB, "
+        f"{volume['resources']['milliseconds_per_pair']} ms/pair.",
+        "",
+        f"Time to detection: {volume['time_to_detection']['groups_with_a_link']} of "
+        f"{volume['time_to_detection']['groups_measured']} multi-session groups produced "
+        f"a link, median {_seconds(volume['time_to_detection']['median_seconds'])}, "
+        f"mean {_seconds(volume['time_to_detection']['mean_seconds'])}, "
+        f"worst {_seconds(volume['time_to_detection']['max_seconds'])}.",
         "",
         "| Method | Precision | Recall | F1 | FPR |",
         "| --- | --- | --- | --- | --- |",

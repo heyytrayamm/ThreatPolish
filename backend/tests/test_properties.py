@@ -235,6 +235,37 @@ def test_corpus_weights_discount_a_family_that_cannot_discriminate():
     assert weighted["family_weights"]["identity"] > weighted["family_weights"]["behavior"]
 
 
+def test_time_to_detection_measures_evidence_not_scheduling():
+    """Stage 12 asks for time to detection; it must be computed, not asserted."""
+    from datetime import datetime, timedelta, timezone
+
+    from app.correlation.features import Session
+    from app.correlation.scoring import pair_key
+    from app.evaluation.runner import _time_to_detection
+
+    base = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    sessions = {}
+    for index in range(3):
+        session = Session(id=f"s{index}")
+        session.first_seen = base
+        session.last_seen = base + timedelta(minutes=10 * (index + 1))
+        sessions[session.id] = session
+
+    linked = _time_to_detection(
+        sessions,
+        {pair_key("s0", "s1"): {"decision": "linked"}},
+        {"s0": "group-a", "s1": "group-a", "s2": "solo"},
+    )
+    assert linked["groups_measured"] == 1
+    assert linked["groups_with_a_link"] == 1
+    # Both members had finished emitting by the later member's last event.
+    assert linked["median_seconds"] == 1200.0
+
+    empty = _time_to_detection(sessions, {}, {"s0": "group-a", "s1": "group-a"})
+    assert empty["groups_with_a_link"] == 0
+    assert empty["median_seconds"] is None
+
+
 def test_narrow_scope_governs_a_broader_authorization(client, admin_headers):
     from app.websec.scope import find_active_scope
 

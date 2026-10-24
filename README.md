@@ -113,7 +113,10 @@ Benchmark: 63 labelled synthetic sessions, 1,953 pairs (38 positive), algorithm
 | **Evidence-weighted correlation** | **0** | **0** | **0.0%** |
 
 Campaign-level exact recovery: **9 of 12** (seed 7) and **4 of 12** (seed 2026),
-with 10 predicted clusters and **purity 1.000** in both runs.
+with 10 predicted clusters and **purity 1.000** in both runs. Time to detection —
+the elapsed campaign time until two members of a true group link — has a median
+of **541 s** (10 of 12 groups reached) on seed 7 and **822 s** (10 of 12) on
+seed 2026.
 
 Volume run — 165 sessions, 13,530 pairs:
 
@@ -143,14 +146,18 @@ method notes are in [`docs/research/evaluation-results.md`](docs/research/evalua
 
 ## Verification
 
+The authoritative scope is [`docs/PRODUCT_SPEC.md`](docs/PRODUCT_SPEC.md);
+[`docs/REQUIREMENTS_TRACEABILITY.md`](docs/REQUIREMENTS_TRACEABILITY.md) maps
+every stage and dashboard view to its implementation, test and measured result.
+
 | Check | Result |
 | --- | --- |
-| Backend suite · SQLite | **130 passed** (three of them drive Chrome) |
-| Backend suite · PostgreSQL 16 | **130 passed** in CI, on a fresh service database |
+| Backend suite · SQLite | **131 passed** (three of them drive Chrome) |
+| Backend suite · PostgreSQL 16 | the same suite, run in CI on a fresh service database |
 | Static analysis | Ruff `F,E9` clean; `compileall` clean |
 | Dashboard | TypeScript and Vite production build pass |
 | Container | Multi-stage image builds; API runs as uid 10001 |
-| Upgrade path | Schema v3 database migrated to v5 with data intact |
+| Upgrade path | Schema v3 → v5 and v7 → v8 upgraded on copies with data intact |
 
 ```bash
 cd backend

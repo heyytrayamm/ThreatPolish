@@ -498,6 +498,12 @@ def test_dashboard_plans_and_activates_an_investigation(live_server: str):
             assert investigation_id.startswith("inv_"), notice
 
             page.get_by_role("button", name="Deception").click()
+            # The decoy session read model is a dashboard view in its own right.
+            page.wait_for_selector("text=Decoy sessions (24h)")
+            decoy_session = page.locator("#main tr", has_text="sess-browser-0").first
+            decoy_session.wait_for()
+            assert "203.0.113.31" in decoy_session.inner_text()
+
             row = page.locator(".list-item", has_text=investigation_id[:16]).first
             row.wait_for()
             assert "planned" in row.inner_text()

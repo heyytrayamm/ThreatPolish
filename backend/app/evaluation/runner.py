@@ -10,8 +10,10 @@ Limitations are returned with the results, not buried in prose.
 from __future__ import annotations
 
 import itertools
+import statistics
 import time
 import tracemalloc
+from datetime import datetime
 from typing import Any
 
 from ..correlation.features import CorrelationContext, Session, build_sessions
@@ -34,6 +36,7 @@ def run(
         delayed_sessions=3,
     )
     started = time.perf_counter()
+    cpu_started = time.process_time()
     tracemalloc.start()
     sessions, order = _build_sessions(dataset["sessions"])
     context = CorrelationContext.from_sessions(sessions.values())
@@ -146,6 +149,7 @@ def run(
 
     subsets = _subset_report(passive_decisions, labels, truth, pairs)
     campaign = _campaign_analysis(sessions, passive_decisions, truth, exclude=hard_ids)
+    detection = _time_to_detection(sessions, passive_decisions, truth, exclude=hard_ids)
     peak_memory = tracemalloc.get_traced_memory()[1] / (1024 * 1024)
     tracemalloc.stop()
     elapsed = time.perf_counter() - started
@@ -171,6 +175,7 @@ def run(
         },
         "subsets": subsets,
         "campaign_analysis": campaign,
+        "time_to_detection": detection,
         "adaptive": {
             "ambiguous_pairs": len(hypothesis_pairs),
             "candidate_components": len(components),
@@ -192,9 +197,12 @@ def run(
         },
         "resources": {
             "total_seconds": round(elapsed, 3),
+            "cpu_seconds": round(time.process_time() - cpu_started, 3),
             "method_seconds": timings,
             "peak_memory_mb": round(peak_memory, 2),
             "sessions_per_second": round(len(sessions) / elapsed, 1) if elapsed else None,
+            "pairs_per_second": round(len(pairs) / elapsed, 1) if elapsed else None,
+            "milliseconds_per_pair": round(1000 * elapsed / len(pairs), 3) if pairs else None,
         },
         "limitations": [
             "Synthetic telemetry; absolute scores will differ on production traffic.",
@@ -429,5 +437,67 @@ def _campaign_analysis(
         "note": (
             "Recovery requires every member of a true group to appear in exactly one "
             "predicted cluster (no fragmentation, no contamination)."
+        ),
+    }
+
+
+def _time_to_detection(
+    sessions: dict[str, Session],
+    decisions: dict[str, dict[str, Any]],
+    truth: dict[str, str],
+    *,
+    exclude: set[str] | None = None,
+) -> dict[str, Any]:
+    """How long a campaign stays invisible before its evidence supports a link.
+
+    Correlation runs in batches, so this measures when the evidence became
+    sufficient rather than when a run happened: for each true group, the earliest
+    point at which a linked pair of its members had finished emitting.  Groups
+    that never link have no time to detection, and scheduling latency is outside
+    the measurement.
+    """
+    excluded = exclude or set()
+    groups: dict[str, list[str]] = {}
+    for session_id, group in truth.items():
+        if session_id in excluded:
+            continue
+        groups.setdefault(group, []).append(session_id)
+
+    delays: list[float] = []
+    measured = 0
+    for members in groups.values():
+        if len(members) < 2:
+            continue
+        starts = [sessions[item].first_seen for item in members if sessions[item].first_seen]
+        if not starts:
+            continue
+        measured += 1
+        group_start = min(starts)
+        available_at: datetime | None = None
+        for left, right in itertools.combinations(members, 2):
+            result = decisions.get(pair_key(left, right))
+            if not result or result["decision"] != "linked":
+                continue
+            ends = [sessions[item].last_seen for item in (left, right) if sessions[item].last_seen]
+            if not ends:
+                continue
+            moment = max(ends)
+            if available_at is None or moment < available_at:
+                available_at = moment
+        if available_at is None:
+            continue
+        delays.append(max(0.0, (available_at - group_start).total_seconds()))
+
+    return {
+        "groups_with_a_link": len(delays),
+        "groups_measured": measured,
+        "median_seconds": round(statistics.median(delays), 1) if delays else None,
+        "mean_seconds": round(statistics.fmean(delays), 1) if delays else None,
+        "max_seconds": round(max(delays), 1) if delays else None,
+        "note": (
+            "Elapsed campaign time until two members of the same true group had both "
+            "finished emitting events that link them. Correlation is batch, so "
+            "scheduling latency is excluded, and a group that never links has no "
+            "time to detection."
         ),
     }

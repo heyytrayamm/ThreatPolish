@@ -174,6 +174,10 @@ export const api = {
     request<{ rolled_back: number }>("/api/v1/responses/emergency-disable", { method: "POST" }),
   sources: () => request<{ sources: SourceHealth[] }>("/api/v1/sources"),
   profiles: () => request<{ items: DecoyProfile[] }>("/api/v1/honeypot/profiles"),
+  decoySessions: (hours = 24, limit = 20) =>
+    request<{ window_hours: number; items: DecoySession[]; note: string }>(
+      `/api/v1/honeypot/sessions?hours=${hours}&limit=${limit}`,
+    ),
   investigations: () => request<{ items: Investigation[] }>("/api/v1/investigations"),
   planInvestigation: (body: Record<string, unknown>) =>
     request<Record<string, unknown>>("/api/v1/investigations", {
@@ -344,6 +348,16 @@ export interface SourceHealth {
   ok: boolean;
   error_count: number;
   detail: Record<string, unknown>;
+}
+
+export interface DecoySession {
+  session_id: string;
+  first_seen: string;
+  last_seen: string;
+  events: number;
+  source_ips: string[];
+  severity: string;
+  target: string | null;
 }
 
 export interface DecoyProfile {

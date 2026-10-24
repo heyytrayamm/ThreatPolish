@@ -1,9 +1,9 @@
 {
-  "generated_at": "2026-10-24T09:22:35.261321+00:00",
+  "generated_at": "2026-10-24T09:47:44.304252+00:00",
   "runs": [
     {
       "adaptive": {
-        "ambiguous_pairs": 180,
+        "ambiguous_pairs": 188,
         "candidate_components": 7,
         "components_investigated": 7,
         "lost_correctly": 1,
@@ -142,19 +142,22 @@
       "pairs": 1953,
       "positives": 38,
       "resources": {
+        "cpu_seconds": 51.239,
         "method_seconds": {
-          "ablation_no_intel": 8.308,
-          "ablation_no_timing": 8.154,
-          "ablation_no_toolchain": 8.123,
-          "ablation_uniform_weights": 8.123,
-          "ip_only": 0.039,
-          "proposed": 8.696,
-          "proposed_adaptive": 9.606,
-          "rule_based": 0.067
+          "ablation_no_intel": 8.134,
+          "ablation_no_timing": 7.98,
+          "ablation_no_toolchain": 7.991,
+          "ablation_uniform_weights": 7.973,
+          "ip_only": 0.038,
+          "proposed": 8.549,
+          "proposed_adaptive": 9.407,
+          "rule_based": 0.068
         },
-        "peak_memory_mb": 18.2,
+        "milliseconds_per_pair": 26.251,
+        "pairs_per_second": 38.1,
+        "peak_memory_mb": 18.22,
         "sessions_per_second": 1.2,
-        "total_seconds": 52.254
+        "total_seconds": 51.268
       },
       "results": {
         "ablation_no_intel": {
@@ -327,11 +330,19 @@
           "tn": 28,
           "tp": 0
         }
+      },
+      "time_to_detection": {
+        "groups_measured": 12,
+        "groups_with_a_link": 10,
+        "max_seconds": 924.0,
+        "mean_seconds": 561.9,
+        "median_seconds": 541.5,
+        "note": "Elapsed campaign time until two members of the same true group had both finished emitting events that link them. Correlation is batch, so scheduling latency is excluded, and a group that never links has no time to detection."
       }
     },
     {
       "adaptive": {
-        "ambiguous_pairs": 178,
+        "ambiguous_pairs": 177,
         "candidate_components": 6,
         "components_investigated": 6,
         "lost_correctly": 1,
@@ -470,19 +481,22 @@
       "pairs": 1953,
       "positives": 38,
       "resources": {
+        "cpu_seconds": 49.552,
         "method_seconds": {
-          "ablation_no_intel": 8.087,
-          "ablation_no_timing": 7.951,
-          "ablation_no_toolchain": 7.98,
-          "ablation_uniform_weights": 7.93,
-          "ip_only": 0.04,
-          "proposed": 8.519,
-          "proposed_adaptive": 8.472,
+          "ablation_no_intel": 8.026,
+          "ablation_no_timing": 7.892,
+          "ablation_no_toolchain": 7.887,
+          "ablation_uniform_weights": 7.846,
+          "ip_only": 0.037,
+          "proposed": 8.423,
+          "proposed_adaptive": 8.341,
           "rule_based": 0.069
         },
-        "peak_memory_mb": 18.09,
+        "milliseconds_per_pair": 25.392,
+        "pairs_per_second": 39.4,
+        "peak_memory_mb": 18.08,
         "sessions_per_second": 1.3,
-        "total_seconds": 50.112
+        "total_seconds": 49.591
       },
       "results": {
         "ablation_no_intel": {
@@ -655,22 +669,30 @@
           "tn": 28,
           "tp": 0
         }
+      },
+      "time_to_detection": {
+        "groups_measured": 12,
+        "groups_with_a_link": 10,
+        "max_seconds": 1145.0,
+        "mean_seconds": 799.3,
+        "median_seconds": 821.5,
+        "note": "Elapsed campaign time until two members of the same true group had both finished emitting events that link them. Correlation is batch, so scheduling latency is excluded, and a group that never links has no time to detection."
       }
     }
   ],
   "volume_run": {
     "adaptive": {
-      "ambiguous_pairs": 1257,
+      "ambiguous_pairs": 1247,
       "candidate_components": 8,
       "components_investigated": 8,
       "lost_correctly": 3,
       "lost_incorrectly": 0,
       "note": "Additional observation is simulated by replaying one command the session already used, for sessions in the largest uncertain clusters only. The replay adds only behaviour the actor showed; the earlier simulation also added a category-derived request path, which manufactured similarity between unrelated sessions. Counts cover evaluable pairs.",
-      "pairs_recomputed": 12246,
+      "pairs_recomputed": 12090,
       "resolved_correctly": 4,
       "resolved_incorrectly": 0,
-      "sessions_enriched": 157,
-      "unchanged": 11318
+      "sessions_enriched": 156,
+      "unchanged": 11168
     },
     "algorithm_version": "corr-1.2.0",
     "campaign_analysis": {
@@ -751,15 +773,18 @@
     "pairs": 13530,
     "positives": 128,
     "resources": {
+      "cpu_seconds": 124.067,
       "method_seconds": {
-        "ip_only": 0.269,
-        "proposed": 62.932,
-        "proposed_adaptive": 58.688,
-        "rule_based": 0.582
+        "ip_only": 0.264,
+        "proposed": 62.236,
+        "proposed_adaptive": 57.337,
+        "rule_based": 0.577
       },
-      "peak_memory_mb": 124.4,
+      "milliseconds_per_pair": 9.176,
+      "pairs_per_second": 109.0,
+      "peak_memory_mb": 124.35,
       "sessions_per_second": 1.3,
-      "total_seconds": 126.234
+      "total_seconds": 124.151
     },
     "results": {
       "ip_only": {
@@ -884,6 +909,14 @@
         "tn": 28,
         "tp": 0
       }
+    },
+    "time_to_detection": {
+      "groups_measured": 42,
+      "groups_with_a_link": 39,
+      "max_seconds": 1103.0,
+      "mean_seconds": 605.5,
+      "median_seconds": 589.0,
+      "note": "Elapsed campaign time until two members of the same true group had both finished emitting events that link them. Correlation is batch, so scheduling latency is excluded, and a group that never links has no time to detection."
     }
   }
 }

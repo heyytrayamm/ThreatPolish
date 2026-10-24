@@ -57,9 +57,11 @@ Generic scanner groups with no distinguishing artefact. Labels are not recoverab
 
 Campaign-level: 9 of 12 true groups recovered exactly; 10 predicted clusters, purity 1.000. Recovery requires every member of a true group to appear in exactly one predicted cluster (no fragmentation, no contamination).
 
-Adaptive experiment: 180 ambiguous pairs in 7 candidate clusters; 7 clusters investigated, 1953 pairs recomputed; of the evaluable pairs, 1 links gained correctly, 0 gained incorrectly, 1 lost correctly and 0 lost incorrectly; 1594 unchanged. Additional observation is simulated by replaying one command the session already used, for sessions in the largest uncertain clusters only. The replay adds only behaviour the actor showed; the earlier simulation also added a category-derived request path, which manufactured similarity between unrelated sessions. Counts cover evaluable pairs.
+Time to detection: 10 of 12 multi-session groups produced a link, median 541.5s, mean 561.9s, worst 924.0s. Elapsed campaign time until two members of the same true group had both finished emitting events that link them. Correlation is batch, so scheduling latency is excluded, and a group that never links has no time to detection.
 
-Resources: total 52.254s, peak memory 18.20 MB, 1.2 sessions/s.
+Adaptive experiment: 188 ambiguous pairs in 7 candidate clusters; 7 clusters investigated, 1953 pairs recomputed; of the evaluable pairs, 1 links gained correctly, 0 gained incorrectly, 1 lost correctly and 0 lost incorrectly; 1594 unchanged. Additional observation is simulated by replaying one command the session already used, for sessions in the largest uncertain clusters only. The replay adds only behaviour the actor showed; the earlier simulation also added a category-derived request path, which manufactured similarity between unrelated sessions. Counts cover evaluable pairs.
+
+Resources: total 51.268s wall, 51.239s CPU, peak memory 18.22 MB, 1.2 sessions/s, 26.251 ms/pair.
 
 ## Seed 2026
 
@@ -102,13 +104,17 @@ Generic scanner groups with no distinguishing artefact. Labels are not recoverab
 
 Campaign-level: 4 of 12 true groups recovered exactly; 10 predicted clusters, purity 1.000. Recovery requires every member of a true group to appear in exactly one predicted cluster (no fragmentation, no contamination).
 
-Adaptive experiment: 178 ambiguous pairs in 6 candidate clusters; 6 clusters investigated, 1770 pairs recomputed; of the evaluable pairs, 1 links gained correctly, 0 gained incorrectly, 1 lost correctly and 0 lost incorrectly; 1429 unchanged. Additional observation is simulated by replaying one command the session already used, for sessions in the largest uncertain clusters only. The replay adds only behaviour the actor showed; the earlier simulation also added a category-derived request path, which manufactured similarity between unrelated sessions. Counts cover evaluable pairs.
+Time to detection: 10 of 12 multi-session groups produced a link, median 821.5s, mean 799.3s, worst 1145.0s. Elapsed campaign time until two members of the same true group had both finished emitting events that link them. Correlation is batch, so scheduling latency is excluded, and a group that never links has no time to detection.
 
-Resources: total 50.112s, peak memory 18.09 MB, 1.3 sessions/s.
+Adaptive experiment: 177 ambiguous pairs in 6 candidate clusters; 6 clusters investigated, 1770 pairs recomputed; of the evaluable pairs, 1 links gained correctly, 0 gained incorrectly, 1 lost correctly and 0 lost incorrectly; 1429 unchanged. Additional observation is simulated by replaying one command the session already used, for sessions in the largest uncertain clusters only. The replay adds only behaviour the actor showed; the earlier simulation also added a category-derived request path, which manufactured similarity between unrelated sessions. Counts cover evaluable pairs.
+
+Resources: total 49.591s wall, 49.552s CPU, peak memory 18.08 MB, 1.3 sessions/s, 25.392 ms/pair.
 
 ## Volume run (seed 99)
 
-165 sessions and 13530 pairs: total 126.234s, peak memory 124.40 MB.
+165 sessions and 13530 pairs: total 124.151s wall, 124.067s CPU, peak memory 124.35 MB, 9.176 ms/pair.
+
+Time to detection: 39 of 42 multi-session groups produced a link, median 589.0s, mean 605.5s, worst 1103.0s.
 
 | Method | Precision | Recall | F1 | FPR |
 | --- | --- | --- | --- | --- |

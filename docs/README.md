@@ -1,6 +1,15 @@
 # Documentation index
 
-Read in this order when evaluating the project:
+Start with the product specification, then the traceability matrix; together
+they state what the platform must be and where each requirement is satisfied:
+
+- [Product specification](PRODUCT_SPEC.md) — the authoritative scope: product,
+  differentiator, modules, architecture rules, engineering standards.
+- [Requirements traceability](REQUIREMENTS_TRACEABILITY.md) — stage-by-stage
+  status, dashboard-view matrix, measured metrics, open gaps and the document
+  map to the specification's deliverable names.
+
+Read in this order for the underlying detail:
 
 1. [Repository audit](00-repository-audit.md) — what existed before the build,
    the environment constraints and the decisions that followed.

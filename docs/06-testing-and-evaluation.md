@@ -46,8 +46,8 @@ when the bundle is missing, stale or Playwright is absent.
 
 ## Measured behaviour
 
-Latest full run: **130 passed on SQLite and 130 passed on PostgreSQL 16** in CI
-(run `40082026803`, commit `f7c140c`), including the three browser cases. The
+Latest full run: **131 passed on SQLite**, including the three browser cases.
+CI runs the same suite against SQLite and PostgreSQL 16 on every push; the
 PostgreSQL job starts a service database and the fixture resets its schema per
 test, so isolation matches the SQLite path.
 Static checks: the frontend builds with `tsc -b` and `vite build`; the backend
@@ -75,11 +75,18 @@ Benchmark, 63 sessions / 1953 pairs, two seeds, algorithm `corr-1.2.0`:
 | Precision (rule baseline) | 0.066 | 0.067 |
 | False positives (proposed / rule) | 0 / 424 | 0 / 420 |
 | Campaign-level exact recovery | 9 of 12 | 4 of 12 |
+| Time to detection, median (groups reached) | 541 s (10 of 12) | 822 s (10 of 12) |
 
-Resources: 18 MB peak for a full run including all ablations. Wall time on
-this host was about 50 s for the same workload that took about 6 s when the
-benchmark was first run, so treat the seconds as host-dependent and the
-memory as the stable figure.
+Resources: 18 MB peak, 26 ms per scored pair, CPU time equal to wall time, for
+a full run including all ablations. Wall time on this host was about 50 s for
+the same workload that took about 6 s when the benchmark was first run, so
+treat the seconds as host-dependent and the memory and per-pair cost as the
+stable figures.
+
+Time to detection is the elapsed campaign time until two members of one true
+group had both emitted the events that link them. Correlation is batch, so this
+measures when the evidence became sufficient, not when a run happened; a group
+that never links has no time to detection.
 Full tables, per-subset breakdowns, the deliberately hard subset and the
 adaptive experiment are in `docs/research/evaluation-results.md`.
 

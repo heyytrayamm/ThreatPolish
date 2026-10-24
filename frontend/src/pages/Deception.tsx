@@ -9,6 +9,7 @@ export default function Deception({ user }: { user: User }) {
 
   const profiles = useAsync(() => api.profiles(), [tick]);
   const investigations = useAsync(() => api.investigations(), [tick]);
+  const sessions = useAsync(() => api.decoySessions(24, 20), [tick]);
   const events = useAsync(
     () => api.events({ module: "honeypot", limit: 20, since: new Date(Date.now() - 6 * 3600 * 1000).toISOString() }),
     [tick],
@@ -63,7 +64,7 @@ export default function Deception({ user }: { user: User }) {
         </div>
       </header>
 
-      <ErrorBox message={profiles.error ?? investigations.error ?? events.error} />
+      <ErrorBox message={profiles.error ?? investigations.error ?? sessions.error ?? events.error} />
       {notice && <div className="notice">{notice}</div>}
 
       <div className="grid two">
@@ -135,6 +136,42 @@ export default function Deception({ user }: { user: User }) {
           </p>
         </Card>
       </div>
+
+      <Card title="Decoy sessions (24h)">
+        {sessions.loading && <Loading />}
+        {sessions.data && sessions.data.items.length === 0 && (
+          <Empty>No decoy sessions in the last 24 hours.</Empty>
+        )}
+        {sessions.data && sessions.data.items.length > 0 && (
+          <table>
+            <thead>
+              <tr>
+                <th>Session</th><th>First seen</th><th>Last seen</th><th>Events</th>
+                <th>Source IPs</th><th>Severity</th><th>Target</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sessions.data.items.map((session) => (
+                <tr key={session.session_id}>
+                  <td className="mono small">{session.session_id}</td>
+                  <td>{formatTime(session.first_seen)}</td>
+                  <td>{formatTime(session.last_seen)}</td>
+                  <td>{session.events}</td>
+                  <td className="mono small">
+                    {session.source_ips.length > 0 ? session.source_ips.join(", ") : "—"}
+                  </td>
+                  <td><Badge value={session.severity} /></td>
+                  <td>{session.target ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        <p className="muted small">
+          Sessions are interactions observed by the decoy services, grouped by the identifier the sensor
+          assigned. A session is not an identity.
+        </p>
+      </Card>
 
       <Card title="Recent honeypot interactions">
         {events.loading && <Loading />}

@@ -55,6 +55,17 @@ Initial release.
   contributes less, and the effective weights are recorded on every edge. A
   uniform-weight ablation reproduces the previous model so the effect is
   measured rather than asserted.
+- `docs/PRODUCT_SPEC.md` records the authoritative product scope, and
+  `docs/REQUIREMENTS_TRACEABILITY.md` maps every stage, module, dashboard view
+  and required metric to its implementation, test and measured result, with the
+  open gaps stated.
+- The evaluation reports time to detection — the elapsed campaign time until two
+  members of a true group link — alongside wall and CPU time, peak memory and
+  milliseconds per scored pair, so the metrics the specification asks for are
+  measured rather than described.
+- The Deception page lists decoy sessions from `GET /honeypot/sessions` with
+  their addresses, event counts, severity and target, so captured interactions
+  are reviewable as sessions rather than as a stream of events.
 - `tests/test_properties.py` checks invariants instead of scenarios: symmetric
   and deterministic scoring, bounded outputs, monotone confidence, unique
   relationship keys for every accepted identifier, rejection of control
@@ -80,7 +91,10 @@ Initial release.
   clause of the hypothesis is stated as unsupported rather than supported.
 - Benchmark numbers were regenerated for `corr-1.2.0`: seed 7 recall 0.781 →
   0.812 with precision 1.000, campaign recovery 8 → 9 of 12, and volume recall
-  0.836 → 0.853.
+  0.836 → 0.853. The same report now includes the cost metrics above.
+- Coverage in `docs/06-testing-and-evaluation.md` no longer quotes a single CI
+  run as if it were the current count; it names the suite size and states that CI
+  runs the same suite on both engines.
 
 ### Fixed
 
