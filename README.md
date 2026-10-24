@@ -143,8 +143,8 @@ method notes are in [`docs/research/evaluation-results.md`](docs/research/evalua
 
 | Check | Result |
 | --- | --- |
-| Backend suite · SQLite | **79 passed** |
-| Backend suite · PostgreSQL 16 | **79 passed** |
+| Backend suite · SQLite | **121 passed** (three of them drive Chrome) |
+| Backend suite · PostgreSQL 16 | passed on the previous revision; CI re-runs the same suite on both engines |
 | Static analysis | Ruff `F,E9` clean; `compileall` clean |
 | Dashboard | TypeScript and Vite production build pass |
 | Container | Multi-stage image builds; API runs as uid 10001 |

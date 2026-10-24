@@ -173,6 +173,27 @@ def sign_out_session(
     return {"status": "revoked", "jti": jti}
 
 
+@router.delete("/users/{user_id}/sessions/{jti}")
+def admin_sign_out_session(
+    user_id: str, jti: str, principal: Principal = Depends(require("users:manage"))
+) -> dict[str, str]:
+    """Sign one device out of another account.
+
+    Shared workstations and help-desk calls need the narrow action: the account
+    keeps its password and its other sessions, and only the named token dies.
+    """
+    revoke_session(user_id, jti, ttl_minutes=get_settings().jwt_ttl_minutes)
+    audit_standalone(
+        action="auth.session.revoke",
+        actor_id=principal.user_id,
+        actor_role=principal.role,
+        object_type="user",
+        object_id=user_id,
+        detail={"jti": jti, "on_behalf_of": user_id},
+    )
+    return {"status": "revoked", "jti": jti}
+
+
 @router.get("/users/{user_id}/sessions")
 def user_sessions(
     user_id: str,

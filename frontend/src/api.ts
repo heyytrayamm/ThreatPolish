@@ -97,6 +97,21 @@ export const api = {
       `/api/v1/auth/users/${userId}/revoke-sessions`,
       { method: "POST" },
     ),
+  revokeUserSession: (userId: string, jti: string) =>
+    request<{ status: string; jti: string }>(
+      `/api/v1/auth/users/${userId}/sessions/${encodeURIComponent(jti)}`,
+      { method: "DELETE" },
+    ),
+  agentTokens: () => request<{ tokens: AgentToken[] }>("/api/v1/auth/tokens"),
+  createAgentToken: (name: string, role: "sensor" | "analyst") =>
+    request<{ id: string; name: string; prefix: string; role: string; token: string }>(
+      "/api/v1/auth/tokens",
+      { method: "POST", body: JSON.stringify({ name, role }) },
+    ),
+  revokeAgentToken: (id: string) =>
+    request<{ status: string }>(`/api/v1/auth/tokens/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
   summary: (hours: number) =>
     request<{
       total: number;
@@ -383,6 +398,16 @@ export interface SessionHistory {
   sessions: SessionRecord[];
   current_session_version: number;
   note: string;
+}
+
+export interface AgentToken {
+  id: string;
+  name: string;
+  prefix: string;
+  role: string;
+  created_at: string;
+  last_used_at: string | null;
+  revoked_at: string | null;
 }
 
 export interface QuarantineRecord {

@@ -30,7 +30,16 @@ Initial release.
   `GET /auth/users/{id}/sessions`.
 - Per-session sign-out: each token carries an identifier, `DELETE /auth/sessions/{jti}`
   revokes just that device, and revoked identifiers are kept only until the token
-  would have expired.
+  would have expired. Administrators can do the same for any account with
+  `DELETE /auth/users/{id}/sessions/{jti}`, from the session panel on the
+  Administration page, without ending that account's other sessions.
+- Administration page manages sensor credentials: it lists agent tokens with
+  their prefix, role, last use and state, creates one (plaintext shown once)
+  and revokes it, so no shell access is needed to rotate a sensor.
+- The operations guide carries a session-compromise runbook that walks from a
+  sign-in alert through confirming the device, revoking that one session,
+  containing the account or tokens when the scope is unclear, preserving
+  evidence and closing out.
 - The Overview page raises recent sign-in anomalies as an attention item, for the
   signed-in account and, for administrators, as a count from the audit trail.
 - Sign-in anomaly alerts: a second live session from a different network inside
@@ -39,7 +48,8 @@ Initial release.
   measured distance and the `TP_SIGNIN_ALERT_DISTANCE_KM` threshold; without one
   the alert reports the network change rather than inventing a location.
 - The dashboard end-to-end job now also plans and activates an investigation
-  through the Campaigns and Deception pages.
+  through the Campaigns and Deception pages, signs another account's device out
+  from the administration session panel, and creates and revokes a sensor token.
 - Docker/Compose deployment, CLI, schema migrations, backup and recovery
   runbooks.
 - CI pipeline covering lint, the full suite on SQLite and PostgreSQL 16, the

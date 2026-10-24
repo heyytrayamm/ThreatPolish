@@ -32,7 +32,8 @@ recorded in the audit log.
 | GET/POST | `/auth/users` | admin | List and create users |
 | POST | `/auth/users/{id}/revoke-sessions` | admin | Invalidate every token issued to an account |
 | GET | `/auth/users/{id}/sessions` | admin | Any account's session history, including flagged sign-ins |
-| GET/POST/DELETE | `/auth/tokens` | admin | Service token management |
+| DELETE | `/auth/users/{id}/sessions/{jti}` | admin | Sign out one device of any account, leaving its other sessions |
+| GET/POST/DELETE | `/auth/tokens` | admin | Service token management: list, create (plaintext returned once), revoke |
 | GET | `/auth/roles` | any | Role capability matrix |
 | POST | `/ingest/events` | sensor | Batch ingestion |
 | GET | `/events` | viewer | Filter by module, severity, source, time |

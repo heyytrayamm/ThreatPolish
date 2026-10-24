@@ -13,9 +13,9 @@ why.
 | Database models for all modules | Done | `app/db/` |
 | Event contract and validation | Done | `app/schemas/event.py`, `test_foundation.py` |
 | Ingestion with hashing, dedup, quarantine | Done | `app/telemetry/ingest.py`, `test_pipeline.py` |
-| Auth, RBAC, audit trail | Done | `app/auth/`, `test_foundation.py`, `test_security.py`; password change and the admin session revocation both act on the account session version, the session history is derived from the audit trail with client, address and validity, one device can be signed out through a revocation list keyed by token id, and a second live session from another network raises `auth.signin.anomaly` (`test_signin_alerts.py`) |
-| Dashboard shell and navigation | Done | `frontend/` builds cleanly; the account page rotates the password, keeps the replacement token, lists recent sign-ins and signs out one device, the Overview page raises recent sign-in alerts, administration opens any account's session history, and `test_browser.py` drives the password, plan/activate and session-management flows in Chrome |
-| Test harness | Done | 100 tests on SQLite and on PostgreSQL 16.2, isolated per test; the same suite runs against both engines in CI, plus container smoke checks |
+| Auth, RBAC, audit trail | Done | `app/auth/`, `test_foundation.py`, `test_security.py`; password change and the admin session revocation both act on the account session version, the session history is derived from the audit trail with client, address and validity, one device can be signed out through a revocation list keyed by token id, an administrator can sign one device out of another account while its other sessions continue, and a second live session from another network raises `auth.signin.anomaly` (`test_signin_alerts.py`) |
+| Dashboard shell and navigation | Done | `frontend/` builds cleanly; the account page rotates the password, keeps the replacement token, lists recent sign-ins and signs out one device, the Overview page raises recent sign-in alerts, administration opens any account's session history, signs one device out of it and manages sensor tokens, and `test_browser.py` drives the password, plan/activate, session-management and token flows in Chrome |
+| Test harness | Done | 121 tests on SQLite, isolated per test, three of them driving Chrome against a live API; CI runs the suite against SQLite and PostgreSQL 16 |
 | Reproducible benchmark | Done | `backend/scripts/evaluate.py` |
 | Audit, novelty review, architecture, threat model | Done | `docs/00`–`docs/03` |
 | License | Done | Proprietary notice, all rights reserved by the project team |
@@ -74,7 +74,7 @@ why.
 | --- | --- | --- |
 | Dockerfile and Compose stack | Done | built and run on this host; API healthy as non-root; restart, backup/restore and database-outage behaviour verified |
 | PostgreSQL production path | Done | migrations, all module flows and recovery verified against PostgreSQL 16 |
-| Backup, restore, retention, runbooks | Done | `docs/07-operations.md` |
+| Backup, restore, retention, runbooks | Done | `docs/07-operations.md`, including a step-by-step session-compromise runbook that runs from a sign-in alert to a revoked device |
 | Health and readiness probes | Done | `/api/v1/health`, `/api/v1/health/ready` |
 | Schema migrations and upgrade path | Done | v3 PostgreSQL database upgraded to v5 on a restorable copy; v5 upgraded to v7 on SQLite and PostgreSQL 16, including a copy seeded with duplicate open investigations |
 | CI pipeline | Done | `.github/workflows/ci.yml` runs backend lint and tests on SQLite and PostgreSQL 16, the dashboard build and a container image build |

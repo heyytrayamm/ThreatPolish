@@ -426,6 +426,49 @@ def test_an_admins_reading_of_another_accounts_sessions_is_authorised_and_record
     assert missing.status_code == 404
 
 
+def test_an_admin_can_sign_out_one_device_of_another_account(client, admin_headers, viewer):
+    viewer_id = client.post("/api/v1/auth/login", json=viewer).json()["user"]["id"]
+    desk = _login_with_agent(client, viewer["email"], viewer["password"], "helpdesk/1.0")
+    phone = _login_with_agent(client, viewer["email"], viewer["password"], "phone/2.0")
+
+    history = client.get(
+        f"/api/v1/auth/users/{viewer_id}/sessions", headers=admin_headers
+    ).json()
+    desk_entry = next(item for item in history["sessions"] if item["client"] == "helpdesk/1.0")
+    assert desk_entry["jti"] and desk_entry["state"] == "active"
+
+    target = f"/api/v1/auth/users/{viewer_id}/sessions/{desk_entry['jti']}"
+    denied = client.delete(target, headers={"Authorization": f"Bearer {phone}"})
+    assert denied.status_code == 403, denied.text
+
+    unknown = client.delete(
+        f"/api/v1/auth/users/{viewer_id}/sessions/jti_not_a_session", headers=admin_headers
+    )
+    assert unknown.status_code == 404, unknown.text
+
+    signed_out = client.delete(target, headers=admin_headers)
+    assert signed_out.status_code == 200, signed_out.text
+
+    # Only the named device is affected: the account keeps its password and
+    # its other session.
+    assert client.get(
+        "/api/v1/events", headers={"Authorization": f"Bearer {desk}"}
+    ).status_code == 401
+    assert client.get(
+        "/api/v1/events", headers={"Authorization": f"Bearer {phone}"}
+    ).status_code == 200
+
+    after = client.get(
+        f"/api/v1/auth/users/{viewer_id}/sessions", headers=admin_headers
+    ).json()
+    entry = next(item for item in after["sessions"] if item["jti"] == desk_entry["jti"])
+    assert entry["state"] == "revoked"
+
+    audit = client.get("/api/v1/audit?limit=100", headers=admin_headers).json()["items"]
+    recorded = [item for item in audit if item["action"] == "auth.session.revoke"]
+    assert recorded and recorded[0]["object_id"] == viewer_id
+
+
 def test_a_flagged_sign_in_is_written_to_the_audit_trail(client, admin_headers, monkeypatch):
     from app.api import routes_auth
 

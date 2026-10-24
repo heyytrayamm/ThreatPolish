@@ -183,6 +183,69 @@ the user rotate their password; both act on the account session version and take
 effect on the next request. Rotate `TP_JWT_SECRET` to invalidate every session in the deployment,
 revoke agent tokens, and review `/audit` and the account's session history.
 
+### Session compromise: from a sign-in alert to a revoked device
+
+Every step below has a dashboard path and an API call, so the same runbook
+works for an analyst at the console and for scripted response.
+
+1. **Read the alert.** The Overview page carries a *Sign-in attention* card for
+the signed-in account; administrators also see how many
+`auth.signin.anomaly` entries the recent audit trail holds. Pull the entries:
+
+   ```bash
+   curl -s "$API/audit?limit=200" -H "Authorization: Bearer $T" \
+     | jq '.items[] | select(.action == "auth.signin.anomaly")'
+   ```
+
+   `kind` is `distant_signin` with a measured distance when
+   `TP_GEO_API_URL` is configured, otherwise `new_network`. `previous_ip`,
+   `previous_at` and `window_minutes` say what the alert compared against.
+2. **Decide whether it is expected.** Ask the account holder whether they
+signed in from that network, and open the account's session history — the
+Administration page's *Sessions* button, or:
+
+   ```bash
+   curl -s "$API/auth/users/usr_.../sessions" -H "Authorization: Bearer $T" \
+     | jq '.sessions[] | {occurred_at, client, ip, state, jti}'
+   ```
+
+   Each usable sign-in lists its `jti`. Note the one you suspect; the
+   identifier, not the address, is what you revoke.
+3. **Contain one device.** Administration → *Sessions* for the account →
+**Sign out** beside the suspicious row. From the API:
+
+   ```bash
+   curl -sX DELETE "$API/auth/users/usr_.../sessions/jti_..." \
+     -H "Authorization: Bearer $T"
+   ```
+
+   The account keeps its password and every other device keeps working. Verify
+   both halves: the suspect token's next call returns 401, and another of that
+   account's tokens still returns 200. Repeating the call is harmless.
+4. **Contain the whole account when the scope is unclear.** If more than one
+   device is suspect, revoke the account's sessions
+   (`POST /auth/users/{id}/revoke-sessions`) or have the user change the
+   password. Both act on the account session version, so every token issued
+   before the action is refused on its next request; the user signs in again
+   normally.
+5. **Contain the sensor side.** If the exposed credential was an agent token,
+   revoke it under Administration → *Agent tokens* → **Revoke**, or
+   `DELETE /auth/tokens/{id}`. Revocation is immediate and the token hash stays
+   in place for the audit trail. Create the replacement first if the sensor must
+   keep reporting; the plaintext is shown once at creation.
+6. **Only then consider the signing key.** Rotating `TP_JWT_SECRET` invalidates
+   every session in the deployment, so treat it as the last step, not the first:
+   it is required only when the key itself, not a token, may be exposed.
+7. **Preserve evidence.** The audit trail is append-only in normal operation.
+   Export it (`GET /audit`, or a database backup) before cleaning up, and do not
+   delete sign-in rows: the session history is derived from them, so deleting
+   them erases the incident record too. Revoked-identifier rows prune
+   themselves once the token would have expired anyway.
+8. **Close out.** Confirm no further `auth.signin.anomaly` entries appear for
+   the account. Record which `jti` was revoked, by whom, and the alert that
+   triggered it. If the alert fired for a legitimate user arriving through a
+   new route, note the network in the ticket rather than disabling the check.
+
 A sign-in from a different network while an earlier session is still live is
 recorded as `auth.signin.anomaly` and shown on the account page and in the
 admin session view. With `TP_GEO_API_URL` set, the alert also reports the

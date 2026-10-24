@@ -5,6 +5,7 @@ const EVENT_LABEL: Record<string, string> = {
   sign_in: "Sign-in",
   password_changed: "Password changed",
   sessions_revoked: "Sessions revoked",
+  session_revoked: "Session signed out",
 };
 
 export function describeSignInAnomaly(anomaly: SignInAnomaly): string {

@@ -39,15 +39,16 @@ when the bundle is missing, stale or Playwright is absent.
 | `test_pipeline.py` | Ingestion idempotency, quarantine, attribution, modules sharing one contract |
 | `test_end_to_end.py` | Login → ingest → correlate → campaign → response → audit over HTTP |
 | `test_security.py` | Auth bypass attempts, injection strings, oversized payloads, token tampering |
-| `test_advanced.py` | Non-finite and unencodable payloads, hostile feature shapes, request-body bounds, login spraying, session revocation on password change, per-device sign-out and foreign-session refusal, session history states, concurrent duplicate ingestion, redirect scope bypass, decoy request framing |
+| `test_advanced.py` | Non-finite and unencodable payloads, hostile feature shapes, request-body bounds, login spraying, session revocation on password change, per-device sign-out, foreign-session refusal, an administrator signing one device out of another account, session history states, concurrent duplicate ingestion, redirect scope bypass, decoy request framing |
 | `test_signin_alerts.py` | Network-change and distance alerts: same-network silence, window and revoked-session suppression, distant and nearby geolocation, unlocatable fallback |
-| `test_browser.py` | Chrome-driven dashboard flow against a live API: every view renders without console errors, the duplicate-resolution note shows on the Deception page, the Account page changes the password, the replacement token survives a reload and an earlier token is refused; a second run plans and activates an investigation through the Campaigns and Deception pages; a third signs a device out from the session table, opens the admin session panel and checks the Overview attention card |
+| `test_browser.py` | Chrome-driven dashboard flow against a live API: every view renders without console errors, the duplicate-resolution note shows on the Deception page, the Account page changes the password, the replacement token survives a reload and an earlier token is refused; a second run plans and activates an investigation through the Campaigns and Deception pages; a third signs a device out from the session table, opens the admin session panel, signs another account's device out from it, creates and revokes a sensor token on the same page and checks the Overview attention card |
 
 ## Measured behaviour
 
-Latest full run: **120 passed on SQLite and 120 passed on PostgreSQL 16.2**
-(a temporary PostgreSQL 16 server on the development host). CI runs the same
-suite against both engines.
+Latest full run: **121 passed on SQLite**, including the three browser cases.
+The previous 120-test revision also passed on PostgreSQL 16.2 (a temporary
+PostgreSQL 16 server on the development host); CI runs the same suite against
+both engines on every push, so the current count is checked there too.
 Static checks: the frontend builds with `tsc -b` and `vite build`; the backend
 passes Ruff and compiles with `compileall`.
 
@@ -60,7 +61,7 @@ passes Ruff and compiles with `compileall`.
 | Backend tests (SQLite) | Ruff `F,E9`; full pytest suite |
 | Backend tests (PostgreSQL) | Full pytest suite against a PostgreSQL 16 service |
 | Dashboard build | `npm ci`; TypeScript build and Vite bundle |
-| Dashboard end-to-end | Builds the bundle, installs Playwright, drives the password flow in Chromium against a live API |
+| Dashboard end-to-end | Builds the bundle, installs Playwright, drives the password, session, token and investigation flows in Chromium against a live API |
 | Container image | Multi-stage Docker build |
 
 Benchmark, 63 sessions / 1953 pairs, two seeds, algorithm `corr-1.1.0`:

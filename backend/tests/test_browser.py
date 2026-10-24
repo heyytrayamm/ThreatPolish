@@ -32,6 +32,8 @@ playwright_api = pytest.importorskip(
 ROOT = Path(__file__).resolve().parents[2]
 DIST = ROOT / "frontend" / "dist"
 NEW_PASSWORD = "browser-flow-password-1"
+VIEWER_EMAIL = "viewer@threatpolish.test"
+VIEWER_PASSWORD = "browser-viewer-password-1"
 
 def _dist_is_stale() -> bool:
     """True when the bundle predates its sources, which would test old assets."""
@@ -313,6 +315,37 @@ def test_session_history_signs_out_one_device_and_admins_can_inspect_it(live_ser
     assert second.status_code == 200, second.text
     second_token = second.json()["access_token"]
 
+    # A second account gives the administrator someone else's device to sign out.
+    admin_login = httpx.post(
+        f"{live_server}/api/v1/auth/login",
+        json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD},
+    )
+    assert admin_login.status_code == 200, admin_login.text
+    admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+    account = httpx.post(
+        f"{live_server}/api/v1/auth/users",
+        headers=admin_headers,
+        json={
+            "email": VIEWER_EMAIL,
+            "name": "Viewer",
+            "role": "viewer",
+            "password": VIEWER_PASSWORD,
+        },
+    )
+    assert account.status_code == 201, account.text
+
+    def viewer_sign_in(agent: str) -> str:
+        response = httpx.post(
+            f"{live_server}/api/v1/auth/login",
+            json={"email": VIEWER_EMAIL, "password": VIEWER_PASSWORD},
+            headers={"User-Agent": agent},
+        )
+        assert response.status_code == 200, response.text
+        return response.json()["access_token"]
+
+    desk_token = viewer_sign_in("viewer-desk/1.0")
+    cloud_token = viewer_sign_in("viewer-cloud/1.0")
+
     with playwright_api.sync_playwright() as p:
         browser = _launch(p.chromium)
         try:
@@ -341,6 +374,40 @@ def test_session_history_signs_out_one_device_and_admins_can_inspect_it(live_ser
             page.get_by_role("button", name="Sessions", exact=True).first.click()
             page.wait_for_selector("text=Sessions — Administrator")
             page.wait_for_selector("#main td:has-text('Sign-in')")
+
+            # The administrator signs one device out of another account without
+            # touching that account's other session.
+            account_row = page.locator("#main tr", has_text=VIEWER_EMAIL)
+            account_row.get_by_role("button", name="Sessions", exact=True).click()
+            page.wait_for_selector("text=Sessions — Viewer")
+            desk_row = page.locator("#main tr", has_text="viewer-desk/1.0")
+            desk_row.wait_for()
+            desk_row.get_by_role("button", name="Sign out").click()
+            page.wait_for_selector(f"text=That device was signed out of {VIEWER_EMAIL}")
+            page.wait_for_selector(
+                "tr:has-text('viewer-desk/1.0') .badge:has-text('revoked')"
+            )
+
+            # Sensor credentials are created and revoked from the same page.
+            page.get_by_label("Token name").fill("browser-sensor-ui")
+            page.get_by_role("button", name="Create token").click()
+            page.wait_for_selector("text=was created. Copy the token now")
+            sensor_token = page.locator(".notice pre").inner_text().strip()
+            assert sensor_token.startswith("tp_"), sensor_token
+            token_row = page.locator("#main tr", has_text="browser-sensor-ui")
+            token_row.wait_for()
+            assert "active" in token_row.inner_text()
+
+            live = httpx.get(
+                f"{live_server}/api/v1/auth/me", headers={"X-Agent-Token": sensor_token}
+            )
+            assert live.status_code == 200, live.text
+
+            token_row.get_by_role("button", name="Revoke").click()
+            page.wait_for_selector("text=browser-sensor-ui was revoked")
+            page.wait_for_selector(
+                "tr:has-text('browser-sensor-ui') .badge:has-text('revoked')"
+            )
 
             # An account-level alert must reach the Overview page as well.
             page.route(
@@ -389,6 +456,22 @@ def test_session_history_signs_out_one_device_and_admins_can_inspect_it(live_ser
         headers={"Authorization": f"Bearer {second_token}"},
     )
     assert stale.status_code == 401, stale.text
+
+    # The device the administrator signed out is refused; the account's other
+    # device and its password are unaffected.
+    assert httpx.get(
+        f"{live_server}/api/v1/events",
+        headers={"Authorization": f"Bearer {desk_token}"},
+    ).status_code == 401
+    assert httpx.get(
+        f"{live_server}/api/v1/events",
+        headers={"Authorization": f"Bearer {cloud_token}"},
+    ).status_code == 200
+
+    # The token revoked through the dashboard is refused immediately.
+    assert httpx.get(
+        f"{live_server}/api/v1/auth/me", headers={"X-Agent-Token": sensor_token}
+    ).status_code == 401
 
 
 def test_dashboard_plans_and_activates_an_investigation(live_server: str):

@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { FormEvent, useState } from "react";
 import { api, SessionHistory, User } from "../api";
 import { SessionTable } from "../components/SessionTable";
-import { Card, Empty, ErrorBox, formatTime, Loading, useAsync } from "../ui";
+import { Badge, Card, Empty, ErrorBox, Field, formatTime, Loading, useAsync } from "../ui";
 
 export default function Administration() {
   const [tick, setTick] = useState(0);
@@ -11,11 +11,16 @@ export default function Administration() {
   const [auditedHistory, setAuditedHistory] = useState<SessionHistory | null>(null);
   const [auditError, setAuditError] = useState<string | null>(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [tokenName, setTokenName] = useState("");
+  const [tokenRole, setTokenRole] = useState<"sensor" | "analyst">("sensor");
+  const [issued, setIssued] = useState<{ name: string; token: string } | null>(null);
+  const [tokenBusy, setTokenBusy] = useState(false);
 
   const sources = useAsync(() => api.sources(), []);
   const quarantine = useAsync(() => api.quarantine(), []);
   const users = useAsync(() => api.users(), [tick]);
   const audit = useAsync(() => api.audit(), [tick]);
+  const tokens = useAsync(() => api.agentTokens(), [tick]);
 
   async function inspect(user: User) {
     setAudited(user);
@@ -28,6 +33,47 @@ export default function Administration() {
       setAuditError((error as Error).message);
     } finally {
       setLoadingHistory(false);
+    }
+  }
+
+  async function signOutDevice(user: User, jti: string) {
+    setNotice(null);
+    try {
+      await api.revokeUserSession(user.id, jti);
+      setNotice(`That device was signed out of ${user.email}. Their other sessions keep working.`);
+      setTick((value) => value + 1);
+      await inspect(user);
+    } catch (error) {
+      setNotice((error as Error).message);
+    }
+  }
+
+  async function createToken(event: FormEvent) {
+    event.preventDefault();
+    setTokenBusy(true);
+    setNotice(null);
+    setIssued(null);
+    try {
+      const created = await api.createAgentToken(tokenName.trim(), tokenRole);
+      setIssued({ name: created.name, token: created.token });
+      setTokenName("");
+      setTick((value) => value + 1);
+    } catch (error) {
+      setNotice((error as Error).message);
+    } finally {
+      setTokenBusy(false);
+    }
+  }
+
+  async function revokeToken(id: string, name: string) {
+    setNotice(null);
+    try {
+      await api.revokeAgentToken(id);
+      setNotice(`${name} was revoked. Any sensor still using it is refused from now on.`);
+      if (issued?.name === name) setIssued(null);
+      setTick((value) => value + 1);
+    } catch (error) {
+      setNotice((error as Error).message);
     }
   }
 
@@ -51,11 +97,13 @@ export default function Administration() {
       <header className="page-head">
         <div>
           <h1>Administration</h1>
-          <p className="muted">Source health, rejected payloads and account inventory.</p>
+          <p className="muted">Source health, account inventory, sensor credentials and rejected payloads.</p>
         </div>
       </header>
 
-      <ErrorBox message={sources.error ?? quarantine.error ?? users.error ?? audit.error} />
+      <ErrorBox
+        message={sources.error ?? quarantine.error ?? users.error ?? audit.error ?? tokens.error}
+      />
       {notice && <div className="notice">{notice}</div>}
 
       <div className="grid two">
@@ -128,9 +176,88 @@ export default function Administration() {
         >
           {loadingHistory && <Loading />}
           <ErrorBox message={auditError} />
-          {auditedHistory && <SessionTable history={auditedHistory} />}
+          {auditedHistory && (
+            <SessionTable
+              history={auditedHistory}
+              onRevoke={(jti) => signOutDevice(audited, jti)}
+            />
+          )}
         </Card>
       )}
+
+      <Card title="Agent tokens">
+        {issued && (
+          <div className="notice">
+            <strong>{issued.name}</strong> was created. Copy the token now: it is shown once and
+            only its hash is stored.
+            <pre className="json mono">{issued.token}</pre>
+          </div>
+        )}
+        {tokens.loading && <Loading />}
+        {tokens.data && tokens.data.tokens.length === 0 && <Empty>No sensor tokens yet.</Empty>}
+        {tokens.data && tokens.data.tokens.length > 0 && (
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th><th>Prefix</th><th>Role</th><th>Created</th><th>Last used</th>
+                <th>State</th><th>Token</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tokens.data.tokens.map((token) => (
+                <tr key={token.id}>
+                  <td>{token.name}</td>
+                  <td className="mono small">{token.prefix}…</td>
+                  <td>{token.role}</td>
+                  <td>{formatTime(token.created_at)}</td>
+                  <td>{formatTime(token.last_used_at)}</td>
+                  <td>
+                    <Badge value={token.revoked_at ? "revoked" : "active"} kind="status" />
+                  </td>
+                  <td>
+                    {!token.revoked_at && (
+                      <button
+                        type="button"
+                        className="secondary small"
+                        onClick={() => revokeToken(token.id, token.name)}
+                      >
+                        Revoke
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        <form onSubmit={createToken} className="row token-form">
+          <Field label="Token name">
+            <input
+              value={tokenName}
+              onChange={(event) => setTokenName(event.target.value)}
+              placeholder="decoy-http-2"
+              maxLength={120}
+              required
+            />
+          </Field>
+          <Field label="Role">
+            <select
+              value={tokenRole}
+              onChange={(event) => setTokenRole(event.target.value as "sensor" | "analyst")}
+            >
+              <option value="sensor">sensor</option>
+              <option value="analyst">analyst</option>
+            </select>
+          </Field>
+          <button type="submit" disabled={tokenBusy || tokenName.trim() === ""}>
+            {tokenBusy ? "Creating…" : "Create token"}
+          </button>
+        </form>
+        <p className="muted small">
+          Sensor tokens are hashed at rest and cannot be read back. Revoking one takes effect on the
+          next request; rotate a token by creating a replacement and revoking the old one.
+        </p>
+      </Card>
 
       <Card title="Audit trail">
         {audit.loading && <Loading />}
