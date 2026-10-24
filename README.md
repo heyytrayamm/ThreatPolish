@@ -146,7 +146,7 @@ method notes are in [`docs/research/evaluation-results.md`](docs/research/evalua
 | Check | Result |
 | --- | --- |
 | Backend suite · SQLite | **130 passed** (three of them drive Chrome) |
-| Backend suite · PostgreSQL 16 | the same suite, run in CI on a fresh service database |
+| Backend suite · PostgreSQL 16 | **130 passed** in CI, on a fresh service database |
 | Static analysis | Ruff `F,E9` clean; `compileall` clean |
 | Dashboard | TypeScript and Vite production build pass |
 | Container | Multi-stage image builds; API runs as uid 10001 |
