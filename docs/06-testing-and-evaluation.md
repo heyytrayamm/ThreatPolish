@@ -45,10 +45,10 @@ when the bundle is missing, stale or Playwright is absent.
 
 ## Measured behaviour
 
-Latest full run: **121 passed on SQLite**, including the three browser cases.
-The previous 120-test revision also passed on PostgreSQL 16.2 (a temporary
-PostgreSQL 16 server on the development host); CI runs the same suite against
-both engines on every push, so the current count is checked there too.
+Latest full run: **121 passed on SQLite and 121 passed on PostgreSQL 16** in CI
+(run `40077471087`, commit `bdd593f`), including the three browser cases. The
+PostgreSQL job starts a service database and the fixture resets its schema per
+test, so isolation matches the SQLite path.
 Static checks: the frontend builds with `tsc -b` and `vite build`; the backend
 passes Ruff and compiles with `compileall`.
 

@@ -15,7 +15,7 @@ why.
 | Ingestion with hashing, dedup, quarantine | Done | `app/telemetry/ingest.py`, `test_pipeline.py` |
 | Auth, RBAC, audit trail | Done | `app/auth/`, `test_foundation.py`, `test_security.py`; password change and the admin session revocation both act on the account session version, the session history is derived from the audit trail with client, address and validity, one device can be signed out through a revocation list keyed by token id, an administrator can sign one device out of another account while its other sessions continue, and a second live session from another network raises `auth.signin.anomaly` (`test_signin_alerts.py`) |
 | Dashboard shell and navigation | Done | `frontend/` builds cleanly; the account page rotates the password, keeps the replacement token, lists recent sign-ins and signs out one device, the Overview page raises recent sign-in alerts, administration opens any account's session history, signs one device out of it and manages sensor tokens, and `test_browser.py` drives the password, plan/activate, session-management and token flows in Chrome |
-| Test harness | Done | 121 tests on SQLite, isolated per test, three of them driving Chrome against a live API; CI runs the suite against SQLite and PostgreSQL 16 |
+| Test harness | Done | 121 tests passing on SQLite and on PostgreSQL 16 in CI, isolated per test, three of them driving Chrome against a live API |
 | Reproducible benchmark | Done | `backend/scripts/evaluate.py` |
 | Audit, novelty review, architecture, threat model | Done | `docs/00`–`docs/03` |
 | License | Done | Proprietary notice, all rights reserved by the project team |
