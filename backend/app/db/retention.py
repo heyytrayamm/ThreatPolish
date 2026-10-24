@@ -103,16 +103,24 @@ def purge_all() -> dict[str, Any]:
 def retention_status() -> dict[str, Any]:
     """Report how much evidence currently sits past each horizon.
 
-    Counts are taken before any deletion, so a non-zero value means the
-    retention job is behind.  ``orphan_nodes`` counts nodes that no edge
-    references now; purging stale observations can orphan more, which the next
-    report shows.
+    Counts are taken before any deletion.  ``expired`` and the graph pending
+    counts include work the next scheduled run will clear, so they are backlog
+    rather than an alarm.  ``overdue`` is true only when work has waited past
+    ``TP_RETENTION_GRACE_DAYS``, which is what a missed schedule looks like.
+    ``orphan_nodes`` counts nodes that no edge references now; purging stale
+    observations can orphan more, which the next report shows.
     """
     settings = get_settings()
     now = utcnow()
+    grace = timedelta(days=settings.retention_grace_days)
     event_cutoff = iso(now)
     graph_cutoff = iso(now - timedelta(days=settings.graph_retention_days))
+    event_alert_cutoff = iso(now - grace)
+    graph_alert_cutoff = iso(
+        now - timedelta(days=settings.graph_retention_days + settings.retention_grace_days)
+    )
     params = {"now": event_cutoff, "cutoff": graph_cutoff}
+    alert_params = {"now": event_alert_cutoff, "cutoff": graph_alert_cutoff}
     with connection() as conn:
         event_totals = conn.execute(
             text("SELECT COUNT(*), MIN(occurred_at), MIN(retention_until) FROM events")
@@ -120,22 +128,35 @@ def retention_status() -> dict[str, Any]:
         event_expired = conn.execute(
             text("SELECT COUNT(*) FROM events WHERE retention_until < :now"), params
         ).scalar_one()
+        event_overdue = conn.execute(
+            text("SELECT COUNT(*) FROM events WHERE retention_until < :now"),
+            alert_params,
+        ).scalar_one()
         node_total = conn.execute(text("SELECT COUNT(*) FROM graph_nodes")).scalar_one()
         edge_total = conn.execute(text("SELECT COUNT(*) FROM graph_edges")).scalar_one()
         retired_edges = conn.execute(
             text(f"SELECT COUNT(*) FROM graph_edges WHERE {_RETIRED_EDGES}"), params
         ).scalar_one()
+        retired_overdue = conn.execute(
+            text(f"SELECT COUNT(*) FROM graph_edges WHERE {_RETIRED_EDGES}"),
+            alert_params,
+        ).scalar_one()
         stale_observations = conn.execute(
             text(f"SELECT COUNT(*) FROM graph_edges WHERE {_STALE_OBSERVATIONS}"), params
+        ).scalar_one()
+        observations_overdue = conn.execute(
+            text(f"SELECT COUNT(*) FROM graph_edges WHERE {_STALE_OBSERVATIONS}"),
+            alert_params,
         ).scalar_one()
         orphan_nodes = conn.execute(
             text(f"SELECT COUNT(*) FROM graph_nodes WHERE {_ORPHAN_NODES}"), params
         ).scalar_one()
 
-    overdue = bool(event_expired or retired_edges or stale_observations)
+    overdue = bool(event_overdue or retired_overdue or observations_overdue)
     return {
         "generated_at": event_cutoff,
         "overdue": overdue,
+        "grace_days": settings.retention_grace_days,
         "events": {
             "retention_days": settings.retention_days,
             "total": int(event_totals[0] or 0),

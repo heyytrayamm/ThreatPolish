@@ -194,6 +194,7 @@ export const api = {
   users: () => request<{ users: User[] }>("/api/v1/auth/users"),
   quarantine: () => request<{ items: QuarantineRecord[] }>("/api/v1/quarantine"),
   audit: () => request<{ items: AuditEntry[] }>("/api/v1/audit"),
+  retention: () => request<RetentionStatus>("/api/v1/retention"),
   latestRun: () =>
     request<{ run: CorrelationRun | null; algorithm: Record<string, unknown> }>(
       "/api/v1/correlation/latest",
@@ -457,4 +458,26 @@ export interface AuditEntry {
   outcome: string;
   detail: Record<string, unknown>;
   request_ip: string | null;
+}
+
+export interface RetentionStatus {
+  generated_at: string;
+  overdue: boolean;
+  grace_days: number;
+  events: {
+    retention_days: number;
+    total: number;
+    expired: number;
+    oldest_occurred_at: string | null;
+    oldest_retention_until: string | null;
+  };
+  graph: {
+    retention_days: number;
+    cutoff: string;
+    nodes: number;
+    edges: number;
+    retired_edges: number;
+    stale_observations: number;
+    orphan_nodes: number;
+  };
 }

@@ -18,8 +18,13 @@ All notable changes to this project are recorded here. Dates use ISO 8601.
   stack gains a `retention` service that waits for the API to be healthy, runs
   at start and then every `TP_RETENTION_INTERVAL_SECONDS` (default 24 hours).
 - `GET /retention` (admin) reports expired events, retired edges, stale
-  observations, orphan nodes and the current graph size, with `overdue` set
-  when any horizon has pending work.
+  observations, orphan nodes and the current graph size. `overdue` is set only
+  when work has waited past `TP_RETENTION_GRACE_DAYS` (default 2), so a normal
+  daily backlog does not raise an alarm.
+- Administration shows the retention backlog and graph size. The Overview
+  raises an alert for administrators once that backlog is overdue.
+- CI runs `tests/test_retention.py` explicitly against PostgreSQL, after the
+  full suite, so a retention regression is attributed to its own step.
 - Migration 10 adds the indexes retention needs; `IF NOT EXISTS` makes it safe
   on a database that already has them.
 

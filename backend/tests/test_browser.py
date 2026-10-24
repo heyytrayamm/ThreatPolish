@@ -268,6 +268,10 @@ def test_dashboard_password_change_keeps_this_tab_and_revokes_the_others(live_se
                     assert "replaced by inv_1111" in note.inner_text()
                     badge = page.locator(".badge.status-superseded")
                     assert badge.count() == 1, badge.count()
+                if view == "Administration":
+                    # The retention card reads the admin-only endpoint; the
+                    # graph horizon row only exists once that response landed.
+                    page.get_by_text("Graph horizon").wait_for()
             assert console_errors == [], console_errors
 
             page.get_by_role("button", name="Account").click()
@@ -444,7 +448,34 @@ def test_session_history_signs_out_one_device_and_admins_can_inspect_it(live_ser
                     }
                 ),
             )
+            page.route(
+                "**/api/v1/retention",
+                lambda route: route.fulfill(
+                    json={
+                        "generated_at": "2026-10-24T10:00:00+00:00",
+                        "overdue": True,
+                        "grace_days": 2,
+                        "events": {
+                            "retention_days": 90,
+                            "total": 10,
+                            "expired": 3,
+                            "oldest_occurred_at": "2026-07-01T00:00:00+00:00",
+                            "oldest_retention_until": "2026-09-29T00:00:00+00:00",
+                        },
+                        "graph": {
+                            "retention_days": 30,
+                            "cutoff": "2026-09-24T00:00:00+00:00",
+                            "nodes": 5,
+                            "edges": 4,
+                            "retired_edges": 1,
+                            "stale_observations": 1,
+                            "orphan_nodes": 0,
+                        },
+                    }
+                ),
+            )
             page.get_by_role("button", name="Overview").click()
+            page.wait_for_selector("text=Retention is overdue")
             page.wait_for_selector("text=Sign-in attention")
             page.wait_for_selector("text=Unusual sign-in")
             assert "5,570 km" in page.inner_text("#main")

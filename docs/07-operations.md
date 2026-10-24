@@ -28,6 +28,7 @@ normally change.
 | `TP_DECOY_MAX_SESSIONS_PER_HOUR` | `120` | Decoy admission limit |
 | `TP_RETENTION_DAYS` | `90` | Event retention horizon |
 | `TP_GRAPH_RETENTION_DAYS` | `30` | Age at which retired graph evidence is deleted |
+| `TP_RETENTION_GRACE_DAYS` | `2` | How long backlog may wait before `/retention` reports `overdue` |
 | `TP_MAX_EVENT_BYTES` | `65536` | Per-event payload cap |
 | `TP_INGEST_RATE_LIMIT_PER_MINUTE` | `6000` | Per-principal ingestion limit |
 | `TP_CORRELATION_WINDOW_HOURS` | `72` | Default correlation window |
@@ -309,7 +310,11 @@ decision, not evidence.
 
 Confirm deletions against the database size trend. `GET /retention` (admin)
 reports the number of expired events, retired edges, stale observations and the
-current graph size, with `overdue: true` when any horizon has pending work.
+current graph size. `overdue: true` means work has waited longer than
+`TP_RETENTION_GRACE_DAYS` (default 2), which points at a missed schedule rather
+than the normal backlog between daily runs; alert on that field. Administration
+shows the same backlog, and the Overview raises an alert to administrators once
+it is overdue.
 `python -m app.cli status` shows configuration, retention and schema state.
 
 ## Known limitations

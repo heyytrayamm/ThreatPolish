@@ -21,6 +21,7 @@ export default function Administration() {
   const users = useAsync(() => api.users(), [tick]);
   const audit = useAsync(() => api.audit(), [tick]);
   const tokens = useAsync(() => api.agentTokens(), [tick]);
+  const retention = useAsync(() => api.retention(), [tick]);
 
   async function inspect(user: User) {
     setAudited(user);
@@ -102,7 +103,9 @@ export default function Administration() {
       </header>
 
       <ErrorBox
-        message={sources.error ?? quarantine.error ?? users.error ?? audit.error ?? tokens.error}
+        message={
+          sources.error ?? quarantine.error ?? users.error ?? audit.error ?? tokens.error ?? retention.error
+        }
       />
       {notice && <div className="notice">{notice}</div>}
 
@@ -184,6 +187,62 @@ export default function Administration() {
           )}
         </Card>
       )}
+
+      <Card
+        title="Retention"
+        actions={
+          <button type="button" className="link" onClick={() => setTick((value) => value + 1)}>
+            Refresh
+          </button>
+        }
+      >
+        {retention.loading && <Loading />}
+        {retention.data && (
+          <>
+            <p className="small">
+              <span className={retention.data.overdue ? "bad" : "ok"}>
+                {retention.data.overdue ? "overdue" : "current"}
+              </span>{" "}
+              {retention.data.overdue
+                ? `Backlog has waited longer than the ${retention.data.grace_days}-day grace window. Check the retention schedule.`
+                : "Within the grace window; the scheduled run will clear the backlog."}
+            </p>
+            <table>
+              <tbody>
+                <tr>
+                  <th>Events</th>
+                  <td>
+                    {retention.data.events.total} stored · {retention.data.events.expired} past the{" "}
+                    {retention.data.events.retention_days}-day horizon
+                  </td>
+                </tr>
+                <tr>
+                  <th>Oldest event</th>
+                  <td>{formatTime(retention.data.events.oldest_occurred_at)}</td>
+                </tr>
+                <tr>
+                  <th>Graph</th>
+                  <td>
+                    {retention.data.graph.nodes} nodes · {retention.data.graph.edges} edges
+                  </td>
+                </tr>
+                <tr>
+                  <th>Pending graph work</th>
+                  <td>
+                    {retention.data.graph.retired_edges} retired edges ·{" "}
+                    {retention.data.graph.stale_observations} stale observations ·{" "}
+                    {retention.data.graph.orphan_nodes} orphan nodes
+                  </td>
+                </tr>
+                <tr>
+                  <th>Graph horizon</th>
+                  <td>{retention.data.graph.retention_days} days</td>
+                </tr>
+              </tbody>
+            </table>
+          </>
+        )}
+      </Card>
 
       <Card title="Agent tokens">
         {issued && (

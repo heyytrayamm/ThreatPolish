@@ -23,6 +23,18 @@ export default function Overview({ user }: { user: User }) {
     () => (user.role === "admin" ? api.audit() : Promise.resolve(null)),
     [user.role, tick],
   );
+  // Retention counts scan the event and graph tables, so they refresh far less
+  // often than the dashboard metrics and only for administrators.
+  const [retentionTick, setRetentionTick] = useState(0);
+  useEffect(() => {
+    if (user.role !== "admin") return;
+    const timer = window.setInterval(() => setRetentionTick((value) => value + 1), 60000);
+    return () => window.clearInterval(timer);
+  }, [user.role]);
+  const retention = useAsync(
+    () => (user.role === "admin" ? api.retention() : Promise.resolve(null)),
+    [user.role, retentionTick],
+  );
 
   async function runCorrelation() {
     setRunning(true);
@@ -76,6 +88,14 @@ export default function Overview({ user }: { user: User }) {
 
       <ErrorBox message={summary.error ?? sources.error ?? campaigns.error} />
       {notice && <div className="notice">{notice}</div>}
+
+      {retention.data?.overdue && (
+        <div className="error" role="alert">
+          <strong>Retention is overdue.</strong> The backlog is older than the{" "}
+          {retention.data.grace_days}-day grace window. Check the scheduled retention service;
+          Administration has the counts.
+        </div>
+      )}
 
       {(ownAlerts.length > 0 || fleetAlerts.length > 0) && (
         <Card title="Sign-in attention">
