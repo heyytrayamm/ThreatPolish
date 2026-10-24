@@ -8,6 +8,7 @@ Examples:
     python -m app.cli correlate --window-hours 72
     python -m app.cli purge
     python -m app.cli purge-graph
+    python -m app.cli retention
 """
 
 from __future__ import annotations
@@ -18,9 +19,7 @@ import sys
 
 from .core.config import get_settings
 from .core.logging import configure_logging, get_logger
-from .core.security import iso, utcnow
-from .db.database import connection, init_db
-from .db.schema import events
+from .db.database import init_db
 
 log = get_logger("cli")
 
@@ -102,21 +101,20 @@ def _correlate(args: argparse.Namespace) -> int:
     return 0
 
 
-def _purge(args: argparse.Namespace) -> int:
-    settings = get_settings()
+def _purge(_: argparse.Namespace) -> int:
+    from .db.retention import purge_events
+
     init_db()
-    cutoff = utcnow()
-    with connection() as conn:
-        result = conn.execute(
-            events.delete().where(events.c.retention_until < iso(cutoff))
-        )
-        removed = int(result.rowcount or 0)
-    print(f"removed {removed} events past the {settings.retention_days}-day retention window")
+    result = purge_events()
+    print(
+        f"removed {result['events']} events past the {result['days']}-day "
+        f"retention window (cutoff {result['cutoff']})"
+    )
     return 0
 
 
 def _purge_graph(args: argparse.Namespace) -> int:
-    from .correlation.repository import purge_graph
+    from .db.retention import purge_graph
 
     init_db()
     result = purge_graph(days=args.days)
@@ -124,6 +122,24 @@ def _purge_graph(args: argparse.Namespace) -> int:
         f"removed {result['edges']} retired edges, {result['observations']} stale "
         f"observations and {result['nodes']} orphan nodes older than "
         f"{result['days']} days (cutoff {result['cutoff']})"
+    )
+    return 0
+
+
+def _retention(_: argparse.Namespace) -> int:
+    from .db.retention import purge_all
+
+    init_db()
+    result = purge_all()
+    events_result = result["events"]
+    graph_result = result["graph"]
+    print(
+        f"removed {events_result['events']} events past the "
+        f"{events_result['days']}-day window (cutoff {events_result['cutoff']}); "
+        f"removed {graph_result['edges']} retired edges, "
+        f"{graph_result['observations']} stale observations and "
+        f"{graph_result['nodes']} orphan nodes past the "
+        f"{graph_result['days']}-day graph window (cutoff {graph_result['cutoff']})"
     )
     return 0
 
@@ -199,6 +215,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     purge_graph.add_argument("--days", type=int, default=None)
     purge_graph.set_defaults(func=_purge_graph)
+
+    retention = sub.add_parser(
+        "retention", help="run event and graph retention; safe to schedule"
+    )
+    retention.set_defaults(func=_retention)
 
     status = sub.add_parser("status", help="show configuration and schema state")
     status.set_defaults(func=_status)

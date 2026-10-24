@@ -38,6 +38,7 @@ when the bundle is missing, stale or Playwright is absent.
 | `test_responses.py` | Policy matrix, approval requirement, expiry, rollback, state machine |
 | `test_pipeline.py` | Ingestion idempotency, quarantine, attribution, modules sharing one contract |
 | `test_end_to_end.py` | Login → ingest → correlate → campaign → response → audit over HTTP |
+| `test_retention.py` | Admin-only retention status, expired and retired counts, and a combined purge clearing both horizons |
 | `test_security.py` | Auth bypass attempts, injection strings, oversized payloads, token tampering |
 | `test_advanced.py` | Non-finite and unencodable payloads, hostile feature shapes, request-body bounds, login spraying, session revocation on password change, per-device sign-out, foreign-session refusal, an administrator signing one device out of another account, session history states, concurrent duplicate ingestion, redirect scope bypass, decoy request framing |
 | `test_signin_alerts.py` | Network-change and distance alerts: same-network silence, window and revoked-session suppression, distant and nearby geolocation, unlocatable fallback |
@@ -46,10 +47,10 @@ when the bundle is missing, stale or Playwright is absent.
 
 ## Measured behaviour
 
-Latest full run: **139 passed on SQLite**, including the three browser cases.
-CI runs the same suite against SQLite and PostgreSQL 16 on every push; the
-PostgreSQL job starts a service database and the fixture resets its schema per
-test, so isolation matches the SQLite path.
+Latest full run: **145 passed on SQLite**, including the three browser cases;
+the same suite passes against PostgreSQL 16.2. CI runs both engines on every
+push; the PostgreSQL job starts a service database and the fixture resets its
+schema per test, so isolation matches the SQLite path.
 Static checks: the frontend builds with `tsc -b` and `vite build`; the backend
 passes Ruff and compiles with `compileall`.
 

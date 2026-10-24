@@ -279,28 +279,37 @@ reason it cannot affect this deployment; review it at each upgrade.
 
 ## Retention
 
-Events carry `retention_until` (`TP_RETENTION_DAYS`, default 90). Enforce it:
+Events carry `retention_until` (`TP_RETENTION_DAYS`, default 90). The evidence
+graph outlives the events that produced it, so it has its own horizon
+(`TP_GRAPH_RETENTION_DAYS`, default 30). `retention` enforces both:
 
 ```bash
-docker compose exec app python -m app.cli purge
+docker compose up -d retention
+docker compose logs -f retention
 ```
 
-The evidence graph outlives the events that produced it, so it has its own
-horizon (`TP_GRAPH_RETENTION_DAYS`, default 30). Correlation retires edges when
-links stop holding, but a deployment that stops correlating keeps them:
+The Compose `retention` service waits for the API to become healthy, runs once
+at start and then every `TP_RETENTION_INTERVAL_SECONDS` (default 86400). Change
+that value in `.env` and recreate the service after changing it
+(`docker compose up -d retention`). Without Compose, run the same command from
+cron, for example daily at 03:15:
 
-```bash
-docker compose exec app python -m app.cli purge-graph
+```cron
+15 3 * * * cd /opt/threatpolish && docker compose exec -T app python -m app.cli retention
 ```
 
-This deletes only edges already retired and older than the horizon, plus
+`purge` and `purge-graph` remain available for one horizon at a time. Graph
+retention deletes only edges already retired and older than the horizon, plus
 observation records (`observed_from`, `targeted_asset`, `matched_indicator`)
 for sessions past the horizon that no live similarity or campaign edge still
 uses. Nodes are then removed when their last activity is older than the horizon
 and nothing references them. Hypotheses, active edges, campaign membership and
 archived reviews are kept — an archived campaign is the record of an analyst's
-decision, not evidence. Run both commands from the same
-schedule and confirm deletions against the database size trend.
+decision, not evidence.
+
+Confirm deletions against the database size trend. `GET /retention` (admin)
+reports the number of expired events, retired edges, stale observations and the
+current graph size, with `overdue: true` when any horizon has pending work.
 `python -m app.cli status` shows configuration, retention and schema state.
 
 ## Known limitations

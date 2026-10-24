@@ -148,6 +148,7 @@ def create_app() -> FastAPI:
         routes_health,
         routes_honeypot,
         routes_investigations,
+        routes_ops,
         routes_responses,
         routes_websec,
     )
@@ -162,6 +163,7 @@ def create_app() -> FastAPI:
     app.include_router(routes_responses.router, prefix="/api/v1")
     app.include_router(routes_honeypot.router, prefix="/api/v1")
     app.include_router(routes_audit.router, prefix="/api/v1")
+    app.include_router(routes_ops.router, prefix="/api/v1")
 
     dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
     if dist.is_dir():

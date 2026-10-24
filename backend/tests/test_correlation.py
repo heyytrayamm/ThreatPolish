@@ -868,7 +868,7 @@ def test_graph_retention_keeps_open_evidence_and_archived_reviews(client):
     import pytest
     from sqlalchemy import select
 
-    from app.correlation.repository import purge_graph
+    from app.db.retention import purge_graph
     from app.core.security import iso, utcnow
     from app.db.database import connection, dumps
     from app.db.schema import campaigns, graph_edges, graph_nodes

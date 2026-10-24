@@ -14,6 +14,12 @@ All notable changes to this project are recorded here. Dates use ISO 8601.
   references. Hypotheses, active evidence, campaign membership and archived
   reviews are kept, so an analyst's decision outlives the evidence behind it
   (`test_correlation.py`).
+- `python -m app.cli retention` enforces both horizons in one run. The Compose
+  stack gains a `retention` service that waits for the API to be healthy, runs
+  at start and then every `TP_RETENTION_INTERVAL_SECONDS` (default 24 hours).
+- `GET /retention` (admin) reports expired events, retired edges, stale
+  observations, orphan nodes and the current graph size, with `overdue` set
+  when any horizon has pending work.
 - Migration 10 adds the indexes retention needs; `IF NOT EXISTS` makes it safe
   on a database that already has them.
 
