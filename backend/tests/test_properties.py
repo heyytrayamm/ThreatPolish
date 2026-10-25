@@ -75,7 +75,11 @@ def test_scores_stay_inside_their_bounds_and_confidence_is_monotonic():
         assert 0.0 <= result["confidence"] <= 1.0
         assert 0.0 <= result["penalty"] <= 0.35
         assert sum(result["family_weights"].values()) > 0
-        assert result["confidence"] >= previous
+        # Score and confidence are exposed rounded to four decimals.  Two
+        # pairs whose true scores differ by less than a display unit can share
+        # a rounded score while their rounded confidences differ in the last
+        # place, so allow the logistic's maximum sensitivity to that rounding.
+        assert result["confidence"] >= previous - 2e-4
         previous = result["confidence"]
 
 
