@@ -70,6 +70,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 export interface RetentionQuery {
   since?: string;
   until?: string;
+  trigger?: "manual" | "scheduled";
   limit?: number;
 }
 
@@ -77,6 +78,7 @@ function retentionQuery(params: RetentionQuery): string {
   const query = new URLSearchParams();
   if (params.since) query.set("history_since", params.since);
   if (params.until) query.set("history_until", params.until);
+  if (params.trigger) query.set("history_trigger", params.trigger);
   if (params.limit !== undefined) query.set("limit", String(params.limit));
   const encoded = query.toString();
   return encoded ? `?${encoded}` : "";

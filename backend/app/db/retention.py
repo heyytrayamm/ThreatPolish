@@ -107,6 +107,7 @@ def retention_status(
     history_limit: int = 14,
     history_since: str | None = None,
     history_until: str | None = None,
+    history_trigger: str | None = None,
 ) -> dict[str, Any]:
     """Report how much evidence currently sits past each horizon.
 
@@ -116,8 +117,9 @@ def retention_status(
     ``TP_RETENTION_GRACE_DAYS``, which is what a missed schedule looks like.
     ``orphan_nodes`` counts nodes that no edge references now; purging stale
     observations can orphan more, which the next report shows.
-    ``history`` and ``history_total`` can be narrowed to a UTC window for the
-    dashboard; the backlog counts above always describe the whole deployment.
+    ``history`` and ``history_total`` can be narrowed to a UTC window and a
+    ``manual`` or ``scheduled`` trigger for the dashboard; the backlog counts
+    above always describe the whole deployment.
     """
     settings = get_settings()
     now = utcnow()
@@ -131,7 +133,7 @@ def retention_status(
     params = {"now": event_cutoff, "cutoff": graph_cutoff}
     alert_params = {"now": event_alert_cutoff, "cutoff": graph_alert_cutoff}
     history_total = retention_history_total(
-        since=history_since, until=history_until
+        since=history_since, until=history_until, trigger=history_trigger
     )
     with connection() as conn:
         event_totals = conn.execute(
@@ -171,7 +173,10 @@ def retention_status(
         "grace_days": settings.retention_grace_days,
         "history_total": history_total,
         "history": retention_history(
-            limit=history_limit, since=history_since, until=history_until
+            limit=history_limit,
+            since=history_since,
+            until=history_until,
+            trigger=history_trigger,
         ),
         "events": {
             "retention_days": settings.retention_days,
@@ -192,41 +197,52 @@ def retention_status(
     }
 
 
-def _history_conditions(since: str | None, until: str | None) -> list[Any]:
+def _history_conditions(
+    since: str | None, until: str | None, trigger: str | None
+) -> list[Any]:
     conditions = []
     if since:
         conditions.append(retention_runs.c.ran_at >= since)
     if until:
         conditions.append(retention_runs.c.ran_at <= until)
+    if trigger:
+        conditions.append(retention_runs.c.trigger == trigger)
     return conditions
 
 
-def retention_history_total(*, since: str | None = None, until: str | None = None) -> int:
+def retention_history_total(
+    *, since: str | None = None, until: str | None = None, trigger: str | None = None
+) -> int:
     """Count runs matching the same window as :func:`retention_history`."""
     with connection() as conn:
         return int(
             conn.execute(
                 select(func.count())
                 .select_from(retention_runs)
-                .where(*_history_conditions(since, until))
+                .where(*_history_conditions(since, until, trigger))
             ).scalar_one()
             or 0
         )
 
 
 def retention_history(
-    limit: int = 14, *, since: str | None = None, until: str | None = None
+    limit: int = 14,
+    *,
+    since: str | None = None,
+    until: str | None = None,
+    trigger: str | None = None,
 ) -> list[dict[str, Any]]:
     """Most recent retention runs, newest first, for the dashboard trend and export.
 
     ``since`` and ``until`` are inclusive ISO timestamps; the API converts a
-    human date range into UTC boundaries before calling this.
+    human date range into UTC boundaries before calling this. ``trigger``
+    narrows the list to ``manual`` or ``scheduled`` runs.
     """
     bounded = max(1, min(int(limit), 1000))
     with connection() as conn:
         rows = conn.execute(
             select(retention_runs)
-            .where(*_history_conditions(since, until))
+            .where(*_history_conditions(since, until, trigger))
             .order_by(retention_runs.c.ran_at.desc())
             .limit(bounded)
         ).fetchall()

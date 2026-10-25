@@ -1,7 +1,7 @@
 """Operational visibility for retention and graph size.
 
-The endpoints are admin-only: they report how far the retention job is behind
-without exposing event content, and allow an operator to run it immediately.
+Status and history are readable by analysts and administrators without
+exposing event content; only an administrator can run retention immediately.
 """
 
 from __future__ import annotations
@@ -9,7 +9,7 @@ from __future__ import annotations
 import csv
 import io
 from datetime import date, datetime, time, timezone
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Query, Response
 
@@ -142,11 +142,15 @@ def retention(
     history_limit: int = Query(default=14, ge=1, le=100),
     history_since: str | None = Query(default=None, max_length=40),
     history_until: str | None = Query(default=None, max_length=40),
+    history_trigger: Literal["manual", "scheduled"] | None = Query(default=None),
     principal: Principal = Depends(require("retention:read")),
 ) -> dict[str, Any]:
     since, until = _history_window(history_since, history_until)
     return retention_status(
-        history_limit=history_limit, history_since=since, history_until=until
+        history_limit=history_limit,
+        history_since=since,
+        history_until=until,
+        history_trigger=history_trigger,
     )
 
 
@@ -163,12 +167,17 @@ def retention_history_csv(
     limit: int = Query(default=1000, ge=1, le=1000),
     history_since: str | None = Query(default=None, max_length=40),
     history_until: str | None = Query(default=None, max_length=40),
+    history_trigger: Literal["manual", "scheduled"] | None = Query(default=None),
     principal: Principal = Depends(require("retention:read")),
 ) -> Response:
     """Export recorded runs oldest first; the same fields as ``/retention``."""
     since, until = _history_window(history_since, history_until)
     runs = list(
-        reversed(retention_history(limit=limit, since=since, until=until))
+        reversed(
+            retention_history(
+                limit=limit, since=since, until=until, trigger=history_trigger
+            )
+        )
     )
     buffer = io.StringIO()
     writer = csv.writer(buffer, lineterminator="\n")

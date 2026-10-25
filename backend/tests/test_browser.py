@@ -347,9 +347,11 @@ def test_dashboard_password_change_keeps_this_tab_and_revokes_the_others(live_se
                     # both the table count and the export request.
                     page.get_by_label("Runs from (UTC)").fill("2026-10-20")
                     page.get_by_label("Runs to (UTC)").fill("2026-10-24")
+                    page.get_by_label("Trigger").select_option("scheduled")
                     with page.expect_request(
                         lambda request: "history_since=2026-10-20" in request.url
                         and "history_until=2026-10-24" in request.url
+                        and "history_trigger=scheduled" in request.url
                     ):
                         page.get_by_role("button", name="Apply", exact=True).click()
                     page.get_by_text(
@@ -360,6 +362,7 @@ def test_dashboard_password_change_keeps_this_tab_and_revokes_the_others(live_se
                         with page.expect_request(
                             lambda request: "history.csv" in request.url
                             and "history_since=2026-10-20" in request.url
+                            and "history_trigger=scheduled" in request.url
                         ):
                             page.get_by_role("button", name="Export CSV").click()
                     download = download_info.value
@@ -374,6 +377,7 @@ def test_dashboard_password_change_keeps_this_tab_and_revokes_the_others(live_se
                     with page.expect_request(
                         lambda request: "history_since=" in request.url
                         and "T" in request.url
+                        and "history_trigger=scheduled" in request.url
                     ):
                         page.get_by_role("button", name="7 days", exact=True).click()
                     page.get_by_text(
@@ -381,6 +385,7 @@ def test_dashboard_password_change_keeps_this_tab_and_revokes_the_others(live_se
                     ).wait_for()
 
                     page.get_by_role("button", name="Clear", exact=True).click()
+                    assert page.get_by_label("Trigger").input_value() == ""
                     page.get_by_text(
                         "Showing the last 2 of 16 recorded runs", exact=False
                     ).wait_for()
@@ -464,6 +469,23 @@ def test_analyst_sees_read_only_retention_history(live_server: str):
             page.get_by_text("1 recorded run", exact=False).wait_for()
             page.get_by_role("button", name="Export CSV").wait_for()
             assert page.get_by_role("button", name="Run retention now").count() == 0
+
+            # Analysts now receive the Overview alert, but it points them at
+            # their own read-only page rather than Administration.
+            page.route(
+                re.compile(r".*/api/v1/retention(?:\?.*)?$"),
+                lambda route: route.fulfill(
+                    json={
+                        "generated_at": "2026-10-24T10:00:00+00:00",
+                        "overdue": True,
+                        "grace_days": 2,
+                    }
+                ),
+            )
+            page.get_by_role("button", name="Overview", exact=True).click()
+            page.wait_for_selector("text=Retention is overdue")
+            page.get_by_text("The Retention page has the counts", exact=False).wait_for()
+            assert "Administration has the counts" not in page.inner_text("#main")
         finally:
             browser.close()
 

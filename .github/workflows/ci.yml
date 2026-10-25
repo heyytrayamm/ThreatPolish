@@ -67,7 +67,7 @@ jobs:
       - name: Run tests
         working-directory: backend
         run: python -m pytest -q
-      - name: Assert retention maintenance on PostgreSQL
+      - name: Assert retention maintenance and viewer denial on PostgreSQL
         working-directory: backend
         run: python -m pytest tests/test_retention.py -q
 

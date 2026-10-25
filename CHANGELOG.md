@@ -44,12 +44,18 @@ All notable changes to this project are recorded here. Dates use ISO 8601.
   count when the 14-row view is truncated, and exports the history as CSV
   (`GET /retention/history.csv`, oldest first, up to 1,000 runs).
 - Run history can be filtered by an inclusive UTC date range from the page or
-  with `history_since`/`history_until`; `history_total` and the CSV export
-  follow the same window. The page offers 24-hour, 7-day and 30-day quick
-  ranges that send exact timestamps.
+  with `history_since`/`history_until`, and by a `manual`/`scheduled`
+  `history_trigger`; `history_total` and the CSV export follow the same window.
+  The page offers 24-hour, 7-day and 30-day quick ranges that send exact
+  timestamps and keep the selected trigger.
 - Analysts can open a read-only Retention view with the backlog, history,
   filters and CSV export. `GET /retention` and `/retention/history.csv` require
   the new `retention:read` permission; running retention remains admin-only.
+  The Overview's overdue alert now appears for analysts too and points them at
+  the Retention page.
+- `test_retention.py` explicitly asserts that viewer accounts are refused the
+  status and CSV endpoints; CI runs that file against PostgreSQL after the full
+  suite.
 - `docker-compose.demo.yml` adds a one-shot `seed` service that waits for the
   API health check, seeds a development database with a one-time demo login,
   and exits. `make demo-docker` starts the overlay; seeding remains idempotent

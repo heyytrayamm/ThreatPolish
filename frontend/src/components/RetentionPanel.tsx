@@ -6,6 +6,8 @@ function backlog(run: RetentionRun): number {
   return run.events_expired + run.retired_edges + run.stale_observations;
 }
 
+type RetentionTrigger = "" | "manual" | "scheduled";
+
 function removed(run: RetentionRun): number {
   return (
     run.events_removed +
@@ -28,28 +30,36 @@ export function RetentionPanel({
   const [exportBusy, setExportBusy] = useState(false);
   const [historyFrom, setHistoryFrom] = useState("");
   const [historyTo, setHistoryTo] = useState("");
-  const [range, setRange] = useState({ since: "", until: "" });
+  const [trigger, setTrigger] = useState<RetentionTrigger>("");
+  const [range, setRange] = useState<{
+    since: string;
+    until: string;
+    trigger: RetentionTrigger;
+  }>({ since: "", until: "", trigger: "" });
 
   const retention = useAsync(
     () =>
       api.retention({
         since: range.since || undefined,
         until: range.until || undefined,
+        trigger: range.trigger || undefined,
       }),
-    [tick, range.since, range.until],
+    [tick, range.since, range.until, range.trigger],
   );
-  const filterActive = Boolean(range.since || range.until);
+  const filterActive = Boolean(range.since || range.until || range.trigger);
   const filterInvalid = Boolean(historyFrom && historyTo && historyFrom > historyTo);
+  const hasDrafts = Boolean(historyFrom || historyTo || trigger);
   const draftsMatchRange =
     (historyFrom === range.since || historyFrom === range.since.slice(0, 10)) &&
-    (historyTo === range.until || historyTo === range.until.slice(0, 10));
+    (historyTo === range.until || historyTo === range.until.slice(0, 10)) &&
+    trigger === range.trigger;
   // The API returns the newest run first; a chart reads left to right.
   const retentionHistory = [...(retention.data?.history ?? [])].reverse();
   const maxBacklog = Math.max(1, ...retentionHistory.map(backlog));
 
   function applyRange() {
     if (filterInvalid) return;
-    setRange({ since: historyFrom, until: historyTo });
+    setRange({ since: historyFrom, until: historyTo, trigger });
   }
 
   function applyPreset(hours: number) {
@@ -57,13 +67,14 @@ export function RetentionPanel({
     const since = new Date(until.getTime() - hours * 3_600_000);
     setHistoryFrom(since.toISOString().slice(0, 10));
     setHistoryTo(until.toISOString().slice(0, 10));
-    setRange({ since: since.toISOString(), until: until.toISOString() });
+    setRange({ since: since.toISOString(), until: until.toISOString(), trigger });
   }
 
   function clearRange() {
     setHistoryFrom("");
     setHistoryTo("");
-    setRange({ since: "", until: "" });
+    setTrigger("");
+    setRange({ since: "", until: "", trigger: "" });
   }
 
   async function runRetentionNow() {
@@ -103,6 +114,7 @@ export function RetentionPanel({
         limit,
         since: range.since || undefined,
         until: range.until || undefined,
+        trigger: range.trigger || undefined,
       });
       const url = URL.createObjectURL(csv);
       const link = document.createElement("a");
@@ -196,6 +208,18 @@ export function RetentionPanel({
             </tbody>
           </table>
           <div className="filters">
+            <Field label="Trigger">
+              <select
+                value={trigger}
+                onChange={(event) =>
+                  setTrigger(event.target.value as RetentionTrigger)
+                }
+              >
+                <option value="">Any</option>
+                <option value="manual">manual</option>
+                <option value="scheduled">scheduled</option>
+              </select>
+            </Field>
             <Field label="Runs from (UTC)">
               <input
                 type="date"
@@ -215,7 +239,7 @@ export function RetentionPanel({
             <button
               type="button"
               className="secondary"
-              disabled={filterInvalid || (!historyFrom && !historyTo) || draftsMatchRange}
+              disabled={filterInvalid || !hasDrafts || draftsMatchRange}
               onClick={applyRange}
             >
               Apply
@@ -239,7 +263,7 @@ export function RetentionPanel({
           <p className="muted small">
             {filterInvalid
               ? "The start date must not be after the end date."
-              : "Run history filters use UTC dates; the backlog above always covers the whole deployment."}
+              : "Run history filters use a trigger and UTC dates; the backlog above always covers the whole deployment."}
           </p>
           {retentionHistory.length > 0 && (
             <>
@@ -317,10 +341,9 @@ export function RetentionPanel({
             </>
           )}
           {retentionHistory.length === 0 && (
-            <p className="muted small">
-              {filterActive
-                ? "No retention runs match this date range."
-                : "No retention run has been recorded yet. The scheduled service writes one on each run."}
+            <p className="muted small">                {filterActive
+                  ? "No retention runs match these filters."
+                  : "No retention run has been recorded yet. The scheduled service writes one on each run."}
             </p>
           )}
         </>

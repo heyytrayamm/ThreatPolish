@@ -340,15 +340,19 @@ it is overdue. Each `retention` run records the pre-run backlog in
 them as `history`, with `history_total` reporting how many runs exist in the
 selected window. Analysts get the same status, filters and CSV export on the
 read-only Retention page, without the manual-run control or the account and
-credential panels. When the view is truncated, the page says so. A run-history filter takes
-an inclusive UTC date or timestamp through `history_since` and `history_until`;
-the dashboard applies it before charting and exporting, with 24-hour, 7-day and
-30-day quick ranges available, and the backlog counts above remain
-deployment-wide. `GET /retention/history.csv` (admin) accepts the
-same filters and exports up to 1,000 recorded runs oldest first for spreadsheet
-or capacity review; the Administration card has a matching **Export CSV**
-action. An administrator can run retention immediately from Administration; the
-run is confirmed, recorded and audited like a scheduled one.
+credential panels. The Overview raises the overdue alert for analysts as well
+and points them at that page instead of Administration.
+
+When the view is truncated, the page says so. A run-history filter takes an
+inclusive UTC date or timestamp through `history_since` and `history_until`, and
+a `history_trigger` of `manual` or `scheduled`; the dashboard applies both before
+charting and exporting, with 24-hour, 7-day and 30-day quick ranges available,
+and the backlog counts above remain deployment-wide.
+`GET /retention/history.csv` (analyst/admin) accepts the same filters and
+exports up to 1,000 recorded runs oldest first for spreadsheet or capacity
+review; the Administration card has a matching **Export CSV** action. An
+administrator can run retention immediately from Administration; the run is
+confirmed, recorded and audited like a scheduled one.
 
 `GET /metrics` exports the same backlog and graph counts in Prometheus text
 format. It requires `graph:read` and never returns event content. Create a

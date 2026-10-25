@@ -24,16 +24,18 @@ export default function Overview({ user }: { user: User }) {
     [user.role, tick],
   );
   // Retention counts scan the event and graph tables, so they refresh far less
-  // often than the dashboard metrics and only for administrators.
+  // often than the dashboard metrics. Analysts can read the status without the
+  // account and credential panels that Administration exposes.
+  const canReadRetention = user.role === "admin" || user.role === "analyst";
   const [retentionTick, setRetentionTick] = useState(0);
   useEffect(() => {
-    if (user.role !== "admin") return;
+    if (!canReadRetention) return;
     const timer = window.setInterval(() => setRetentionTick((value) => value + 1), 60000);
     return () => window.clearInterval(timer);
-  }, [user.role]);
+  }, [canReadRetention]);
   const retention = useAsync(
-    () => (user.role === "admin" ? api.retention() : Promise.resolve(null)),
-    [user.role, retentionTick],
+    () => (canReadRetention ? api.retention() : Promise.resolve(null)),
+    [canReadRetention, retentionTick],
   );
 
   async function runCorrelation() {
@@ -92,8 +94,10 @@ export default function Overview({ user }: { user: User }) {
       {retention.data?.overdue && (
         <div className="error" role="alert">
           <strong>Retention is overdue.</strong> The backlog is older than the{" "}
-          {retention.data.grace_days}-day grace window. Check the scheduled retention service;
-          Administration has the counts.
+          {retention.data.grace_days}-day grace window. Check the scheduled retention service;{" "}
+          {user.role === "admin"
+            ? "Administration has the counts."
+            : "The Retention page has the counts."}
         </div>
       )}
 

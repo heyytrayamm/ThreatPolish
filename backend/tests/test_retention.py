@@ -279,6 +279,69 @@ def test_retention_history_filters_by_a_utc_date_range(client, admin_headers):
     assert backwards.status_code == 422
 
 
+def test_retention_history_filters_by_trigger(client, admin_headers):
+    now = utcnow()
+    with connection() as conn:
+        for index, trigger in enumerate(("scheduled", "manual", "manual", "scheduled")):
+            conn.execute(
+                retention_runs.insert().values(
+                    id=f"rtn_trigger_{index}",
+                    ran_at=iso(now - timedelta(hours=index)),
+                    trigger=trigger,
+                    duration_ms=index,
+                    events_removed=0,
+                    edges_removed=0,
+                    observations_removed=0,
+                    nodes_removed=0,
+                    events_expired=0,
+                    retired_edges=0,
+                    stale_observations=0,
+                    graph_nodes=3,
+                    graph_edges=2,
+                    overdue=0,
+                )
+            )
+
+    body = client.get(
+        "/api/v1/retention",
+        params={"history_trigger": "manual"},
+        headers=admin_headers,
+    )
+    assert body.status_code == 200, body.text
+    payload = body.json()
+    assert payload["history_total"] == 2
+    assert [run["id"] for run in payload["history"]] == [
+        "rtn_trigger_1",
+        "rtn_trigger_2",
+    ]
+
+    exported = client.get(
+        "/api/v1/retention/history.csv",
+        params={"history_trigger": "scheduled"},
+        headers=admin_headers,
+    )
+    assert exported.status_code == 200, exported.text
+    rows = exported.text.strip().splitlines()
+    assert len(rows) == 3
+    assert rows[1].startswith("rtn_trigger_3,")
+    assert rows[2].startswith("rtn_trigger_0,")
+
+    invalid = client.get(
+        "/api/v1/retention",
+        params={"history_trigger": "hourly"},
+        headers=admin_headers,
+    )
+    assert invalid.status_code == 422
+
+
+def test_viewer_cannot_read_retention_status_or_export(client, viewer_headers):
+    assert client.get("/api/v1/retention", headers=viewer_headers).status_code == 403
+    assert (
+        client.get("/api/v1/retention/history.csv", headers=viewer_headers).status_code
+        == 403
+    )
+
+
 def test_scheduled_retention_records_history_and_audit(client, admin_headers):
     import pytest
 
