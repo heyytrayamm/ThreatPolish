@@ -337,12 +337,15 @@ shows the same backlog, and the Overview raises an alert to administrators once
 it is overdue. Each `retention` run records the pre-run backlog in
 `retention_runs` and writes a `retention.run` audit entry with actor role
 `system`; Administration charts the last 14 runs and `GET /retention` returns
-them as `history`, with `history_total` reporting how many runs exist. When the
-view is truncated, the page says so. `GET /retention/history.csv` (admin)
-exports up to 1,000 recorded runs oldest first for spreadsheet or capacity
-review, and the Administration card has a matching **Export CSV** action. An
-administrator can run it immediately from Administration; the run is confirmed,
-recorded and audited like a scheduled one.
+them as `history`, with `history_total` reporting how many runs exist in the
+selected window. When the view is truncated, the page says so. A run-history filter takes
+an inclusive UTC date or timestamp through `history_since` and `history_until`;
+the dashboard applies it before charting and exporting, and the backlog counts
+above remain deployment-wide. `GET /retention/history.csv` (admin) accepts the
+same filters and exports up to 1,000 recorded runs oldest first for spreadsheet
+or capacity review; the Administration card has a matching **Export CSV**
+action. An administrator can run retention immediately from Administration; the
+run is confirmed, recorded and audited like a scheduled one.
 
 `GET /metrics` exports the same backlog and graph counts in Prometheus text
 format. It requires `graph:read` and never returns event content. Create a

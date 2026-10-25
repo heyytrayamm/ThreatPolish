@@ -12,7 +12,7 @@ import time
 from datetime import timedelta
 from typing import Any
 
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 
 from ..core.audit import record_audit
 from ..core.config import get_settings
@@ -102,7 +102,12 @@ def purge_all() -> dict[str, Any]:
     return {"events": purge_events(), "graph": purge_graph()}
 
 
-def retention_status() -> dict[str, Any]:
+def retention_status(
+    *,
+    history_limit: int = 14,
+    history_since: str | None = None,
+    history_until: str | None = None,
+) -> dict[str, Any]:
     """Report how much evidence currently sits past each horizon.
 
     Counts are taken before any deletion.  ``expired`` and the graph pending
@@ -111,6 +116,8 @@ def retention_status() -> dict[str, Any]:
     ``TP_RETENTION_GRACE_DAYS``, which is what a missed schedule looks like.
     ``orphan_nodes`` counts nodes that no edge references now; purging stale
     observations can orphan more, which the next report shows.
+    ``history`` and ``history_total`` can be narrowed to a UTC window for the
+    dashboard; the backlog counts above always describe the whole deployment.
     """
     settings = get_settings()
     now = utcnow()
@@ -123,10 +130,10 @@ def retention_status() -> dict[str, Any]:
     )
     params = {"now": event_cutoff, "cutoff": graph_cutoff}
     alert_params = {"now": event_alert_cutoff, "cutoff": graph_alert_cutoff}
+    history_total = retention_history_total(
+        since=history_since, until=history_until
+    )
     with connection() as conn:
-        history_total = conn.execute(
-            text("SELECT COUNT(*) FROM retention_runs")
-        ).scalar_one()
         event_totals = conn.execute(
             text("SELECT COUNT(*), MIN(occurred_at), MIN(retention_until) FROM events")
         ).fetchone()
@@ -162,8 +169,10 @@ def retention_status() -> dict[str, Any]:
         "generated_at": event_cutoff,
         "overdue": overdue,
         "grace_days": settings.retention_grace_days,
-        "history_total": int(history_total or 0),
-        "history": retention_history(),
+        "history_total": history_total,
+        "history": retention_history(
+            limit=history_limit, since=history_since, until=history_until
+        ),
         "events": {
             "retention_days": settings.retention_days,
             "total": int(event_totals[0] or 0),
@@ -183,12 +192,41 @@ def retention_status() -> dict[str, Any]:
     }
 
 
-def retention_history(limit: int = 14) -> list[dict[str, Any]]:
-    """Most recent retention runs, newest first, for the dashboard trend and export."""
+def _history_conditions(since: str | None, until: str | None) -> list[Any]:
+    conditions = []
+    if since:
+        conditions.append(retention_runs.c.ran_at >= since)
+    if until:
+        conditions.append(retention_runs.c.ran_at <= until)
+    return conditions
+
+
+def retention_history_total(*, since: str | None = None, until: str | None = None) -> int:
+    """Count runs matching the same window as :func:`retention_history`."""
+    with connection() as conn:
+        return int(
+            conn.execute(
+                select(func.count())
+                .select_from(retention_runs)
+                .where(*_history_conditions(since, until))
+            ).scalar_one()
+            or 0
+        )
+
+
+def retention_history(
+    limit: int = 14, *, since: str | None = None, until: str | None = None
+) -> list[dict[str, Any]]:
+    """Most recent retention runs, newest first, for the dashboard trend and export.
+
+    ``since`` and ``until`` are inclusive ISO timestamps; the API converts a
+    human date range into UTC boundaries before calling this.
+    """
     bounded = max(1, min(int(limit), 1000))
     with connection() as conn:
         rows = conn.execute(
             select(retention_runs)
+            .where(*_history_conditions(since, until))
             .order_by(retention_runs.c.ran_at.desc())
             .limit(bounded)
         ).fetchall()

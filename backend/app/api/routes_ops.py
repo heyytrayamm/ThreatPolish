@@ -8,12 +8,14 @@ from __future__ import annotations
 
 import csv
 import io
-from datetime import datetime, timezone
+from datetime import date, datetime, time, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query, Response
 
 from ..auth.rbac import Principal
+from ..core.errors import ValidationFailure
+from ..core.security import iso, parse_iso
 from ..db.retention import retention_history, retention_status, run_retention
 from .deps import require
 
@@ -102,9 +104,50 @@ def render_metrics(status: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _history_window(since: str | None, until: str | None) -> tuple[str | None, str | None]:
+    """Turn an inclusive date or datetime range into UTC boundaries.
+
+    A bare ``YYYY-MM-DD`` describes a whole UTC day; a full timestamp is used
+    as supplied.  Retention history is stored in UTC, so the dashboard labels
+    the filter accordingly.
+    """
+
+    def boundary(value: str | None, end_of_day: bool) -> datetime | None:
+        if not value:
+            return None
+        raw = value.strip()
+        try:
+            if len(raw) == 10:
+                day = date.fromisoformat(raw)
+                return datetime.combine(
+                    day,
+                    time.max if end_of_day else time.min,
+                    tzinfo=timezone.utc,
+                )
+            return parse_iso(raw)
+        except ValueError as exc:
+            raise ValidationFailure(
+                "history_since and history_until must be ISO dates or datetimes"
+            ) from exc
+
+    start = boundary(since, False)
+    finish = boundary(until, True)
+    if start is not None and finish is not None and start > finish:
+        raise ValidationFailure("history_since must not be after history_until")
+    return (iso(start) if start else None, iso(finish) if finish else None)
+
+
 @router.get("/retention")
-def retention(principal: Principal = Depends(require("audit:read"))) -> dict[str, Any]:
-    return retention_status()
+def retention(
+    history_limit: int = Query(default=14, ge=1, le=100),
+    history_since: str | None = Query(default=None, max_length=40),
+    history_until: str | None = Query(default=None, max_length=40),
+    principal: Principal = Depends(require("audit:read")),
+) -> dict[str, Any]:
+    since, until = _history_window(history_since, history_until)
+    return retention_status(
+        history_limit=history_limit, history_since=since, history_until=until
+    )
 
 
 @router.get("/metrics")
@@ -118,10 +161,15 @@ def metrics(principal: Principal = Depends(require("graph:read"))) -> Response:
 @router.get("/retention/history.csv")
 def retention_history_csv(
     limit: int = Query(default=1000, ge=1, le=1000),
+    history_since: str | None = Query(default=None, max_length=40),
+    history_until: str | None = Query(default=None, max_length=40),
     principal: Principal = Depends(require("audit:read")),
 ) -> Response:
     """Export recorded runs oldest first; the same fields as ``/retention``."""
-    runs = list(reversed(retention_history(limit=limit)))
+    since, until = _history_window(history_since, history_until)
+    runs = list(
+        reversed(retention_history(limit=limit, since=since, until=until))
+    )
     buffer = io.StringIO()
     writer = csv.writer(buffer, lineterminator="\n")
     writer.writerow(

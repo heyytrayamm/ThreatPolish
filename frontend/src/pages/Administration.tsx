@@ -17,13 +17,25 @@ export default function Administration() {
   const [tokenBusy, setTokenBusy] = useState(false);
   const [retentionBusy, setRetentionBusy] = useState(false);
   const [exportBusy, setExportBusy] = useState(false);
+  const [historyFrom, setHistoryFrom] = useState("");
+  const [historyTo, setHistoryTo] = useState("");
+  const [range, setRange] = useState({ from: "", to: "" });
 
   const sources = useAsync(() => api.sources(), []);
   const quarantine = useAsync(() => api.quarantine(), []);
   const users = useAsync(() => api.users(), [tick]);
   const audit = useAsync(() => api.audit(), [tick]);
   const tokens = useAsync(() => api.agentTokens(), [tick]);
-  const retention = useAsync(() => api.retention(), [tick]);
+  const retention = useAsync(
+    () =>
+      api.retention({
+        since: range.from || undefined,
+        until: range.to || undefined,
+      }),
+    [tick, range.from, range.to],
+  );
+  const filterActive = Boolean(range.from || range.to);
+  const filterInvalid = Boolean(historyFrom && historyTo && historyFrom > historyTo);
   // The API returns the newest run first; a chart reads left to right.
   const retentionHistory = [...(retention.data?.history ?? [])].reverse();
   const maxBacklog = Math.max(
@@ -114,13 +126,28 @@ export default function Administration() {
     }
   }
 
+  function applyRange() {
+    if (filterInvalid) return;
+    setRange({ from: historyFrom, to: historyTo });
+  }
+
+  function clearRange() {
+    setHistoryFrom("");
+    setHistoryTo("");
+    setRange({ from: "", to: "" });
+  }
+
   async function exportRetention() {
     if (!retention.data) return;
     setExportBusy(true);
     setNotice(null);
     try {
       const limit = Math.max(1, Math.min(retention.data.history_total, 1000));
-      const csv = await api.retentionHistoryCsv(limit);
+      const csv = await api.retentionHistoryCsv({
+        limit,
+        since: range.from || undefined,
+        until: range.to || undefined,
+      });
       const url = URL.createObjectURL(csv);
       const link = document.createElement("a");
       link.href = url;
@@ -317,6 +344,45 @@ export default function Administration() {
                 </tr>
               </tbody>
             </table>
+            <div className="filters">
+              <Field label="Runs from (UTC)">
+                <input
+                  type="date"
+                  value={historyFrom}
+                  max={historyTo || undefined}
+                  onChange={(event) => setHistoryFrom(event.target.value)}
+                />
+              </Field>
+              <Field label="Runs to (UTC)">
+                <input
+                  type="date"
+                  value={historyTo}
+                  min={historyFrom || undefined}
+                  onChange={(event) => setHistoryTo(event.target.value)}
+                />
+              </Field>
+              <button
+                type="button"
+                className="secondary"
+                disabled={
+                  filterInvalid ||
+                  (historyFrom === range.from && historyTo === range.to)
+                }
+                onClick={applyRange}
+              >
+                Apply
+              </button>
+              {filterActive && (
+                <button type="button" className="link" onClick={clearRange}>
+                  Clear
+                </button>
+              )}
+            </div>
+            <p className="muted small">
+              {filterInvalid
+                ? "The start date must not be after the end date."
+                : "Run history filters use UTC dates; the backlog above always covers the whole deployment."}
+            </p>
             {retentionHistory.length > 0 && (
               <>
                 <h3>Backlog before each run</h3>
@@ -359,10 +425,14 @@ export default function Administration() {
                 <h3>Recent runs</h3>
                 <p className="muted small">
                   {retention.data.history_total > retentionHistory.length
-                    ? `Showing the last ${retentionHistory.length} of ${retention.data.history_total} recorded runs. Export includes up to 1,000 runs.`
-                    : `${retention.data.history_total} recorded run${
-                        retention.data.history_total === 1 ? "" : "s"
-                      }.`}
+                    ? `Showing the last ${retentionHistory.length} of ${retention.data.history_total} ${
+                        filterActive ? "matching" : "recorded"
+                      } runs. Export includes up to 1,000 ${
+                        filterActive ? "matching" : "recorded"
+                      } runs.`
+                    : `${retention.data.history_total} ${
+                        filterActive ? "matching" : "recorded"
+                      } run${retention.data.history_total === 1 ? "" : "s"}.`}
                 </p>
                 <table>
                   <thead>
@@ -401,8 +471,9 @@ export default function Administration() {
             )}
             {retentionHistory.length === 0 && (
               <p className="muted small">
-                No retention run has been recorded yet. The scheduled service writes one on each
-                run.
+                {filterActive
+                  ? "No retention runs match this date range."
+                  : "No retention run has been recorded yet. The scheduled service writes one on each run."}
               </p>
             )}
           </>

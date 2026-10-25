@@ -67,6 +67,21 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return payload as T;
 }
 
+export interface RetentionQuery {
+  since?: string;
+  until?: string;
+  limit?: number;
+}
+
+function retentionQuery(params: RetentionQuery): string {
+  const query = new URLSearchParams();
+  if (params.since) query.set("history_since", params.since);
+  if (params.until) query.set("history_until", params.until);
+  if (params.limit !== undefined) query.set("limit", String(params.limit));
+  const encoded = query.toString();
+  return encoded ? `?${encoded}` : "";
+}
+
 async function requestBlob(path: string): Promise<Blob> {
   const headers: Record<string, string> = {};
   const token = getToken();
@@ -213,9 +228,10 @@ export const api = {
   users: () => request<{ users: User[] }>("/api/v1/auth/users"),
   quarantine: () => request<{ items: QuarantineRecord[] }>("/api/v1/quarantine"),
   audit: () => request<{ items: AuditEntry[] }>("/api/v1/audit"),
-  retention: () => request<RetentionStatus>("/api/v1/retention"),
-  retentionHistoryCsv: (limit = 1000) =>
-    requestBlob(`/api/v1/retention/history.csv?limit=${limit}`),
+  retention: (params: RetentionQuery = {}) =>
+    request<RetentionStatus>(`/api/v1/retention${retentionQuery(params)}`),
+  retentionHistoryCsv: (params: RetentionQuery = {}) =>
+    requestBlob(`/api/v1/retention/history.csv${retentionQuery(params)}`),
   runRetention: () =>
     request<RetentionRunResult>("/api/v1/retention/run", { method: "POST" }),
   latestRun: () =>

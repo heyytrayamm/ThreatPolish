@@ -41,6 +41,20 @@ def test_demo_seed_creates_a_login_on_an_empty_database():
     assert again["login"] is None
 
 
+def test_seed_demo_cli_prints_one_summary_block(capsys, monkeypatch):
+    from app.cli import main
+
+    monkeypatch.setenv("TP_DEMO_PASSWORD", "demo-password-123")
+    assert main(["seed-demo"]) == 0
+    lines = capsys.readouterr().out.strip().splitlines()
+    start = lines.index("Demo data ready:")
+    block = lines[start:]
+    assert block[-3].strip() == "sign in: demo@threatpolish.local"
+    assert block[-2].strip() == "password: demo-password-123"
+    assert block[-1].strip().startswith("This password is shown once")
+    assert any("synthetic sessions" in line for line in block)
+
+
 def test_demo_seed_refuses_production(client, monkeypatch):
     from app.core.config import reset_settings_cache
     from app.demo import seed_demo_data

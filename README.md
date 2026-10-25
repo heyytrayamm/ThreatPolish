@@ -160,7 +160,7 @@ every stage and dashboard view to its implementation, test and measured result.
 
 | Check | Result |
 | --- | --- |
-| Backend suite · SQLite | **153 passed** (three of them drive Chrome) |
+| Backend suite · SQLite | **155 passed** (three of them drive Chrome) |
 | Backend suite · PostgreSQL 16 | the same suite, run in CI on a fresh service database |
 | Static analysis | Ruff `F,E9` clean; `compileall` clean |
 | Dependency audit | `pip-audit` and `npm audit --audit-level=high` report no known vulnerabilities, run locally and in CI |

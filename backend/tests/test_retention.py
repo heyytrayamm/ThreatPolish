@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, time, timedelta, timezone
 
 from app.core.security import iso, utcnow
 from app.db.database import connection, dumps
@@ -177,6 +177,88 @@ def test_retention_history_reports_truncation_and_exports_every_run(
     assert len(limited) == 3
     assert limited[1].startswith("rtn_export_15,")
     assert limited[2].startswith("rtn_export_16,")
+
+
+def test_retention_history_filters_by_a_utc_date_range(client, admin_headers):
+    today = utcnow().date()
+    with connection() as conn:
+        for index in range(5):
+            conn.execute(
+                retention_runs.insert().values(
+                    id=f"rtn_window_{index}",
+                    ran_at=iso(
+                        datetime.combine(
+                            today - timedelta(days=index),
+                            time(hour=12),
+                            tzinfo=timezone.utc,
+                        )
+                    ),
+                    trigger="scheduled",
+                    duration_ms=5,
+                    events_removed=1,
+                    edges_removed=0,
+                    observations_removed=0,
+                    nodes_removed=0,
+                    events_expired=1,
+                    retired_edges=0,
+                    stale_observations=0,
+                    graph_nodes=4,
+                    graph_edges=3,
+                    overdue=0,
+                )
+            )
+
+    since = (today - timedelta(days=2)).isoformat()
+    until = (today - timedelta(days=1)).isoformat()
+    response = client.get(
+        "/api/v1/retention",
+        params={"history_since": since, "history_until": until},
+        headers=admin_headers,
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["history_total"] == 2
+    assert [run["id"] for run in body["history"]] == [
+        "rtn_window_1",
+        "rtn_window_2",
+    ]
+
+    limited = client.get(
+        "/api/v1/retention",
+        params={
+            "history_since": since,
+            "history_until": until,
+            "history_limit": 1,
+        },
+        headers=admin_headers,
+    ).json()
+    assert limited["history_total"] == 2
+    assert [run["id"] for run in limited["history"]] == ["rtn_window_1"]
+
+    exported = client.get(
+        "/api/v1/retention/history.csv",
+        params={"history_since": since, "history_until": until},
+        headers=admin_headers,
+    )
+    assert exported.status_code == 200, exported.text
+    rows = exported.text.strip().splitlines()
+    assert len(rows) == 3
+    assert rows[1].startswith("rtn_window_2,")
+    assert rows[2].startswith("rtn_window_1,")
+
+    invalid = client.get(
+        "/api/v1/retention",
+        params={"history_since": "not-a-date"},
+        headers=admin_headers,
+    )
+    assert invalid.status_code == 422
+    assert invalid.json()["error"]["code"] == "validation_failed"
+    backwards = client.get(
+        "/api/v1/retention",
+        params={"history_since": "2026-10-24", "history_until": "2026-10-23"},
+        headers=admin_headers,
+    )
+    assert backwards.status_code == 422
 
 
 def test_scheduled_retention_records_history_and_audit(client, admin_headers):

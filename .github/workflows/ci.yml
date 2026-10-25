@@ -157,3 +157,47 @@ jobs:
       - uses: actions/checkout@v7
       - name: Build image
         run: docker build -t threatpolish:ci .
+
+  compose-demo:
+    name: Demo Compose overlay
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: Prepare demo environment
+        run: |
+          cp .env.example .env
+          sed -i 's|^TP_ENV=.*|TP_ENV=development|' .env
+          sed -i 's|^TP_DB_PASSWORD=.*|TP_DB_PASSWORD=ci-demo-database-password|' .env
+          sed -i 's|^TP_DB_URL=.*|TP_DB_URL=postgresql+psycopg://threatpolish:ci-demo-database-password@db:5432/threatpolish|' .env
+          sed -i 's|^TP_JWT_SECRET=.*|TP_JWT_SECRET=ci-demo-signing-secret-that-is-long-enough|' .env
+      - name: Start the demo stack
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.demo.yml config -q
+          docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d --build
+      - name: Wait for the seed to finish
+        run: |
+          for attempt in $(seq 1 90); do
+            state=$(docker inspect -f '{{.State.Status}}' threatpolish-seed-1 2>/dev/null || true)
+            if [ "$state" = "exited" ]; then break; fi
+            sleep 2
+          done
+          docker inspect -f 'seed status={{.State.Status}} exit={{.State.ExitCode}}' threatpolish-seed-1
+          test "$(docker inspect -f '{{.State.ExitCode}}' threatpolish-seed-1)" = "0"
+      - name: Assert the seed created data and a login
+        run: |
+          events=$(docker compose -f docker-compose.yml -f docker-compose.demo.yml exec -T db \
+            psql -U threatpolish -d threatpolish -tAc "SELECT count(*) FROM events")
+          login=$(docker compose -f docker-compose.yml -f docker-compose.demo.yml exec -T db \
+            psql -U threatpolish -d threatpolish -tAc \
+            "SELECT count(*) FROM users WHERE email = 'demo@threatpolish.local'")
+          echo "seeded events: $events"
+          echo "demo logins: $login"
+          test "$events" -gt 0
+          test "$login" = "1"
+      - name: Show seed logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.yml -f docker-compose.demo.yml logs seed
+      - name: Stop the demo stack
+        if: always()
+        run: docker compose -f docker-compose.yml -f docker-compose.demo.yml down -v

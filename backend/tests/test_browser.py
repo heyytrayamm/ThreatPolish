@@ -13,6 +13,7 @@ default suite stays dependency-free.  `.github/workflows/ci.yml` runs it in the
 from __future__ import annotations
 
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -247,7 +248,7 @@ def test_dashboard_password_change_keeps_this_tab_and_revokes_the_others(live_se
             page.get_by_role("button", name="Sign in").click()
             page.wait_for_selector(".sidebar")
             page.route(
-                "**/api/v1/retention",
+                re.compile(r".*/api/v1/retention(?:\?.*)?$"),
                 lambda route: route.fulfill(
                     json={
                         "generated_at": "2026-10-24T10:00:00+00:00",
@@ -338,14 +339,37 @@ def test_dashboard_password_change_keeps_this_tab_and_revokes_the_others(live_se
                     page.get_by_text(
                         "Showing the last 2 of 16 recorded runs", exact=False
                     ).wait_for()
+
+                    # The run-history filter is applied explicitly and drives
+                    # both the table count and the export request.
+                    page.get_by_label("Runs from (UTC)").fill("2026-10-20")
+                    page.get_by_label("Runs to (UTC)").fill("2026-10-24")
+                    with page.expect_request(
+                        lambda request: "history_since=2026-10-20" in request.url
+                        and "history_until=2026-10-24" in request.url
+                    ):
+                        page.get_by_role("button", name="Apply", exact=True).click()
+                    page.get_by_text(
+                        "Showing the last 2 of 16 matching runs", exact=False
+                    ).wait_for()
+
                     with page.expect_download() as download_info:
-                        page.get_by_role("button", name="Export CSV").click()
+                        with page.expect_request(
+                            lambda request: "history.csv" in request.url
+                            and "history_since=2026-10-20" in request.url
+                        ):
+                            page.get_by_role("button", name="Export CSV").click()
                     download = download_info.value
                     assert download.suggested_filename.startswith(
                         "threatpolish-retention-"
                     ), download.suggested_filename
                     assert download.suggested_filename.endswith(".csv")
                     page.wait_for_selector("text=Retention history exported as CSV")
+
+                    page.get_by_role("button", name="Clear", exact=True).click()
+                    page.get_by_text(
+                        "Showing the last 2 of 16 recorded runs", exact=False
+                    ).wait_for()
             assert console_errors == [], console_errors
 
             page.get_by_role("button", name="Account").click()

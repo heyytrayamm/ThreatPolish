@@ -36,15 +36,22 @@ All notable changes to this project are recorded here. Dates use ISO 8601.
 - `python -m app.cli seed-demo` populates development telemetry, correlation
   and a week of retention history, and creates a demo administrator with a
   one-time password when no accounts exist. `make demo` seeds, builds and
-  serves the stack in one command; it refuses to run in production.
+  serves the stack in one command; it refuses to run in production. The CLI
+  prints the outcome, including a generated login, as one summary block at the
+  end so it is not lost between correlation log lines.
 - Administration lists each recent retention run with its trigger, backlog,
   removed count, duration and overdue state, reports the total recorded run
   count when the 14-row view is truncated, and exports the history as CSV
   (`GET /retention/history.csv`, oldest first, up to 1,000 runs).
+- Run history can be filtered by an inclusive UTC date range from the page or
+  with `history_since`/`history_until`; `history_total` and the CSV export
+  follow the same window.
 - `docker-compose.demo.yml` adds a one-shot `seed` service that waits for the
   API health check, seeds a development database with a one-time demo login,
   and exits. `make demo-docker` starts the overlay; seeding remains idempotent
-  and refuses to run in production.
+  and refuses to run in production. CI starts the same overlay against
+  PostgreSQL and fails when the seed service exits non-zero or creates no
+  telemetry or demo login.
 - The operations guide includes Prometheus scrape configuration and alert
   rules for an overdue backlog and a stalled retention schedule.
 - CI runs `tests/test_retention.py` explicitly against PostgreSQL, after the

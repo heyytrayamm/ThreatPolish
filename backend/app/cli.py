@@ -152,19 +152,28 @@ def _seed_demo(args: argparse.Namespace) -> int:
 
     init_db()
     result = seed_demo_data(seed=args.seed)
-    print(
-        f"seeded {result['events_accepted']} events across "
-        f"{result['sessions_generated']} synthetic sessions; "
-        f"{result['campaigns']} campaign candidates, "
-        f"{result['retention_runs_added']} retention runs"
+    already_present = (
+        result["events_accepted"] == 0
+        and result["events_duplicate"] == 0
+        and result["retention_runs_added"] == 0
     )
+    lines = [
+        "Demo data already present:" if already_present else "Demo data ready:",
+        f"  events: {result['events_accepted']} accepted, "
+        f"{result['events_duplicate']} duplicate across "
+        f"{result['sessions_generated']} synthetic sessions",
+        f"  campaigns: {result['campaigns']}",
+        f"  retention history: {result['retention_runs_added']} runs added",
+    ]
     if result["login"]:
-        print(
-            f"demo login: {result['login']['email']} / {result['login']['password']}"
-        )
-        print("This password is shown once; set TP_DEMO_PASSWORD to choose your own.")
+        lines += [
+            f"  sign in: {result['login']['email']}",
+            f"  password: {result['login']['password']}",
+            "  This password is shown once; set TP_DEMO_PASSWORD to choose your own.",
+        ]
     else:
-        print("Existing accounts were left unchanged; sign in with one of them.")
+        lines.append("  sign in with an existing account; accounts were left unchanged.")
+    print("\n".join(lines))
     return 0
 
 
