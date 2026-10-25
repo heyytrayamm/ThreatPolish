@@ -106,6 +106,24 @@ def viewer_headers(client, viewer) -> dict[str, str]:
 
 
 @pytest.fixture()
+def analyst_headers(client) -> dict[str, str]:
+    from app.auth.users import create_user
+
+    create_user(
+        email="analyst@threatpolish.test",
+        name="Analyst",
+        role="analyst",
+        password="analyst-password-123",
+    )
+    response = client.post(
+        "/api/v1/auth/login",
+        json={"email": "analyst@threatpolish.test", "password": "analyst-password-123"},
+    )
+    assert response.status_code == 200, response.text
+    return {"Authorization": f"Bearer {response.json()['access_token']}"}
+
+
+@pytest.fixture()
 def sensor_headers(admin_headers) -> dict[str, str]:
     from app.auth.users import create_agent_token
 

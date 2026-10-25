@@ -44,7 +44,7 @@ def test_retention_grace_separates_backlog_from_overdue(client, admin_headers):
     assert status["overdue"] is False
 
 
-def test_retention_status_is_admin_only(client, viewer_headers, admin_headers):
+def test_retention_status_requires_retention_read(client, viewer_headers, admin_headers):
     assert client.get("/api/v1/retention").status_code == 401
     assert client.get("/api/v1/retention", headers=viewer_headers).status_code == 403
 
@@ -54,6 +54,24 @@ def test_retention_status_is_admin_only(client, viewer_headers, admin_headers):
     assert body["events"]["expired"] == 0
     assert body["graph"]["nodes"] == 0
     assert body["graph"]["edges"] == 0
+
+
+def test_analyst_can_read_retention_history_but_not_run_it(
+    client, admin_headers, analyst_headers
+):
+    _insert_event(iso(utcnow() - timedelta(days=10)), dedup_key="analyst-read")
+    run_retention(trigger="scheduled")
+
+    status = client.get("/api/v1/retention", headers=analyst_headers)
+    assert status.status_code == 200, status.text
+    assert status.json()["history_total"] == 1
+    export = client.get("/api/v1/retention/history.csv", headers=analyst_headers)
+    assert export.status_code == 200, export.text
+    assert export.text.startswith("run_id,ran_at,trigger")
+
+    denied = client.post("/api/v1/retention/run", headers=analyst_headers)
+    assert denied.status_code == 403
+    assert client.get("/api/v1/audit", headers=analyst_headers).status_code == 403
 
 
 def test_retention_reports_lag_and_purge_clears_it(client, admin_headers):

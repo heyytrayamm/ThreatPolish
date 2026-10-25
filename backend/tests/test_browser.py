@@ -35,6 +35,8 @@ DIST = ROOT / "frontend" / "dist"
 NEW_PASSWORD = "browser-flow-password-1"
 VIEWER_EMAIL = "viewer@threatpolish.test"
 VIEWER_PASSWORD = "browser-viewer-password-1"
+ANALYST_EMAIL = "analyst-browser@threatpolish.test"
+ANALYST_PASSWORD = "browser-analyst-password-1"
 
 def _dist_is_stale() -> bool:
     """True when the bundle predates its sources, which would test old assets."""
@@ -320,6 +322,7 @@ def test_dashboard_password_change_keeps_this_tab_and_revokes_the_others(live_se
                 "Web findings",
                 "Asset risk",
                 "Responses",
+                "Retention",
                 "Administration",
             ):
                 page.get_by_role("button", name=view, exact=True).click()
@@ -366,6 +369,17 @@ def test_dashboard_password_change_keeps_this_tab_and_revokes_the_others(live_se
                     assert download.suggested_filename.endswith(".csv")
                     page.wait_for_selector("text=Retention history exported as CSV")
 
+                    # A quick range sends exact UTC timestamps rather than
+                    # day boundaries, so it covers the last 24/168/720 hours.
+                    with page.expect_request(
+                        lambda request: "history_since=" in request.url
+                        and "T" in request.url
+                    ):
+                        page.get_by_role("button", name="7 days", exact=True).click()
+                    page.get_by_text(
+                        "Showing the last 2 of 16 matching runs", exact=False
+                    ).wait_for()
+
                     page.get_by_role("button", name="Clear", exact=True).click()
                     page.get_by_text(
                         "Showing the last 2 of 16 recorded runs", exact=False
@@ -406,6 +420,52 @@ def test_dashboard_password_change_keeps_this_tab_and_revokes_the_others(live_se
         f"{live_server}/api/v1/auth/login",
         json={"email": ADMIN_EMAIL, "password": NEW_PASSWORD},
     ).status_code == 200
+
+
+def test_analyst_sees_read_only_retention_history(live_server: str):
+    admin_login = httpx.post(
+        f"{live_server}/api/v1/auth/login",
+        json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD},
+    )
+    assert admin_login.status_code == 200, admin_login.text
+    admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+    account = httpx.post(
+        f"{live_server}/api/v1/auth/users",
+        headers=admin_headers,
+        json={
+            "email": ANALYST_EMAIL,
+            "name": "Retention Analyst",
+            "role": "analyst",
+            "password": ANALYST_PASSWORD,
+        },
+    )
+    assert account.status_code == 201, account.text
+    run = httpx.post(f"{live_server}/api/v1/retention/run", headers=admin_headers)
+    assert run.status_code == 200, run.text
+
+    with playwright_api.sync_playwright() as p:
+        browser = _launch(p.chromium)
+        try:
+            page = browser.new_page()
+            page.goto(live_server, wait_until="domcontentloaded")
+            page.get_by_label("Email").fill(ANALYST_EMAIL)
+            page.get_by_label("Password", exact=True).fill(ANALYST_PASSWORD)
+            page.get_by_role("button", name="Sign in").click()
+            page.wait_for_selector(".sidebar")
+
+            retention = page.get_by_role("button", name="Retention", exact=True)
+            retention.wait_for()
+            assert (
+                page.get_by_role("button", name="Administration", exact=True).count()
+                == 0
+            )
+            retention.click()
+            page.get_by_text("Graph horizon").wait_for()
+            page.get_by_text("1 recorded run", exact=False).wait_for()
+            page.get_by_role("button", name="Export CSV").wait_for()
+            assert page.get_by_role("button", name="Run retention now").count() == 0
+        finally:
+            browser.close()
 
 
 def test_session_history_signs_out_one_device_and_admins_can_inspect_it(live_server: str):

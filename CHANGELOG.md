@@ -45,13 +45,18 @@ All notable changes to this project are recorded here. Dates use ISO 8601.
   (`GET /retention/history.csv`, oldest first, up to 1,000 runs).
 - Run history can be filtered by an inclusive UTC date range from the page or
   with `history_since`/`history_until`; `history_total` and the CSV export
-  follow the same window.
+  follow the same window. The page offers 24-hour, 7-day and 30-day quick
+  ranges that send exact timestamps.
+- Analysts can open a read-only Retention view with the backlog, history,
+  filters and CSV export. `GET /retention` and `/retention/history.csv` require
+  the new `retention:read` permission; running retention remains admin-only.
 - `docker-compose.demo.yml` adds a one-shot `seed` service that waits for the
   API health check, seeds a development database with a one-time demo login,
   and exits. `make demo-docker` starts the overlay; seeding remains idempotent
   and refuses to run in production. CI starts the same overlay against
-  PostgreSQL and fails when the seed service exits non-zero or creates no
-  telemetry or demo login.
+  PostgreSQL, fails when the seed service exits non-zero or creates no
+  telemetry or demo login, then reruns it and checks the row counts are
+  unchanged.
 - The operations guide includes Prometheus scrape configuration and alert
   rules for an overdue backlog and a stalled retention schedule.
 - CI runs `tests/test_retention.py` explicitly against PostgreSQL, after the

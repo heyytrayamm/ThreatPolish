@@ -34,6 +34,7 @@ ROLES: dict[str, frozenset[str]] = {
             "scopes:read",
             "sources:read",
             "risk:read",
+            "retention:read",
         }
     ),
     "viewer": frozenset(

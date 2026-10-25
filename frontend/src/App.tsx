@@ -8,6 +8,7 @@ import Deception from "./pages/Deception";
 import Findings from "./pages/Findings";
 import Crypto from "./pages/Crypto";
 import Responses from "./pages/Responses";
+import Retention from "./pages/Retention";
 import Administration from "./pages/Administration";
 import Account from "./pages/Account";
 
@@ -19,6 +20,7 @@ type View =
   | "findings"
   | "crypto"
   | "responses"
+  | "retention"
   | "admin"
   | "account";
 
@@ -30,6 +32,7 @@ const NAV: { key: View; label: string }[] = [
   { key: "findings", label: "Web findings" },
   { key: "crypto", label: "Asset risk" },
   { key: "responses", label: "Responses" },
+  { key: "retention", label: "Retention" },
   { key: "admin", label: "Administration" },
   { key: "account", label: "Account" },
 ];
@@ -148,7 +151,13 @@ export default function App() {
         </div>
         <nav>
           <span className="nav-label">Workspace</span>
-          {NAV.filter((item) => item.key !== "admin" || user.role === "admin").map((item) => (
+          {NAV.filter((item) => {
+            if (item.key === "admin") return user.role === "admin";
+            if (item.key === "retention") {
+              return user.role === "admin" || user.role === "analyst";
+            }
+            return true;
+          }).map((item) => (
             <button
               key={item.key}
               type="button"
@@ -185,6 +194,7 @@ export default function App() {
         {view === "findings" && <Findings user={user} />}
         {view === "crypto" && <Crypto user={user} />}
         {view === "responses" && <Responses user={user} />}
+        {view === "retention" && <Retention />}
         {view === "admin" && <Administration />}
         {view === "account" && <Account user={user} />}
       </main>

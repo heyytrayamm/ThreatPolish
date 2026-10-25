@@ -142,7 +142,7 @@ def retention(
     history_limit: int = Query(default=14, ge=1, le=100),
     history_since: str | None = Query(default=None, max_length=40),
     history_until: str | None = Query(default=None, max_length=40),
-    principal: Principal = Depends(require("audit:read")),
+    principal: Principal = Depends(require("retention:read")),
 ) -> dict[str, Any]:
     since, until = _history_window(history_since, history_until)
     return retention_status(
@@ -163,7 +163,7 @@ def retention_history_csv(
     limit: int = Query(default=1000, ge=1, le=1000),
     history_since: str | None = Query(default=None, max_length=40),
     history_until: str | None = Query(default=None, max_length=40),
-    principal: Principal = Depends(require("audit:read")),
+    principal: Principal = Depends(require("retention:read")),
 ) -> Response:
     """Export recorded runs oldest first; the same fields as ``/retention``."""
     since, until = _history_window(history_since, history_until)

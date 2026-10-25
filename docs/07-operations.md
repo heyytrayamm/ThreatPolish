@@ -338,10 +338,13 @@ it is overdue. Each `retention` run records the pre-run backlog in
 `retention_runs` and writes a `retention.run` audit entry with actor role
 `system`; Administration charts the last 14 runs and `GET /retention` returns
 them as `history`, with `history_total` reporting how many runs exist in the
-selected window. When the view is truncated, the page says so. A run-history filter takes
+selected window. Analysts get the same status, filters and CSV export on the
+read-only Retention page, without the manual-run control or the account and
+credential panels. When the view is truncated, the page says so. A run-history filter takes
 an inclusive UTC date or timestamp through `history_since` and `history_until`;
-the dashboard applies it before charting and exporting, and the backlog counts
-above remain deployment-wide. `GET /retention/history.csv` (admin) accepts the
+the dashboard applies it before charting and exporting, with 24-hour, 7-day and
+30-day quick ranges available, and the backlog counts above remain
+deployment-wide. `GET /retention/history.csv` (admin) accepts the
 same filters and exports up to 1,000 recorded runs oldest first for spreadsheet
 or capacity review; the Administration card has a matching **Export CSV**
 action. An administrator can run retention immediately from Administration; the

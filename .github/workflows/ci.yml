@@ -195,6 +195,22 @@ jobs:
           echo "demo logins: $login"
           test "$events" -gt 0
           test "$login" = "1"
+      - name: Run the seed again and assert idempotency
+        run: |
+          counts() {
+            docker compose -f docker-compose.yml -f docker-compose.demo.yml exec -T db \
+              psql -U threatpolish -d threatpolish -tAc \
+              "SELECT (SELECT count(*) FROM events) || ' ' || (SELECT count(*) FROM users) || ' ' || (SELECT count(*) FROM retention_runs)"
+          }
+          before=$(counts)
+          second=$(docker compose -f docker-compose.yml -f docker-compose.demo.yml \
+            run --rm --no-deps seed 2>&1)
+          echo "$second" | tail -8
+          grep -q "Demo data already present:" <<<"$second"
+          after=$(counts)
+          echo "before: $before"
+          echo "after:  $after"
+          test "$before" = "$after"
       - name: Show seed logs on failure
         if: failure()
         run: docker compose -f docker-compose.yml -f docker-compose.demo.yml logs seed
