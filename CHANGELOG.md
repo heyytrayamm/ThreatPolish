@@ -38,7 +38,13 @@ All notable changes to this project are recorded here. Dates use ISO 8601.
   one-time password when no accounts exist. `make demo` seeds, builds and
   serves the stack in one command; it refuses to run in production.
 - Administration lists each recent retention run with its trigger, backlog,
-  removed count, duration and overdue state.
+  removed count, duration and overdue state, reports the total recorded run
+  count when the 14-row view is truncated, and exports the history as CSV
+  (`GET /retention/history.csv`, oldest first, up to 1,000 runs).
+- `docker-compose.demo.yml` adds a one-shot `seed` service that waits for the
+  API health check, seeds a development database with a one-time demo login,
+  and exits. `make demo-docker` starts the overlay; seeding remains idempotent
+  and refuses to run in production.
 - The operations guide includes Prometheus scrape configuration and alert
   rules for an overdue backlog and a stalled retention schedule.
 - CI runs `tests/test_retention.py` explicitly against PostgreSQL, after the

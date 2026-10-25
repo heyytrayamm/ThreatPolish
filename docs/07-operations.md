@@ -70,6 +70,26 @@ The stack contains:
 docker compose --profile honeypot up -d cowrie
 ```
 
+### Demo overlay
+
+For a development host that should show a populated dashboard, add the demo
+overlay:
+
+```bash
+make demo-docker
+# equivalent to:
+docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d --build
+```
+
+The overlay adds a one-shot `seed` service. It waits for the API to be healthy,
+runs `seed-demo` once and exits; the command is idempotent, so restarting the
+stack does not duplicate telemetry or retention history. Because the API starts
+before the seed, the overlay blanks the bootstrap administrator for the `app`
+service so the seed can create the demo login; read its one-time password from
+`docker compose logs seed`. Demo seeding refuses to run when `TP_ENV=production`,
+so the overlay must not be deployed there. Remove the generated demo account and
+its data before using the host for real work.
+
 The HTTP decoy is **not** a Compose service. Run it as a separate process (or
 your own unit/container) so it can be placed on an isolated network segment:
 
@@ -317,8 +337,12 @@ shows the same backlog, and the Overview raises an alert to administrators once
 it is overdue. Each `retention` run records the pre-run backlog in
 `retention_runs` and writes a `retention.run` audit entry with actor role
 `system`; Administration charts the last 14 runs and `GET /retention` returns
-them as `history`. An administrator can run it immediately from Administration;
-the run is confirmed, recorded and audited like a scheduled one.
+them as `history`, with `history_total` reporting how many runs exist. When the
+view is truncated, the page says so. `GET /retention/history.csv` (admin)
+exports up to 1,000 recorded runs oldest first for spreadsheet or capacity
+review, and the Administration card has a matching **Export CSV** action. An
+administrator can run it immediately from Administration; the run is confirmed,
+recorded and audited like a scheduled one.
 
 `GET /metrics` exports the same backlog and graph counts in Prometheus text
 format. It requires `graph:read` and never returns event content. Create a
@@ -371,7 +395,9 @@ For a local review without waiting for history to accumulate, run
 telemetry plus a week of retention runs, and creates a demo administrator with a
 one-time password when the database has no accounts. After `make install`,
 `make demo` seeds the data, builds the dashboard and serves it on
-`http://127.0.0.1:8000` in one command.
+`http://127.0.0.1:8000` in one command. On a Docker host, `make demo-docker`
+uses the Compose demo overlay instead and seeds the stack automatically after
+the API is healthy.
 `python -m app.cli status` shows configuration, retention and schema state.
 
 ## Known limitations

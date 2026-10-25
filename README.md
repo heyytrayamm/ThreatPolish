@@ -160,7 +160,7 @@ every stage and dashboard view to its implementation, test and measured result.
 
 | Check | Result |
 | --- | --- |
-| Backend suite · SQLite | **152 passed** (three of them drive Chrome) |
+| Backend suite · SQLite | **153 passed** (three of them drive Chrome) |
 | Backend suite · PostgreSQL 16 | the same suite, run in CI on a fresh service database |
 | Static analysis | Ruff `F,E9` clean; `compileall` clean |
 | Dependency audit | `pip-audit` and `npm audit --audit-level=high` report no known vulnerabilities, run locally and in CI |
@@ -249,7 +249,9 @@ For hot reload, run `npm --prefix frontend run dev` and open
 For a one-command review after `make install`, run `make demo`. It seeds the
 demo login and data, builds the dashboard and serves it on
 `http://127.0.0.1:8000`; the generated password is printed once. Demo seeding
-refuses to run when `TP_ENV=production`.
+refuses to run when `TP_ENV=production`. On a Docker host, `make demo-docker`
+starts the Compose stack with the demo overlay, which seeds it automatically
+once the API is healthy.
 
 ## Connecting a sensor
 

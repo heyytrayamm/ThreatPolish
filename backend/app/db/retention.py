@@ -124,6 +124,9 @@ def retention_status() -> dict[str, Any]:
     params = {"now": event_cutoff, "cutoff": graph_cutoff}
     alert_params = {"now": event_alert_cutoff, "cutoff": graph_alert_cutoff}
     with connection() as conn:
+        history_total = conn.execute(
+            text("SELECT COUNT(*) FROM retention_runs")
+        ).scalar_one()
         event_totals = conn.execute(
             text("SELECT COUNT(*), MIN(occurred_at), MIN(retention_until) FROM events")
         ).fetchone()
@@ -159,6 +162,7 @@ def retention_status() -> dict[str, Any]:
         "generated_at": event_cutoff,
         "overdue": overdue,
         "grace_days": settings.retention_grace_days,
+        "history_total": int(history_total or 0),
         "history": retention_history(),
         "events": {
             "retention_days": settings.retention_days,
@@ -180,8 +184,8 @@ def retention_status() -> dict[str, Any]:
 
 
 def retention_history(limit: int = 14) -> list[dict[str, Any]]:
-    """Most recent retention runs, newest first, for the dashboard trend."""
-    bounded = max(1, min(int(limit), 100))
+    """Most recent retention runs, newest first, for the dashboard trend and export."""
+    bounded = max(1, min(int(limit), 1000))
     with connection() as conn:
         rows = conn.execute(
             select(retention_runs)

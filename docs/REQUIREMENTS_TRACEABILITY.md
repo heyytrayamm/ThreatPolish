@@ -22,7 +22,7 @@ limitation. **Open** — not implemented.
 | 10 | Unified dashboard with the eleven required views | `frontend/src/pages/`, view-by-view map below, `test_browser.py` renders every view without console errors | Done |
 | 11 | Controlled response: policy, permissions, expiry, rollback, emergency disable | `app/response/`, `test_responses.py`, `test_advanced.py`, Responses view | Done |
 | 12 | Research evaluation: baselines, ablations, scenarios, metrics | `backend/scripts/evaluate.py`, `docs/research/evaluation-results.md`; precision, recall, FPR/FNR, campaign recovery, time to detection, latency, CPU and memory all measured | Done |
-| 13 | Security, reliability and regression testing | 152 tests, two engines, browser flow, container build, dependency audit; container, outage, backup/restore and upgrade checks in `docs/06-testing-and-evaluation.md` | Done |
+| 13 | Security, reliability and regression testing | 153 tests, two engines, browser flow, container build, dependency audit; container, outage, backup/restore and upgrade checks in `docs/06-testing-and-evaluation.md` | Done |
 | 14 | Deployment and release package | `Dockerfile`, `docker-compose.yml`, `.env.example`, `docs/07-operations.md`, `docs/02-architecture.md`, `docs/03-threat-model.md`, API docs at `/docs` | Done, verified on one host |
 
 ## Required dashboard views

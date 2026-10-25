@@ -1,0 +1,31 @@
+# Demo overlay. Use it on a development host only:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d --build
+#
+# It adds a one-shot `seed` service that waits for the API to be healthy, then
+# runs `seed-demo` once. The command is idempotent, so restarting the stack does
+# not duplicate telemetry or retention history. Demo seeding itself refuses to
+# run when TP_ENV=production.
+services:
+  # The API starts first so migrations run, but seeding must still create the
+  # demo login. Blanking the bootstrap admin lets seed-demo find an empty user
+  # table; the generated password is printed once in the seed logs.
+  app:
+    environment:
+      TP_BOOTSTRAP_ADMIN_EMAIL: ""
+      TP_BOOTSTRAP_ADMIN_PASSWORD: ""
+
+  seed:
+    build: .
+    restart: "no"
+    depends_on:
+      app:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      TP_DB_URL: postgresql+psycopg://threatpolish:${TP_DB_PASSWORD}@db:5432/threatpolish
+      TP_DATA_DIR: /data
+    command: ["python", "-m", "app.cli", "seed-demo"]
+    healthcheck:
+      disable: true
+    networks: [backend]

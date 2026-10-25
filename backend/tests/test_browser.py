@@ -253,6 +253,7 @@ def test_dashboard_password_change_keeps_this_tab_and_revokes_the_others(live_se
                         "generated_at": "2026-10-24T10:00:00+00:00",
                         "overdue": False,
                         "grace_days": 2,
+                        "history_total": 16,
                         "events": {
                             "retention_days": 90,
                             "total": 12,
@@ -334,6 +335,17 @@ def test_dashboard_password_change_keeps_this_tab_and_revokes_the_others(live_se
                     page.get_by_text("Graph horizon").wait_for()
                     page.get_by_text("Backlog before each run").wait_for()
                     page.get_by_role("button", name="Run retention now").wait_for()
+                    page.get_by_text(
+                        "Showing the last 2 of 16 recorded runs", exact=False
+                    ).wait_for()
+                    with page.expect_download() as download_info:
+                        page.get_by_role("button", name="Export CSV").click()
+                    download = download_info.value
+                    assert download.suggested_filename.startswith(
+                        "threatpolish-retention-"
+                    ), download.suggested_filename
+                    assert download.suggested_filename.endswith(".csv")
+                    page.wait_for_selector("text=Retention history exported as CSV")
             assert console_errors == [], console_errors
 
             page.get_by_role("button", name="Account").click()

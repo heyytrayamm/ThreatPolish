@@ -38,17 +38,17 @@ when the bundle is missing, stale or Playwright is absent.
 | `test_responses.py` | Policy matrix, approval requirement, expiry, rollback, state machine |
 | `test_pipeline.py` | Ingestion idempotency, quarantine, attribution, modules sharing one contract |
 | `test_end_to_end.py` | Login → ingest → correlate → campaign → response → audit over HTTP |
-| `test_retention.py` | Admin-only retention status and manual run, backlog-versus-overdue grace, expired and retired counts, a combined purge clearing both horizons, scheduled-run history plus audit, and Prometheus metrics |
+| `test_retention.py` | Admin-only retention status and manual run, backlog-versus-overdue grace, expired and retired counts, a combined purge clearing both horizons, scheduled-run history plus audit, total-run reporting when the 14-row view is truncated, CSV export beyond that view, and Prometheus metrics |
 | `test_demo.py` | Development seed populates telemetry, correlation, retention history and a demo login idempotently, and refuses to run in production |
 | `test_security.py` | Auth bypass attempts, injection strings, oversized payloads, token tampering |
 | `test_advanced.py` | Non-finite and unencodable payloads, hostile feature shapes, request-body bounds, login spraying, session revocation on password change, per-device sign-out, foreign-session refusal, an administrator signing one device out of another account, session history states, concurrent duplicate ingestion, redirect scope bypass, decoy request framing |
 | `test_signin_alerts.py` | Network-change and distance alerts: same-network silence, window and revoked-session suppression, distant and nearby geolocation, unlocatable fallback |
 | `test_properties.py` | Invariants rather than scenarios: score symmetry and determinism, bounded outputs, monotone confidence, unique relationship keys for every accepted identifier, rejection of control characters in session and target ids, isolation of legacy corrupt ids, corpus-relative family weights against the uniform-weight ablation, and the narrowest authorization governing a host |
-| `test_browser.py` | Chrome-driven dashboard flow against a live API: every view renders without console errors, the duplicate-resolution note shows on the Deception page, the Account page changes the password, the replacement token survives a reload and an earlier token is refused; a second run plans and activates an investigation through the Campaigns and Deception pages; a third signs a device out from the session table, opens the admin session panel, signs another account's device out from it, creates and revokes a sensor token on the same page and checks the Overview attention card |
+| `test_browser.py` | Chrome-driven dashboard flow against a live API: every view renders without console errors, the duplicate-resolution note shows on the Deception page, the Account page changes the password, the replacement token survives a reload and an earlier token is refused; a second run plans and activates an investigation through the Campaigns and Deception pages; a third signs a device out from the session table, opens the admin session panel, signs another account's device out from it, creates and revokes a sensor token on the same page, exports the retention history as CSV and checks the Overview attention card |
 
 ## Measured behaviour
 
-Latest full run: **152 passed on SQLite**, including the three browser cases;
+Latest full run: **153 passed on SQLite**, including the three browser cases;
 the same suite passes against PostgreSQL 16.2. CI runs both engines on every
 push; the PostgreSQL job starts a service database and the fixture resets its
 schema per test, so isolation matches the SQLite path.

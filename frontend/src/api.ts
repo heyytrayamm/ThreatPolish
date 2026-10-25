@@ -38,6 +38,16 @@ export class ApiFailure extends Error {
   }
 }
 
+function toFailure(response: Response, payload: unknown): ApiFailure {
+  const error = (payload as { error?: ApiError } | null)?.error ?? {
+    code: "request_failed",
+    message: `Request failed with status ${response.status}`,
+    details: {},
+  };
+  if (response.status === 401) setToken(null);
+  return new ApiFailure(response.status, error);
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -53,16 +63,25 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   } catch {
     payload = null;
   }
-  if (!response.ok) {
-    const error = (payload as { error?: ApiError } | null)?.error ?? {
-      code: "request_failed",
-      message: `Request failed with status ${response.status}`,
-      details: {},
-    };
-    if (response.status === 401) setToken(null);
-    throw new ApiFailure(response.status, error);
-  }
+  if (!response.ok) throw toFailure(response, payload);
   return payload as T;
+}
+
+async function requestBlob(path: string): Promise<Blob> {
+  const headers: Record<string, string> = {};
+  const token = getToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const response = await fetch(path, { headers });
+  if (!response.ok) {
+    let payload: unknown = null;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = null;
+    }
+    throw toFailure(response, payload);
+  }
+  return response.blob();
 }
 
 export const api = {
@@ -195,6 +214,8 @@ export const api = {
   quarantine: () => request<{ items: QuarantineRecord[] }>("/api/v1/quarantine"),
   audit: () => request<{ items: AuditEntry[] }>("/api/v1/audit"),
   retention: () => request<RetentionStatus>("/api/v1/retention"),
+  retentionHistoryCsv: (limit = 1000) =>
+    requestBlob(`/api/v1/retention/history.csv?limit=${limit}`),
   runRetention: () =>
     request<RetentionRunResult>("/api/v1/retention/run", { method: "POST" }),
   latestRun: () =>
@@ -498,6 +519,7 @@ export interface RetentionStatus {
   generated_at: string;
   overdue: boolean;
   grace_days: number;
+  history_total: number;
   history: RetentionRun[];
   events: {
     retention_days: number;

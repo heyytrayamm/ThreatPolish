@@ -5,7 +5,7 @@ from datetime import timedelta
 from app.core.security import iso, utcnow
 from app.db.database import connection, dumps
 from app.db.retention import purge_all, retention_history, retention_status, run_retention
-from app.db.schema import events, graph_edges, graph_nodes
+from app.db.schema import events, graph_edges, graph_nodes, retention_runs
 
 
 def _insert_event(retention_until: str, dedup_key: str = "retention-expired") -> None:
@@ -122,6 +122,61 @@ def test_retention_reports_lag_and_purge_clears_it(client, admin_headers):
     assert cleared["graph"]["nodes"] == 0
     assert cleared["graph"]["edges"] == 0
     assert retention_status()["overdue"] is False
+
+
+def test_retention_history_reports_truncation_and_exports_every_run(
+    client, admin_headers, viewer_headers
+):
+    now = utcnow()
+    with connection() as conn:
+        for index in range(16):
+            conn.execute(
+                retention_runs.insert().values(
+                    id=f"rtn_export_{index + 1}",
+                    ran_at=iso(now - timedelta(hours=16 - index)),
+                    trigger="scheduled",
+                    duration_ms=index,
+                    events_removed=index,
+                    edges_removed=0,
+                    observations_removed=0,
+                    nodes_removed=0,
+                    events_expired=index,
+                    retired_edges=0,
+                    stale_observations=0,
+                    graph_nodes=10,
+                    graph_edges=10,
+                    overdue=0,
+                )
+            )
+
+    status = client.get("/api/v1/retention", headers=admin_headers).json()
+    assert status["history_total"] == 16
+    assert len(status["history"]) == 14
+    assert status["history"][0]["id"] == "rtn_export_16"
+
+    assert client.get("/api/v1/retention/history.csv").status_code == 401
+    assert (
+        client.get("/api/v1/retention/history.csv", headers=viewer_headers).status_code
+        == 403
+    )
+    response = client.get("/api/v1/retention/history.csv", headers=admin_headers)
+    assert response.status_code == 200, response.text
+    assert response.headers["content-type"].startswith("text/csv")
+    assert "attachment; filename=\"threatpolish-retention-" in response.headers[
+        "content-disposition"
+    ]
+    rows = response.text.strip().splitlines()
+    assert rows[0].startswith("run_id,ran_at,trigger,duration_ms,backlog")
+    assert len(rows) == 17
+    assert rows[1].startswith("rtn_export_1,")
+    assert rows[-1].startswith("rtn_export_16,")
+
+    limited = client.get(
+        "/api/v1/retention/history.csv?limit=2", headers=admin_headers
+    ).text.strip().splitlines()
+    assert len(limited) == 3
+    assert limited[1].startswith("rtn_export_15,")
+    assert limited[2].startswith("rtn_export_16,")
 
 
 def test_scheduled_retention_records_history_and_audit(client, admin_headers):

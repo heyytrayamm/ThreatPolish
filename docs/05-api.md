@@ -63,7 +63,8 @@ recorded in the audit log.
 | POST | `/responses/evaluate` | analyst | Dry-run a policy decision |
 | GET | `/responses/policies` | viewer | Policy matrix |
 | GET | `/audit` | admin | Audit trail |
-| GET | `/retention` | admin | Retention lag, graph size and the last 14 runs |
+| GET | `/retention` | admin | Retention lag, graph size, total run count and the last 14 runs |
+| GET | `/retention/history.csv` | admin | Recorded runs as CSV, oldest first; `limit` up to 1000 |
 | POST | `/retention/run` | admin | Run both retention horizons now; recorded and audited |
 | GET | `/metrics` | viewer/analyst | Prometheus text metrics for retention backlog and graph size |
 

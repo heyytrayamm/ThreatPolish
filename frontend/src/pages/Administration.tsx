@@ -16,6 +16,7 @@ export default function Administration() {
   const [issued, setIssued] = useState<{ name: string; token: string } | null>(null);
   const [tokenBusy, setTokenBusy] = useState(false);
   const [retentionBusy, setRetentionBusy] = useState(false);
+  const [exportBusy, setExportBusy] = useState(false);
 
   const sources = useAsync(() => api.sources(), []);
   const quarantine = useAsync(() => api.quarantine(), []);
@@ -110,6 +111,29 @@ export default function Administration() {
       setNotice((error as Error).message);
     } finally {
       setRetentionBusy(false);
+    }
+  }
+
+  async function exportRetention() {
+    if (!retention.data) return;
+    setExportBusy(true);
+    setNotice(null);
+    try {
+      const limit = Math.max(1, Math.min(retention.data.history_total, 1000));
+      const csv = await api.retentionHistoryCsv(limit);
+      const url = URL.createObjectURL(csv);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `threatpolish-retention-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setNotice("Retention history exported as CSV.");
+    } catch (error) {
+      setNotice((error as Error).message);
+    } finally {
+      setExportBusy(false);
     }
   }
 
@@ -230,6 +254,14 @@ export default function Administration() {
             <button
               type="button"
               className="secondary small"
+              disabled={exportBusy || retentionHistory.length === 0}
+              onClick={exportRetention}
+            >
+              {exportBusy ? "Exporting…" : "Export CSV"}
+            </button>
+            <button
+              type="button"
+              className="secondary small"
               disabled={retentionBusy}
               onClick={runRetentionNow}
             >
@@ -325,6 +357,13 @@ export default function Administration() {
                   {retention.data.graph.edges} edges.
                 </p>
                 <h3>Recent runs</h3>
+                <p className="muted small">
+                  {retention.data.history_total > retentionHistory.length
+                    ? `Showing the last ${retentionHistory.length} of ${retention.data.history_total} recorded runs. Export includes up to 1,000 runs.`
+                    : `${retention.data.history_total} recorded run${
+                        retention.data.history_total === 1 ? "" : "s"
+                      }.`}
+                </p>
                 <table>
                   <thead>
                     <tr>

@@ -6,13 +6,15 @@ without exposing event content, and allow an operator to run it immediately.
 
 from __future__ import annotations
 
-from datetime import datetime
+import csv
+import io
+from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Query, Response
 
 from ..auth.rbac import Principal
-from ..db.retention import retention_status, run_retention
+from ..db.retention import retention_history, retention_status, run_retention
 from .deps import require
 
 router = APIRouter(tags=["operations"])
@@ -110,6 +112,68 @@ def metrics(principal: Principal = Depends(require("graph:read"))) -> Response:
     body = render_metrics(retention_status())
     return Response(
         content=body, media_type="text/plain; version=0.0.4; charset=utf-8"
+    )
+
+
+@router.get("/retention/history.csv")
+def retention_history_csv(
+    limit: int = Query(default=1000, ge=1, le=1000),
+    principal: Principal = Depends(require("audit:read")),
+) -> Response:
+    """Export recorded runs oldest first; the same fields as ``/retention``."""
+    runs = list(reversed(retention_history(limit=limit)))
+    buffer = io.StringIO()
+    writer = csv.writer(buffer, lineterminator="\n")
+    writer.writerow(
+        [
+            "run_id",
+            "ran_at",
+            "trigger",
+            "duration_ms",
+            "backlog",
+            "events_expired",
+            "retired_edges",
+            "stale_observations",
+            "events_removed",
+            "edges_removed",
+            "observations_removed",
+            "nodes_removed",
+            "graph_nodes_before",
+            "graph_edges_before",
+            "overdue",
+        ]
+    )
+    for run in runs:
+        writer.writerow(
+            [
+                run["id"],
+                run["ran_at"],
+                run["trigger"],
+                run["duration_ms"],
+                run["events_expired"]
+                + run["retired_edges"]
+                + run["stale_observations"],
+                run["events_expired"],
+                run["retired_edges"],
+                run["stale_observations"],
+                run["events_removed"],
+                run["edges_removed"],
+                run["observations_removed"],
+                run["nodes_removed"],
+                run["graph_nodes"],
+                run["graph_edges"],
+                "true" if run["overdue"] else "false",
+            ]
+        )
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d")
+    return Response(
+        content=buffer.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="threatpolish-retention-{stamp}.csv"'
+            )
+        },
     )
 
 
