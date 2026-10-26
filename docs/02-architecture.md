@@ -90,7 +90,9 @@ sequenceDiagram
 Correlation is deterministic for a fixed window, corpus and algorithm version.
 It is bounded to the 800 most recent sessions (`MAX_SESSIONS_PER_RUN`) so an
 analyst cannot trigger an unbounded quadratic computation; truncation is
-reported in the run summary. Scored pairs are streamed through a heap of at
+reported in the run summary. The event load is capped at 50,000 rows and keeps
+the newest events when that cap applies, so a busy window cannot silently
+correlate only its oldest prefix; `events_truncated` reports the cap. Scored pairs are streamed through a heap of at
 most `MAX_EDGES_PER_RUN` results instead of being retained, so peak memory stays
 bounded as the window grows; the run reports how many pairs and how many links
 the edge cap removed.
@@ -183,6 +185,28 @@ rows, so the limit holds even when two requests are planned at the same moment.
 | Decoy request body large | Rejected with 413 at the configured bound |
 | Response without approval | Blocked at execution, state `pending_approval` |
 | Rollback of expired action | Rejected by state machine, 409 |
+
+## Reading a campaign
+
+Campaign detail is assembled from the stored edge tables rather than recomputed,
+so the analyst sees exactly the evidence that supported the decision. Three
+derived views sit beside it:
+
+- **Evidence matrix.** The UI plots the campaign's pairwise confidence matrix.
+  Each cell is a stored edge; an empty cell records that the pair did not clear
+  the store threshold. This exposes fragmentation and over-connection without
+  opening individual edges.
+- **Evidence acquisition plan.** For every family, the service sums the weights of
+  components that were *unavailable* across the campaign's active edges, counts
+  the edges affected, and ranks the gaps. The sum is an upper bound on what new
+  telemetry could recover; it is never presented as a predicted confidence.
+  Families no edge recorded are reported separately from ranked gaps.
+- **Observation efficiency.** Events observed per linked pair and per session. A
+  campaign that links pairs from little telemetry is cheaper to defend than one
+  that needed volume, and the ratio makes that comparable across campaigns.
+
+All three are derived from the same stored component tables that back the
+explanation, so they cannot drift from the decision they describe.
 
 ## Capacity
 

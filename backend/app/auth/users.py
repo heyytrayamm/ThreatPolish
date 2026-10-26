@@ -157,20 +157,23 @@ def revoke_sessions(user_id: str) -> int:
 # --------------------------------------------------------------------------- #
 def create_agent_token(*, name: str, role: str = "sensor") -> dict[str, Any]:
     validate_role(role)
+    clean_name = name.strip()[:120]
+    if not clean_name:
+        raise ValidationFailure("a token name is required")
     plaintext, token_hash, prefix = new_agent_token()
     token_id = new_id("agt")
     with connection() as conn:
         conn.execute(
             agent_tokens.insert().values(
                 id=token_id,
-                name=name.strip()[:120],
+                name=clean_name,
                 token_hash=token_hash,
                 prefix=prefix,
                 role=role,
                 created_at=iso(utcnow()),
             )
         )
-    return {"id": token_id, "name": name, "prefix": prefix, "role": role, "token": plaintext}
+    return {"id": token_id, "name": clean_name, "prefix": prefix, "role": role, "token": plaintext}
 
 
 def resolve_agent_token(plaintext: str) -> dict[str, Any] | None:

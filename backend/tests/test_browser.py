@@ -655,6 +655,16 @@ def test_analyst_sees_read_only_retention_history(live_server: str):
             page.wait_for_selector(".page h1:has-text('Retention')")
             assert "view=retention" in page.url
             page.get_by_text("Graph horizon").wait_for()
+
+            # A hand-edited link to an administrator view must fall back to the
+            # analyst's Overview instead of mounting the administration page.
+            page.goto(f"{live_server}/?view=admin", wait_until="domcontentloaded")
+            page.wait_for_selector(".page h1:has-text('Overview')")
+            page.wait_for_function("!location.search.includes('view=admin')")
+            assert (
+                page.get_by_role("button", name="Administration", exact=True).count()
+                == 0
+            )
         finally:
             browser.close()
 

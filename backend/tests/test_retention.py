@@ -393,6 +393,15 @@ def test_admin_can_run_retention_from_the_api(client, admin_headers, viewer_head
     assert history[0]["id"] == result["run_id"]
     assert history[0]["trigger"] == "manual"
 
+    # A manual run is an administrator action, not an anonymous system event.
+    me = client.get("/api/v1/auth/me", headers=admin_headers).json()
+    entries = client.get("/api/v1/audit?action=retention", headers=admin_headers).json()[
+        "items"
+    ]
+    entry = next(item for item in entries if item["object_id"] == result["run_id"])
+    assert entry["actor_id"] == me["id"]
+    assert entry["actor_role"] == "admin"
+
 
 def test_metrics_exposes_retention_and_graph_without_event_content(
     client, admin_headers, viewer_headers

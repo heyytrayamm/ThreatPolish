@@ -44,18 +44,21 @@ def _environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     from app.api import deps
     from app.core.config import reset_settings_cache
     from app.db import database
+    from app.websec import scanner as websec_scanner
 
     reset_settings_cache()
     deps.ingest_limiter.cache_clear()
     deps.login_limiter.cache_clear()
     deps.login_ip_limiter.cache_clear()
     deps.decoy_limiter.cache_clear()
+    websec_scanner._host_limiters.clear()
     database.dispose_engine()
     yield
     deps.ingest_limiter.cache_clear()
     deps.login_limiter.cache_clear()
     deps.login_ip_limiter.cache_clear()
     deps.decoy_limiter.cache_clear()
+    websec_scanner._host_limiters.clear()
     database.dispose_engine()
     reset_settings_cache()
     os.environ.pop("TP_DB_URL", None)

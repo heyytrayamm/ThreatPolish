@@ -108,7 +108,9 @@ def create_response(
         raise ValidationFailure("a target is required")
     if action in APPLICABLE_ACTIONS:
         try:
-            ipaddress.ip_address(target)
+            # Event ingestion stores the canonical text form, so compare the
+            # same form here; an expanded IPv6 address is the same observer.
+            target = str(ipaddress.ip_address(target))
         except ValueError as exc:
             raise ValidationFailure("only IP addresses can be rate limited") from exc
         if not _observed_target(target):

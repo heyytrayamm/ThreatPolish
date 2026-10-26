@@ -29,7 +29,7 @@ function viewFromUrl(): View {
   return requested && VIEWS.has(requested as View) ? (requested as View) : "overview";
 }
 
-function rememberView(view: View): void {
+function rememberView(view: View, mode: "push" | "replace" = "push"): void {
   const url = new URL(window.location.href);
   if (view === "overview") url.searchParams.delete("view");
   else url.searchParams.set("view", view);
@@ -37,7 +37,9 @@ function rememberView(view: View): void {
   const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
   // A new entry makes the browser's back and forward buttons follow the
   // sidebar; re-clicking the current view should not add a duplicate.
-  if (next !== current) window.history.pushState(null, "", url);
+  if (next === current) return;
+  if (mode === "replace") window.history.replaceState(null, "", url);
+  else window.history.pushState(null, "", url);
 }
 
 const NAV: { key: View; label: string }[] = [
@@ -54,6 +56,12 @@ const NAV: { key: View; label: string }[] = [
 ];
 
 const VIEWS = new Set<View>(NAV.map((item) => item.key));
+
+function canView(view: View, role: string): boolean {
+  if (view === "admin") return role === "admin";
+  if (view === "retention") return role === "admin" || role === "analyst";
+  return true;
+}
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -80,6 +88,15 @@ export default function App() {
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
+
+  // A hand-edited or stale link must not mount a view the signed-in role
+  // cannot use. Replace the entry so Back does not bounce into the same link.
+  useEffect(() => {
+    if (user && !canView(view, user.role)) {
+      setView("overview");
+      rememberView("overview", "replace");
+    }
+  }, [user, view]);
 
   async function signIn(event: FormEvent) {
     event.preventDefault();
@@ -165,6 +182,8 @@ export default function App() {
     );
   }
 
+  const activeView: View = canView(view, user.role) ? view : "overview";
+
   return (
     <div className="app">
       <a className="skip-link" href="#main">Skip to content</a>
@@ -182,18 +201,12 @@ export default function App() {
         </div>
         <nav>
           <span className="nav-label">Workspace</span>
-          {NAV.filter((item) => {
-            if (item.key === "admin") return user.role === "admin";
-            if (item.key === "retention") {
-              return user.role === "admin" || user.role === "analyst";
-            }
-            return true;
-          }).map((item) => (
+          {NAV.filter((item) => canView(item.key, user.role)).map((item) => (
             <button
               key={item.key}
               type="button"
-              className={view === item.key ? "nav-item active" : "nav-item"}
-              aria-current={view === item.key ? "page" : undefined}
+              className={activeView === item.key ? "nav-item active" : "nav-item"}
+              aria-current={activeView === item.key ? "page" : undefined}
               onClick={() => selectView(item.key)}
             >
               {item.label}
@@ -218,18 +231,18 @@ export default function App() {
         </div>
       </aside>
       <main className="content" id="main">
-        {view === "overview" && (
+        {activeView === "overview" && (
           <Overview user={user} onOpenRetention={() => selectView("retention")} />
         )}
-        {view === "events" && <Events />}
-        {view === "campaigns" && <Campaigns user={user} />}
-        {view === "deception" && <Deception user={user} />}
-        {view === "findings" && <Findings user={user} />}
-        {view === "crypto" && <Crypto user={user} />}
-        {view === "responses" && <Responses user={user} />}
-        {view === "retention" && <Retention />}
-        {view === "admin" && <Administration />}
-        {view === "account" && <Account user={user} />}
+        {activeView === "events" && <Events />}
+        {activeView === "campaigns" && <Campaigns user={user} />}
+        {activeView === "deception" && <Deception user={user} />}
+        {activeView === "findings" && <Findings user={user} />}
+        {activeView === "crypto" && <Crypto user={user} />}
+        {activeView === "responses" && <Responses user={user} />}
+        {activeView === "retention" && <Retention />}
+        {activeView === "admin" && <Administration />}
+        {activeView === "account" && <Account user={user} />}
       </main>
     </div>
   );

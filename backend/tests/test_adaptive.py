@@ -147,6 +147,27 @@ def test_activation_is_visible_to_a_separate_decoy_process(client, sensor_header
     assert active_override("203.0.113.78") is None
 
 
+def test_ipv6_activation_override_uses_the_canonical_address(client, sensor_headers, admin_headers):
+    """An expanded IPv6 address must match the compressed form the decoy sees."""
+    campaign = _build_campaign(client, sensor_headers, admin_headers)
+    plan = client.post(
+        "/api/v1/investigations", json={"campaign_id": campaign["id"]}, headers=admin_headers
+    ).json()
+    activated = client.post(
+        f"/api/v1/investigations/{plan['id']}/activate",
+        json={"source_ip": "2001:0db8:0000:0000:0000:0000:0000:0001"},
+        headers=admin_headers,
+    )
+    assert activated.status_code == 200, activated.text
+    assert activated.json()["source_ip"] == "2001:db8::1"
+
+    from app.deception.adaptive import active_override
+
+    assert active_override("2001:db8::1")["investigation_id"] == plan["id"]
+    assert active_override("2001:DB8::1")["investigation_id"] == plan["id"]
+    assert active_override("2001:db8::2") is None
+
+
 def test_expired_activation_releases_the_subject(client, sensor_headers, admin_headers):
     campaign = _build_campaign(client, sensor_headers, admin_headers)
     plan = client.post(

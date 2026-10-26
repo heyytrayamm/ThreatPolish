@@ -96,6 +96,12 @@ class DecoyHandler(BaseHTTPRequestHandler):
             self._reject_method()
             return
 
+        # A fresh handler object serves every new connection, so these must be
+        # initialised before the rate-limit branch. Otherwise the first throttled
+        # request on a new connection fails while building its telemetry event.
+        self._current_profile = self.decoy.profile
+        self._investigation_id: str | None = None
+
         client_ip = self.client_address[0]
         allowed, retry_after = self.decoy.limiter.allow(client_ip)
         if not allowed:
@@ -119,8 +125,6 @@ class DecoyHandler(BaseHTTPRequestHandler):
             self.end_headers()
             return
 
-        self._current_profile = self.decoy.profile
-        self._investigation_id: str | None = None
         override = active_override(client_ip)
         if override:
             candidate = get_profile(override.get("profile", ""))
@@ -492,6 +496,8 @@ def start_decoy(
     *, host: str = "127.0.0.1", port: int | None = None, profile_name: str | None = None
 ) -> DecoyService:
     settings = get_settings()
+    if not settings.decoy_enabled:
+        raise RuntimeError("the HTTP decoy is disabled by TP_DECOY_ENABLED")
     init_db()
     profile = get_profile(profile_name) if profile_name else None
     if profile is None:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import heapq
+import threading
 import time
 from collections import defaultdict
 from datetime import datetime, timedelta
@@ -13,6 +14,7 @@ from sqlalchemy import select, text
 from sqlalchemy.engine import Connection
 
 from ..core.config import get_settings
+from ..core.errors import Conflict
 from ..core.logging import get_logger
 from ..core.security import iso, new_id, utcnow
 from ..db.database import connection, dumps, loads
@@ -36,6 +38,12 @@ MAX_EDGES_PER_RUN = 8_000
 # old row is archived, never deleted, when it loses that continuity.
 MIN_MEMBERSHIP_OVERLAP = 0.5
 MAX_MEMBERSHIP_HISTORY = 20
+
+# Correlation rebuilds the same graph rows in one transaction.  Two runs in the
+# same API process would race on session and campaign inserts; make the second
+# request wait-free and explicit rather than letting it surface as a unique
+# constraint error.  The shipped deployment runs one API worker.
+_CORRELATION_LOCK = threading.Lock()
 
 
 class UnionFind:
@@ -62,6 +70,17 @@ class UnionFind:
 def correlate(
     *, window_hours: int | None = None, trigger: str = "manual", actor: str = "system"
 ) -> dict[str, Any]:
+    if not _CORRELATION_LOCK.acquire(blocking=False):
+        raise Conflict("a correlation run is already in progress; try again shortly")
+    try:
+        return _correlate(window_hours=window_hours, trigger=trigger, actor=actor)
+    finally:
+        _CORRELATION_LOCK.release()
+
+
+def _correlate(
+    *, window_hours: int | None = None, trigger: str = "manual", actor: str = "system"
+) -> dict[str, Any]:
     settings = get_settings()
     hours = window_hours or settings.correlation_window_hours
     started_at = utcnow()
@@ -69,7 +88,7 @@ def correlate(
     started = time.perf_counter()
     run_id = new_id("run")
 
-    events = events_in_window(iso(window_start), iso(started_at))
+    events, events_truncated = events_in_window(iso(window_start), iso(started_at))
     sessions = build_sessions(events)
     truncated = False
     if len(sessions) > MAX_SESSIONS_PER_RUN:
@@ -318,6 +337,7 @@ def correlate(
                 metrics=dumps(
                     {
                         "events": len(events),
+                        "events_truncated": events_truncated,
                         "window_hours": hours,
                         "pairs_total": total_pairs,
                         "pairs_scored": scored_count,
@@ -344,6 +364,7 @@ def correlate(
         "run_id": run_id,
         "window_hours": hours,
         "events": len(events),
+        "events_truncated": events_truncated,
         "sessions": len(sessions),
         "pairs_total": total_pairs,
         "pairs_scored": scored_count,
@@ -359,7 +380,7 @@ def correlate(
         "campaigns_archived": archived,
         "pairs_dropped_by_cap": dropped,
         "links_dropped_by_cap": dropped_links,
-        "truncated": truncated or dropped > 0,
+        "truncated": truncated or dropped > 0 or events_truncated,
         "duration_ms": round((time.perf_counter() - started) * 1000, 2),
         "algorithm_version": ALGORITHM_VERSION,
         "trigger": trigger,
@@ -966,6 +987,7 @@ def _upsert_campaign(
                 updated_at=iso(now),
                 member_count=len(members),
                 ip_count=len(ips),
+                algorithm_version=ALGORITHM_VERSION,
                 archived_at=None if reactivated else existing.get("archived_at"),
             )
         )
@@ -1057,4 +1079,7 @@ def latest_run() -> dict[str, Any] | None:
         return None
     data = dict(row._mapping)
     data["metrics"] = loads(data.get("metrics"), {})
+    # The POST result calls this field ``run_id``; expose the same name on the
+    # read path so clients do not have to know the storage column name.
+    data["run_id"] = data["id"]
     return data

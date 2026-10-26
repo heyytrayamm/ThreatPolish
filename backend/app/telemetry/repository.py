@@ -137,17 +137,29 @@ def get_event(event_id: str) -> dict[str, Any] | None:
     return row_to_event(row) if row else None
 
 
-def events_in_window(start: str, end: str, *, limit: int = 50_000) -> list[dict[str, Any]]:
+def events_in_window(
+    start: str, end: str, *, limit: int = 50_000
+) -> tuple[list[dict[str, Any]], bool]:
+    """Load a bounded window, keeping the newest events when the cap applies.
+
+    Ordering ascending with a plain LIMIT silently discarded the newest events
+    once a busy deployment crossed the cap, which made correlation reason about
+    a stale prefix of the window.  Fetch one extra row to detect truncation,
+    keep the newest ``limit`` events and return them oldest-first for the
+    session builder.
+    """
     with connection() as conn:
         rows = conn.execute(
             text(
                 f"SELECT {EVENT_COLUMNS} FROM events "
                 "WHERE occurred_at >= :start AND occurred_at <= :end "
-                "ORDER BY occurred_at ASC LIMIT :limit"
+                "ORDER BY occurred_at DESC, id DESC LIMIT :limit"
             ),
-            {"start": start, "end": end, "limit": limit},
+            {"start": start, "end": end, "limit": max(1, limit) + 1},
         ).fetchall()
-    return [row_to_event(dict(row._mapping)) for row in rows]
+    truncated = len(rows) > limit
+    kept = rows[:limit]
+    return [row_to_event(dict(row._mapping)) for row in reversed(kept)], truncated
 
 
 def event_summary(*, since: str) -> dict[str, Any]:

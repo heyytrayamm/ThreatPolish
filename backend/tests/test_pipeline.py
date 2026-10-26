@@ -116,6 +116,35 @@ def test_retention_purges_only_expired_events(client, sensor_headers, admin_head
     assert events["items"][0]["session_id"] == "retention-fresh"
 
 
+def test_event_window_cap_keeps_the_newest_events(client, sensor_headers):
+    """Crossing the load cap must not silently correlate a stale prefix."""
+    now = datetime.now(timezone.utc)
+    batch = [
+        make_event(
+            session_id=f"cap-{index}",
+            occurred_at=(now - timedelta(minutes=3 - index)).isoformat(),
+        )
+        for index in range(3)
+    ]
+    response = client.post("/api/v1/ingest/events", json=batch, headers=sensor_headers)
+    assert response.status_code == 202, response.text
+    assert response.json()["accepted"] == 3
+
+    from app.telemetry.repository import events_in_window
+
+    events, truncated = events_in_window(
+        (now - timedelta(hours=1)).isoformat(), now.isoformat(), limit=2
+    )
+    assert truncated is True
+    assert [event["session_id"] for event in events] == ["cap-1", "cap-2"]
+
+    complete, complete_truncated = events_in_window(
+        (now - timedelta(hours=1)).isoformat(), now.isoformat(), limit=10
+    )
+    assert complete_truncated is False
+    assert [event["session_id"] for event in complete] == ["cap-0", "cap-1", "cap-2"]
+
+
 def test_sliding_window_limiter_enforces_bounds():
     from app.core.limits import SlidingWindowLimiter
 

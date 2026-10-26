@@ -239,4 +239,6 @@ def run_retention_now(
     principal: Principal = Depends(require("audit:read")),
 ) -> dict[str, Any]:
     """Run both retention horizons now; the run is recorded and audited."""
-    return run_retention(trigger="manual")
+    return run_retention(
+        trigger="manual", actor_id=principal.user_id, actor_role=principal.role
+    )

@@ -2,6 +2,72 @@
 
 All notable changes to this project are recorded here. Dates use ISO 8601.
 
+## 1.0.4 — 2026-10-26
+
+### Added
+
+- Campaign detail returns an **evidence acquisition plan**. For each evidence
+  family it aggregates the components that were unavailable across the campaign's
+  active edges, counts the edges affected, ranks the gaps by that count and by the
+  weight at stake, and pairs every gap with a concrete collection instruction.
+  Families no edge recorded are reported separately, and the weight is labelled an
+  upper bound rather than a confidence forecast (`test_correlation.py`).
+- Campaign detail reports **observation efficiency**: events observed, observations
+  per linked pair and observations per session, so two campaigns of equal
+  confidence can be compared by how concentrated their evidence was.
+- The Campaigns page renders an **evidence matrix** — the campaign's pairwise
+  confidence as a grid with family-contribution bars — so fragmentation, missing
+  links and over-connection are visible before an edge is opened. Empty cells are
+  explained as a store-threshold finding, not missing UI.
+- The Campaigns page renders the acquisition plan with family coverage, weight at
+  stake, ranked gaps and absent-family chips.
+- `backend/scripts/render_assets.py` regenerates every README figure from the
+  recorded evaluation and runtime results; `backend/scripts/capture_screenshots.py`
+  regenerates the dashboard screenshots from a seeded demo instance.
+
+### Changed
+
+- The README is rebuilt around the architecture, confidence model, evidence views
+  and measured results, with generated figures and tables taken from the recorded
+  runs.
+
+### Fixed
+
+- Correlation runs are serialised in-process: a second concurrent request now
+  receives `409` instead of racing the same graph rows and surfacing a unique
+  constraint error (`test_correlation.py`).
+- The ingestion window kept the **oldest** events when the row cap applied,
+  silently correlating a stale prefix of a busy window. It now keeps the newest
+  events, reports `events_truncated`, and marks the run truncated
+  (`test_pipeline.py`).
+- `GET /correlation/latest` exposes `run_id`, and an existing campaign stores the
+  current `algorithm_version` when its membership is updated.
+- Creating an agent token rejects a blank name and returns the trimmed name that
+  was actually stored (`test_advanced.py`).
+- A manual retention run records the requesting administrator as its actor rather
+  than `system` (`test_retention.py`).
+- Response targets are canonicalised before the observed-target lookup, so an
+  expanded IPv6 address no longer fails to match the stored form
+  (`test_responses.py`).
+- Adaptive investigations canonicalise the source address on activation and on
+  override lookup, and reject an address that is not an IP
+  (`test_adaptive.py`).
+- The HTTP decoy initialises per-request state before the rate-limit branch, fixing
+  a crash on the first throttled request of a new connection, and refuses to start
+  when `TP_DECOY_ENABLED` is false (`test_deception.py`).
+- Web assessment classifies an unusable redirect as a scan limitation instead of
+  leaving the scan marked running; redirect ports and empty hostnames are
+  validated, DNS failures of any kind become validation errors, and duplicate
+  scopes are detected from `IntegrityError` rather than database-specific error
+  text (`test_websec.py`).
+- The dashboard replaces a deep link the signed-in role cannot open, late session
+  lookups cannot overwrite the account currently under inspection, an investigation
+  only offers activation while it is planned or active, and a fast double click no
+  longer starts two retention exports (`test_browser.py`).
+- The evidence matrix no longer advertises a hypothesis state campaign detail
+  cannot receive, family bars render their real score instead of a full track, and
+  the matrix table no longer stretches to the container width.
+
 ## 1.0.3 — 2026-10-25
 
 ### Added

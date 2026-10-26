@@ -299,12 +299,22 @@ export interface CampaignDetail {
   }[];
   edges: {
     id: string;
+    source: string;
+    target: string;
     confidence: number;
     score: number;
     status: string;
+    updated_at?: string;
     evidence: {
       explanation?: string;
-      components?: { name: string; family: string; available: boolean; score: number; detail: string }[];
+      components?: {
+        name: string;
+        family: string;
+        weight?: number;
+        available: boolean;
+        score: number;
+        detail: string;
+      }[];
       missing_evidence?: string[];
       anchors?: string[];
     };
@@ -326,6 +336,28 @@ export interface CampaignDetail {
       caveat: string;
     };
     timeline: { at: string; session: string; event: string }[];
+  };
+  evidence_plan: {
+    items: {
+      family: string;
+      missing_on_edges: number;
+      weight_at_stake: number;
+      components: string[];
+      guidance: string;
+    }[];
+    family_coverage: Record<string, number>;
+    absent_families: string[];
+    note: string;
+  };
+  observation: {
+    observations: number;
+    sessions: number;
+    source_ips: number;
+    linked_pairs: number;
+    observations_per_link: number | null;
+    observations_per_session: number | null;
+    compression: number | null;
+    note: string;
   };
 }
 
@@ -413,13 +445,18 @@ export interface DecoyProfile {
 export interface Investigation {
   id: string;
   created_at: string;
+  updated_at?: string;
   campaign_id: string | null;
   edge_id: string | null;
   status: string;
+  source_ip?: string | null;
+  expires_at?: string | null;
   chosen_profile: string | null;
   missing_evidence: string[];
   outcome: string | null;
   notes: string;
+  hypothesis_before?: { confidence?: number; at?: string };
+  hypothesis_after?: { confidence?: number; at?: string } | null;
 }
 
 export interface SignInAnomaly {

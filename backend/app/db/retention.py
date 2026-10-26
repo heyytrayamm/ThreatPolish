@@ -294,7 +294,12 @@ def retention_history(
     ]
 
 
-def run_retention(*, trigger: str = "manual") -> dict[str, Any]:
+def run_retention(
+    *,
+    trigger: str = "manual",
+    actor_id: str | None = None,
+    actor_role: str = "system",
+) -> dict[str, Any]:
     """Run both horizons, record the pre-run backlog and audit the run.
 
     ``purge_all`` stays side-effect free so callers can enforce retention
@@ -346,7 +351,8 @@ def run_retention(*, trigger: str = "manual") -> dict[str, Any]:
         record_audit(
             conn,
             action="retention.run",
-            actor_role="system",
+            actor_id=actor_id,
+            actor_role=actor_role,
             object_type="retention_run",
             object_id=run_id,
             detail=detail,

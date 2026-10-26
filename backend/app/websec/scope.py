@@ -14,6 +14,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from ..core.config import get_settings
 from ..core.errors import AuthorizationFailure, Conflict, NotFound, ValidationFailure
@@ -25,7 +26,10 @@ from ..db.schema import watch_scopes
 def normalize_domain(value: str) -> str:
     raw = value.strip().lower()
     if "://" in raw:
-        raw = urlsplit(raw).hostname or ""
+        try:
+            raw = urlsplit(raw).hostname or ""
+        except ValueError as exc:
+            raise ValidationFailure("invalid domain") from exc
     raw = raw.split("/", 1)[0].strip(".")
     if raw.startswith("["):
         close = raw.find("]")
@@ -80,10 +84,8 @@ def create_scope(
                     notes=notes[:2000],
                 )
             )
-    except Exception as exc:
-        if "UNIQUE" in str(exc).upper() or "unique" in str(exc):
-            raise Conflict("an authorization already exists for this domain") from exc
-        raise
+    except IntegrityError as exc:
+        raise Conflict("an authorization already exists for this domain") from exc
     return get_scope_by_domain(normalized)
 
 
@@ -147,7 +149,10 @@ def validate_target(target: str, *, allow_active: bool) -> tuple[str, str, str]:
     raw = target.strip()
     if "://" not in raw:
         raw = "https://" + raw
-    parsed = urlsplit(raw)
+    try:
+        parsed = urlsplit(raw)
+    except ValueError as exc:
+        raise ValidationFailure("target URL is not valid") from exc
     if parsed.scheme not in {"http", "https"}:
         raise ValidationFailure("only http and https targets are supported")
     if parsed.username or parsed.password:
@@ -178,7 +183,7 @@ def _assert_public_host(host: str) -> None:
     settings = get_settings()
     try:
         infos = socket.getaddrinfo(host, None)
-    except socket.gaierror as exc:
+    except (socket.gaierror, OSError, UnicodeError) as exc:
         raise ValidationFailure(f"target hostname did not resolve: {host}") from exc
     addresses = {info[4][0] for info in infos}
     if not addresses:

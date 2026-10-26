@@ -64,7 +64,7 @@ Time to detection: 10 of 12 multi-session groups produced a link, median 541.5s,
 
 Adaptive experiment: 214 ambiguous pairs in 7 candidate clusters; 7 clusters investigated, 1891 pairs recomputed; of the evaluable pairs, 1 links gained correctly, 0 gained incorrectly, 0 lost correctly and 0 lost incorrectly; 1539 unchanged. Additional observation is simulated by replaying one command the session already used, for sessions in the largest uncertain clusters only. The replay adds only behaviour the actor showed; the earlier simulation also added a category-derived request path, which manufactured similarity between unrelated sessions. Counts cover evaluable pairs.
 
-Resources: total 60.312s wall, 60.270s CPU, peak memory 18.90 MB, 1.0 sessions/s, 30.882 ms/pair.
+Resources: total 60.659s wall, 60.620s CPU, peak memory 18.90 MB, 1.0 sessions/s, 31.059 ms/pair.
 
 ## Seed 2026
 
@@ -113,11 +113,11 @@ Time to detection: 10 of 12 multi-session groups produced a link, median 614.0s,
 
 Adaptive experiment: 208 ambiguous pairs in 6 candidate clusters; 6 clusters investigated, 1770 pairs recomputed; of the evaluable pairs, 2 links gained correctly, 0 gained incorrectly, 0 lost correctly and 0 lost incorrectly; 1429 unchanged. Additional observation is simulated by replaying one command the session already used, for sessions in the largest uncertain clusters only. The replay adds only behaviour the actor showed; the earlier simulation also added a category-derived request path, which manufactured similarity between unrelated sessions. Counts cover evaluable pairs.
 
-Resources: total 58.656s wall, 58.617s CPU, peak memory 18.78 MB, 1.1 sessions/s, 30.034 ms/pair.
+Resources: total 58.939s wall, 58.900s CPU, peak memory 18.75 MB, 1.1 sessions/s, 30.179 ms/pair.
 
 ## Volume run (seed 99)
 
-165 sessions and 13530 pairs: total 131.733s wall, 131.646s CPU, peak memory 129.19 MB, 9.736 ms/pair.
+165 sessions and 13530 pairs: total 131.911s wall, 131.827s CPU, peak memory 129.08 MB, 9.75 ms/pair.
 
 Time to detection: 40 of 42 multi-session groups produced a link, median 584.0s, mean 589.0s, worst 1052.0s.
 

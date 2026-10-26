@@ -106,6 +106,17 @@ def test_full_response_lifecycle(client, admin_headers, viewer_headers, sensor_h
     assert rolled_back.json()["status"] == "rolled_back"
 
 
+def test_ipv6_target_is_matched_in_its_canonical_form(client, admin_headers, sensor_headers):
+    _ingest_source(client, sensor_headers, ip="2001:db8::99")
+    response = _request(
+        client,
+        admin_headers,
+        target="2001:0db8:0000:0000:0000:0000:0000:0099",
+    )
+    assert response.status_code == 201, response.text
+    assert response.json()["target"] == "2001:db8::99"
+
+
 def test_unobserved_target_is_refused(client, admin_headers, sensor_headers):
     response = _request(client, admin_headers, target="198.51.100.250")
     assert response.status_code == 403

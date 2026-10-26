@@ -48,7 +48,7 @@ when the bundle is missing, stale or Playwright is absent.
 
 ## Measured behaviour
 
-Latest full run: **159 passed on SQLite**, including the four browser cases;
+Latest full run: **166 passed on SQLite**, including the four browser cases;
 the same suite passes against PostgreSQL 16.2. CI runs both engines on every
 push; the PostgreSQL job starts a service database and the fixture resets its
 schema per test, so isolation matches the SQLite path.

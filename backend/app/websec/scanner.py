@@ -26,7 +26,7 @@ import httpx
 from sqlalchemy import select, text
 
 from ..core.config import get_settings
-from ..core.errors import AuthorizationFailure, NotFound, UpstreamFailure
+from ..core.errors import AuthorizationFailure, NotFound, UpstreamFailure, ValidationFailure
 from ..core.limits import SlidingWindowLimiter
 from ..core.logging import get_logger
 from ..core.security import iso, new_id, utcnow
@@ -121,8 +121,13 @@ def assess(
                     "active path probes were skipped: the final host's scope does not "
                     "authorize them"
                 )
-    except (AuthorizationFailure, UpstreamFailure) as exc:
+    except (AuthorizationFailure, UpstreamFailure, ValidationFailure) as exc:
         error = exc.message
+        limitations.append(error)
+    except httpx.InvalidURL:
+        # InvalidURL is a plain Exception in httpx, not an HTTPError, so an
+        # unusable redirect would escape and leave the scan marked running.
+        error = "target redirect is not a valid URL"
         limitations.append(error)
     except httpx.HTTPError as exc:
         error = f"target request failed: {type(exc).__name__}"
@@ -235,13 +240,21 @@ def _fetch(url: str) -> tuple[httpx.Response, str]:
             _rate_limit(host)
             response = _bounded_request(client, current)
             if response.is_redirect and response.headers.get("location"):
-                target = urljoin(current, response.headers["location"])
-                parsed = urlsplit(target)
+                try:
+                    target = urljoin(current, response.headers["location"])
+                    parsed = urlsplit(target)
+                    # Accessing the port validates it; httpx would otherwise
+                    # raise a bare InvalidURL that the caller cannot classify.
+                    _ = parsed.port
+                except ValueError as exc:
+                    raise ValidationFailure("redirect target is not a valid URL") from exc
                 if parsed.scheme not in {"http", "https"}:
                     raise AuthorizationFailure("redirect left the http(s) scheme")
                 if parsed.username or parsed.password:
                     raise AuthorizationFailure("redirect contained URL credentials")
                 redirect_host = parsed.hostname or ""
+                if not redirect_host:
+                    raise ValidationFailure("redirect target has no hostname")
                 find_active_scope(redirect_host)
                 # Re-check the destination address: authorization is per host,
                 # and a redirect must not turn an authorized name into an SSRF
@@ -486,7 +499,7 @@ def _active_checks(base: str) -> list[Finding]:
             _rate_limit(host)
             try:
                 response = _bounded_request(client, base + path)
-            except (httpx.HTTPError, UpstreamFailure):
+            except (httpx.HTTPError, httpx.InvalidURL, UpstreamFailure):
                 continue
             if response.status_code != 200:
                 continue

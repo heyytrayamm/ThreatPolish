@@ -111,6 +111,21 @@ the absorbed identifier is recorded against the survivor and the response says
 `redirected_from`. Archived campaigns stay readable but are not scanned for new
 work; their reviews are preserved rather than deleted.
 
+Campaign detail also answers two analyst questions about evidence quality:
+
+| Field | Meaning |
+| --- | --- |
+| `evidence_plan.items[]` | Evidence families with unavailable components on this campaign, ranked by affected pairs: `family`, `missing_on_edges`, `weight_at_stake` (sum across pairs), `components`, `guidance` |
+| `evidence_plan.family_coverage` | Available weight over total weight per family; `absent_families` names families no edge recorded |
+| `evidence_plan.note` | States that weight at stake is an upper bound, not a confidence forecast |
+| `observation.observations` | Sum of member session event counts |
+| `observation.observations_per_link` | Observations divided by linked pairs; lower means more concentrated evidence |
+| `observation.observations_per_session` | Observations divided by sessions |
+
+`edges` contains only relationships that currently support the campaign
+(`status = active`); a demoted relationship leaves the campaign and remains
+visible in the graph as a hypothesis.
+
 Propose a response. The target must already appear in ingested telemetry;
 policy refuses to act on a host the platform has never observed.
 

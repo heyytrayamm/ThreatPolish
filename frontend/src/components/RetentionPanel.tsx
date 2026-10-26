@@ -251,7 +251,9 @@ export function RetentionPanel({
   }
 
   async function exportRetention() {
-    if (!retention.data) return;
+    // The disabled attribute only applies after a re-render; a fast double
+    // click would otherwise start two downloads.
+    if (!retention.data || exportBusy) return;
     setExportBusy(true);
     setNotice(null);
     try {

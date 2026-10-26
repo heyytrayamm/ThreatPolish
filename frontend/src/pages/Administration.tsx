@@ -1,4 +1,4 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useRef, useState } from "react";
 import { api, SessionHistory, User } from "../api";
 import { RetentionPanel } from "../components/RetentionPanel";
 import { SessionTable } from "../components/SessionTable";
@@ -16,6 +16,9 @@ export default function Administration() {
   const [tokenRole, setTokenRole] = useState<"sensor" | "analyst">("sensor");
   const [issued, setIssued] = useState<{ name: string; token: string } | null>(null);
   const [tokenBusy, setTokenBusy] = useState(false);
+  // Session lookups are per-account. A slow response for the previously
+  // inspected account must not overwrite the one now open.
+  const inspection = useRef(0);
 
   const sources = useAsync(() => api.sources(), []);
   const quarantine = useAsync(() => api.quarantine(), []);
@@ -24,17 +27,27 @@ export default function Administration() {
   const tokens = useAsync(() => api.agentTokens(), [tick]);
 
   async function inspect(user: User) {
+    const request = ++inspection.current;
     setAudited(user);
     setAuditedHistory(null);
     setAuditError(null);
     setLoadingHistory(true);
     try {
-      setAuditedHistory(await api.userSessions(user.id));
+      const history = await api.userSessions(user.id);
+      if (request === inspection.current) setAuditedHistory(history);
     } catch (error) {
-      setAuditError((error as Error).message);
+      if (request === inspection.current) setAuditError((error as Error).message);
     } finally {
-      setLoadingHistory(false);
+      if (request === inspection.current) setLoadingHistory(false);
     }
+  }
+
+  function closeInspection() {
+    inspection.current += 1;
+    setAudited(null);
+    setAuditedHistory(null);
+    setAuditError(null);
+    setLoadingHistory(false);
   }
 
   async function signOutDevice(user: User, jti: string) {
@@ -172,7 +185,7 @@ export default function Administration() {
         <Card
           title={`Sessions — ${audited.name}`}
           actions={
-            <button type="button" className="link" onClick={() => setAudited(null)}>
+            <button type="button" className="link" onClick={closeInspection}>
               Close
             </button>
           }

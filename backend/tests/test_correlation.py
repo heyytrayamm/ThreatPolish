@@ -498,6 +498,18 @@ def test_expiry_retires_a_relationship_without_erasing_its_evidence(client):
     assert evidence["expired_at"]
 
 
+def test_overlapping_correlation_runs_are_rejected_before_they_race(client, admin_headers):
+    from app.correlation import engine
+
+    with engine._CORRELATION_LOCK:
+        blocked = client.post("/api/v1/correlate", json={}, headers=admin_headers)
+    assert blocked.status_code == 409, blocked.text
+    assert blocked.json()["error"]["code"] == "conflict"
+
+    allowed = client.post("/api/v1/correlate", json={}, headers=admin_headers)
+    assert allowed.status_code == 200, allowed.text
+
+
 def _feedback(client, headers, campaign_id: str, label: str, note: str = "") -> dict:
     response = client.post(
         "/api/v1/feedback",
@@ -551,6 +563,7 @@ def test_campaign_identity_survives_membership_growth(client, sensor_headers, ad
 
     detail = client.get(f"/api/v1/campaigns/{original_id}", headers=admin_headers).json()
     assert detail["campaign"]["member_count"] == 3
+    assert detail["campaign"]["algorithm_version"] == ALGORITHM_VERSION
     assert detail["campaign"]["status"] == "confirmed"
     assert detail["campaign"]["status_updated_at"]
     assert "sess-grow-2" in detail["evidence"]["sessions"]
@@ -1023,3 +1036,102 @@ def test_graph_retention_keeps_open_evidence_and_archived_reviews(client):
         "ip:observation_kept",
     }
     assert review is not None and review[0] == "rejected"
+
+
+def test_campaign_detail_ranks_missing_evidence_and_reports_observation_cost(client):
+    """The acquisition plan must rank gaps by how many pairs they weaken.
+
+    The plan is the analyst-facing half of the evidence model: an unavailable
+    component carries no weight today, so its weight is the ceiling that new
+    collection could recover, and the affected-pair count says how much of the
+    campaign depends on it.
+    """
+    from app.correlation.repository import get_campaign
+    from app.core.security import iso, utcnow
+    from app.db.database import connection, dumps
+    from app.db.schema import campaigns, graph_edges, graph_nodes
+
+    now = utcnow()
+    campaign_id = "cmp_plan"
+    components = {
+        "left": [
+            {"name": "intel_reputation", "family": "intel", "weight": 0.25, "available": False, "score": 0.0, "detail": "no reputation feed"},
+            {"name": "toolchain_client", "family": "toolchain", "weight": 0.2, "available": True, "score": 0.8, "detail": "same SSH client"},
+        ],
+        "right": [
+            {"name": "intel_reputation", "family": "intel", "weight": 0.25, "available": False, "score": 0.0, "detail": "no reputation feed"},
+            {"name": "identity_certificate", "family": "identity", "weight": 0.3, "available": False, "score": 0.0, "detail": "no certificate seen"},
+        ],
+    }
+    with connection() as conn:
+        conn.execute(
+            campaigns.insert().values(
+                id=campaign_id,
+                name="plan test",
+                status="candidate",
+                confidence=0.82,
+                summary="two linked sessions",
+                evidence=dumps(
+                    {"sessions": ["plan-alpha", "plan-beta", "plan-gamma"], "ips": ["198.51.100.10"]}
+                ),
+                created_at=iso(now),
+                updated_at=iso(now),
+                algorithm_version=ALGORITHM_VERSION,
+                member_count=3,
+                ip_count=1,
+            )
+        )
+        for label, events in (("alpha", 4), ("beta", 10), ("gamma", 6)):
+            conn.execute(
+                graph_nodes.insert().values(
+                    id=f"session:plan-{label}",
+                    kind="session",
+                    label=f"plan {label}",
+                    props=dumps(
+                        {
+                            "source_ips": ["198.51.100.10"],
+                            "event_count": events,
+                            "severity_max": "medium",
+                        }
+                    ),
+                    first_seen=iso(now),
+                    last_seen=iso(now),
+                )
+            )
+        for label, peer in (("left", "beta"), ("right", "gamma")):
+            conn.execute(
+                graph_edges.insert().values(
+                    id=f"edg_plan_{label}",
+                    kind="session_similarity",
+                    src_id="session:plan-alpha",
+                    dst_id=f"session:plan-{peer}",
+                    confidence=0.82,
+                    score=0.86,
+                    evidence=dumps({"explanation": "shared behaviour", "components": components[label]}),
+                    contradictions=dumps([]),
+                    algorithm_version=ALGORITHM_VERSION,
+                    created_at=iso(now),
+                    updated_at=iso(now),
+                    expires_at=None,
+                    status="active",
+                    campaign_id=campaign_id,
+                )
+            )
+
+    detail = get_campaign(campaign_id)
+    plan = detail["evidence_plan"]
+    assert [item["family"] for item in plan["items"]] == ["intel", "identity"]
+    assert plan["items"][0]["missing_on_edges"] == 2
+    assert plan["items"][0]["weight_at_stake"] == 0.5
+    assert plan["items"][1]["missing_on_edges"] == 1
+    assert plan["family_coverage"]["toolchain"] == 1.0
+    assert plan["family_coverage"]["intel"] == 0.0
+    # Families no edge recorded at all are named separately from ranked gaps.
+    assert "targeting" in plan["absent_families"]
+    assert "toolchain" not in plan["absent_families"]
+
+    observation = detail["observation"]
+    assert observation["observations"] == 20
+    assert observation["sessions"] == 3
+    assert observation["linked_pairs"] == 2
+    assert observation["observations_per_link"] == 10.0

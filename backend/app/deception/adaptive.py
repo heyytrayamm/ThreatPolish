@@ -17,6 +17,7 @@ Safety limits enforced here:
 
 from __future__ import annotations
 
+import ipaddress
 from datetime import timedelta
 from typing import Any
 
@@ -48,6 +49,14 @@ MAX_TTL_MINUTES = 60
 MAX_ACTIVE = 50
 
 
+def _normalize_ip(ip: str) -> str:
+    """Use the canonical text form so an expanded IPv6 address still matches."""
+    try:
+        return str(ipaddress.ip_address(ip.strip()))
+    except ValueError:
+        return ip.strip()
+
+
 def active_override(ip: str) -> dict[str, Any] | None:
     """Load the active decoy override from the database.
 
@@ -62,7 +71,7 @@ def active_override(ip: str) -> dict[str, Any] | None:
                 "SELECT id, chosen_profile, expires_at FROM investigations "
                 "WHERE status = 'active' AND source_ip = :ip AND expires_at > :now "
                 "ORDER BY updated_at DESC LIMIT 1",
-                {"ip": ip, "now": iso(utcnow())},
+                {"ip": _normalize_ip(ip), "now": iso(utcnow())},
             )
     except SQLAlchemyError as exc:
         log.warning("active override lookup failed", extra={"error": str(exc)})
@@ -226,6 +235,10 @@ def activate_investigation(
         raise Conflict(f"investigation is {record['status']} and cannot be activated")
     if _active_count() >= MAX_ACTIVE and record["status"] != "active":
         raise PolicyDenied("active investigation capacity reached")
+    try:
+        source_ip = str(ipaddress.ip_address(source_ip.strip()))
+    except ValueError as exc:
+        raise ValidationFailure("source_ip must be a valid IP address") from exc
 
     profile = get_profile(record["chosen_profile"] or "")
     if not profile or not profile["enabled"] or profile["kind"] != "http":

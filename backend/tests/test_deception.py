@@ -215,6 +215,41 @@ def test_http_decoy_does_not_reflect_untrusted_input(client):
         decoy.stop()
 
 
+def test_first_throttled_request_on_a_connection_is_still_recorded(client, admin_headers):
+    """A new handler object must be able to describe the request it rejects."""
+    from app.deception.http_decoy import start_decoy
+
+    class _Deny:
+        def allow(self, _key, cost=1):
+            return False, 30.0
+
+    decoy = start_decoy(host="127.0.0.1", port=0, profile_name="http-wordpress")
+    decoy.limiter = _Deny()
+    try:
+        base = f"http://127.0.0.1:{decoy.port}"
+        with httpx.Client(timeout=5.0) as http:
+            first = http.get(f"{base}/")
+            second = http.get(f"{base}/")
+        assert first.status_code == 429
+        assert second.status_code == 429
+        assert first.headers["retry-after"]
+    finally:
+        decoy.stop()
+
+    events = client.get(
+        "/api/v1/events?module=honeypot&limit=100", headers=admin_headers
+    ).json()["items"]
+    throttled = [
+        item
+        for item in events
+        if item["event_type"] == "honeypot.http.request"
+        and item["features"].get("throttled")
+    ]
+    assert len(throttled) == 1
+    assert throttled[0]["features"]["status"] == 429
+    assert throttled[0]["features"]["profile"] == "http-wordpress"
+
+
 def test_decoy_reports_source_health(client, admin_headers):
     from app.deception.http_decoy import start_decoy
 

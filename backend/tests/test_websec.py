@@ -17,6 +17,12 @@ class _TargetHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", "0")
             self.end_headers()
             return
+        if self.path == "/redirect-bad-port":
+            self.send_response(302)
+            self.send_header("Location", "http://127.0.0.1:99999/")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
         if self.path == "/redirect-credentials":
             port = self.server.server_address[1]
             self.send_response(302)
@@ -209,6 +215,25 @@ def test_redirect_with_embedded_credentials_is_refused(client, admin_headers, ta
     )
     assert response.status_code == 200, response.text
     assert any("credentials" in item for item in response.json()["limitations"])
+
+
+def test_unusable_redirect_finishes_the_scan_instead_of_leaving_it_running(
+    client, admin_headers, target_server
+):
+    _create_scope(client, admin_headers, target_server, allow_active=False)
+    response = client.post(
+        "/api/v1/websec/assess",
+        headers=admin_headers,
+        json={"target": f"http://{target_server}/redirect-bad-port", "active_checks": False},
+    )
+    assert response.status_code == 200, response.text
+    report = response.json()
+    assert report["status"] == "partial"
+    assert any("not a valid URL" in item for item in report["limitations"]), report["limitations"]
+
+    stored = client.get(f"/api/v1/websec/scans/{report['scan_id']}", headers=admin_headers)
+    assert stored.status_code == 200, stored.text
+    assert stored.json()["status"] == "partial"
 
 
 def test_viewer_cannot_scan(client, viewer_headers):

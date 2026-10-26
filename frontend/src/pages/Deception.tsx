@@ -38,7 +38,8 @@ export default function Deception({ user }: { user: User }) {
       .filter((other) => other.id !== item.id)
       .filter((other) => (other.campaign_id ?? other.edge_id) === subject)
       .filter((other) => other.created_at > item.created_at)
-      .sort((left, right) => (left.created_at < right.created_at ? -1 : 1));
+      .filter((other) => other.status === "planned" || other.status === "active")
+      .sort((left, right) => (left.created_at < right.created_at ? 1 : -1));
     return later[0];
   }
 
@@ -111,7 +112,9 @@ export default function Deception({ user }: { user: User }) {
                       {replacement ? ` · replaced by ${shortId(replacement.id, 16)}` : ""}.
                     </div>
                   )}
-                  {can(user.role, "analyse") && investigation.status !== "superseded" && (
+                  {can(user.role, "analyse") &&
+                    (investigation.status === "planned" ||
+                      investigation.status === "active") && (
                     <div className="row wrap">
                       <input
                         placeholder="source IP"

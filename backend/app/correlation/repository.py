@@ -148,6 +148,110 @@ def list_campaigns(
     ]
 
 
+# What observing a family would buy the analyst. The wording is deliberately
+# operational: a plan entry is a collection task, not a promise that the
+# confidence will rise by the stated amount.
+_FAMILY_GUIDANCE = {
+    "behavior": "Capture more of the command sequence so behavioural overlap is measurable.",
+    "targeting": "Record the assets, URLs and ports the session actually touched.",
+    "timing": "Ingest UTC timestamps for each step so cadence can be compared.",
+    "identity": "Capture TLS/JA3 fingerprints, client certificates or credential pairs.",
+    "intel": "Enrich the source address with reputation, ASN and hosting data.",
+    "toolchain": "Retain user-agent and SSH client banners on every session.",
+}
+
+
+def _evidence_plan(edges: list[dict[str, Any]]) -> dict[str, Any]:
+    """Rank the evidence the campaign is missing.
+
+    A component that is unavailable contributes zero weight today. Summing that
+    weight per family gives an upper bound on what new telemetry could unlock,
+    and counting the edges affected says how much of the campaign the gap
+    weakens. It is an upper bound: an observation that is present can still
+    score low for a specific pair.
+    """
+    families: dict[str, dict[str, Any]] = {}
+    totals = {name: {"available": 0.0, "total": 0.0} for name in _FAMILY_GUIDANCE}
+    for edge in edges:
+        missing_families: set[str] = set()
+        for component in edge["evidence"].get("components", []) or []:
+            family = component.get("family")
+            if family not in _FAMILY_GUIDANCE:
+                continue
+            weight = float(component.get("weight") or 0.0)
+            entry = families.setdefault(
+                family,
+                {
+                    "family": family,
+                    "missing_on_edges": 0,
+                    "weight_at_stake": 0.0,
+                    "components": set(),
+                },
+            )
+            totals[family]["total"] += weight
+            if component.get("available"):
+                totals[family]["available"] += weight
+                continue
+            entry["weight_at_stake"] += weight
+            entry["components"].add(str(component.get("name")))
+            missing_families.add(family)
+        for family in missing_families:
+            families[family]["missing_on_edges"] += 1
+
+    plan = [
+        {
+            "family": entry["family"],
+            "missing_on_edges": entry["missing_on_edges"],
+            "weight_at_stake": round(entry["weight_at_stake"], 3),
+            "components": sorted(entry["components"]),
+            "guidance": _FAMILY_GUIDANCE[entry["family"]],
+        }
+        for entry in families.values()
+        if entry["missing_on_edges"] or entry["weight_at_stake"]
+    ]
+    plan.sort(key=lambda item: (-item["missing_on_edges"], -item["weight_at_stake"], item["family"]))
+    coverage = {
+        name: round(values["available"] / values["total"], 3) if values["total"] else 0.0
+        for name, values in totals.items()
+    }
+    # A family with only unavailable components is a ranked gap above; a family
+    # no edge recorded at all is a collection gap the campaign never had.
+    absent = [name for name, values in totals.items() if values["total"] == 0.0]
+    return {
+        "items": plan,
+        "family_coverage": coverage,
+        "absent_families": absent,
+        "note": (
+            "Weight at stake is an upper bound on the family's contribution, not a "
+            "forecast of the confidence the pair would reach."
+        ),
+    }
+
+
+def _observation_efficiency(sessions: list[dict[str, Any]], linked_pairs: int) -> dict[str, Any]:
+    """How much raw observation each confirmed relationship cost.
+
+    Analysts do not read events, they read relationships. Reporting the events
+    observed per linked pair makes the cost of a campaign explicit and lets two
+    campaigns of equal confidence be compared by how cheaply they were earned.
+    """
+    events = sum(int(session.get("event_count") or 0) for session in sessions)
+    ips = {ip for session in sessions for ip in session.get("source_ips", []) or []}
+    return {
+        "observations": events,
+        "sessions": len(sessions),
+        "source_ips": len(ips),
+        "linked_pairs": linked_pairs,
+        "observations_per_link": round(events / linked_pairs, 2) if linked_pairs else None,
+        "observations_per_session": round(events / len(sessions), 2) if sessions else None,
+        "compression": round(events / linked_pairs, 2) if linked_pairs else None,
+        "note": (
+            "Lower observations per link means the campaign was assembled from "
+            "concentrated evidence rather than volume."
+        ),
+    }
+
+
 def get_campaign(campaign_id: str) -> dict[str, Any]:
     with connection() as conn:
         row = query_one(conn, "SELECT * FROM campaigns WHERE id = :id", {"id": campaign_id})
@@ -284,6 +388,8 @@ def get_campaign(campaign_id: str) -> dict[str, Any]:
         "categories": evidence.get("categories", {}),
         "evidence": evidence,
         "explanation": explanation,
+        "evidence_plan": _evidence_plan(edges),
+        "observation": _observation_efficiency(sessions, len(edges)),
     }
 
 
