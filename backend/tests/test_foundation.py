@@ -262,7 +262,10 @@ def test_token_tampering_is_rejected():
         subject="usr_1", role="viewer", secret="a" * 40, ttl_minutes=5
     )
     header, payload, signature = token.split(".")
-    tampered = f"{header}.{payload}.{'A' + signature[1:]}"
+    # The signature is random; pick a different leading character so the
+    # tampered token is never identical to the valid one.
+    replacement = "A" if signature[0] != "A" else "B"
+    tampered = f"{header}.{payload}.{replacement}{signature[1:]}"
     try:
         decode_access_token(tampered, secret="a" * 40)
     except Exception as exc:
