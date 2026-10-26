@@ -189,7 +189,7 @@ rows, so the limit holds even when two requests are planned at the same moment.
 ## Reading a campaign
 
 Campaign detail is assembled from the stored edge tables rather than recomputed,
-so the analyst sees exactly the evidence that supported the decision. Three
+so the analyst sees exactly the evidence that supported the decision. Four
 derived views sit beside it:
 
 - **Evidence matrix.** The UI plots the campaign's pairwise confidence matrix.
@@ -204,9 +204,15 @@ derived views sit beside it:
 - **Observation efficiency.** Events observed per linked pair and per session. A
   campaign that links pairs from little telemetry is cheaper to defend than one
   that needed volume, and the ratio makes that comparable across campaigns.
+- **Tactic coverage.** Normalized command categories and authentication activity
+  are mapped onto the eleven tactics this telemetry can evidence
+  (`app/correlation/killchain.py`). Each tactic carries a coarse 1–5 consequence
+  weight, so the response separates *breadth* (tactics seen) from *risk-weighted
+  coverage* (consequence seen). Collection and exfiltration are absent rather
+  than inferred.
 
-All three are derived from the same stored component tables that back the
-explanation, so they cannot drift from the decision they describe.
+All four are derived from the same stored evidence and session properties that
+back the explanation, so they cannot drift from the decision they describe.
 
 ## Capacity
 

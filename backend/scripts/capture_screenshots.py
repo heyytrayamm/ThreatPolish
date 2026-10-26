@@ -58,6 +58,11 @@ def capture(base: str, email: str, password: str, out: Path) -> None:
                 matrix.scroll_into_view_if_needed()
                 page.wait_for_timeout(600)
                 page.screenshot(path=str(out / "evidence-matrix.png"))
+            killchain = page.locator("text=Kill-chain coverage").first
+            if killchain.count():
+                killchain.scroll_into_view_if_needed()
+                page.wait_for_timeout(500)
+                page.screenshot(path=str(out / "kill-chain.png"))
             plan = page.locator("text=Evidence acquisition plan").first
             if plan.count():
                 plan.scroll_into_view_if_needed()

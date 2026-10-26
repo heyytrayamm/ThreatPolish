@@ -21,6 +21,20 @@ All notable changes to this project are recorded here. Dates use ISO 8601.
   explained as a store-threshold finding, not missing UI.
 - The Campaigns page renders the acquisition plan with family coverage, weight at
   stake, ranked gaps and absent-family chips.
+- Campaign detail reports **kill-chain coverage**: normalized command categories
+  and authentication activity map onto the eleven tactics this telemetry can
+  evidence (`app/correlation/killchain.py`). Each tactic carries a coarse 1–5
+  consequence weight, and the response separates breadth from risk-weighted
+  coverage. Ties for the furthest tactic go to the later stage. Collection and
+  exfiltration are deliberately absent rather than inferred (`test_killchain.py`).
+- The Campaigns page renders a tactic rail with observed sessions and evidence,
+  a coverage meter and the furthest observed tactic.
+- `backend/scripts/benchmark_evidence_views.py` measures campaign-detail cost and
+  what the evidence views report on the evaluation volume dataset and a
+  400-session run, writing `docs/research/evidence-views.md` and `.json`.
+- The browser suite now exercises the campaign evidence views end to end:
+  matrix shape, observation ratio, acquisition plan, eleven-tactic rail, lit
+  tactics and the empty-cell explanation.
 - `backend/scripts/render_assets.py` regenerates every README figure from the
   recorded evaluation and runtime results; `backend/scripts/capture_screenshots.py`
   regenerates the dashboard screenshots from a seeded demo instance.
@@ -29,7 +43,8 @@ All notable changes to this project are recorded here. Dates use ISO 8601.
 
 - The README is rebuilt around the architecture, confidence model, evidence views
   and measured results, with generated figures and tables taken from the recorded
-  runs.
+  runs. It adds the kill-chain figure and the measured cost of the evidence views
+  at volume, and the test counts now reflect the new suites.
 
 ### Fixed
 

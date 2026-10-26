@@ -14,7 +14,7 @@
   <img alt="Python 3.12" src="https://img.shields.io/badge/Python-3.12-0b7285?logo=python&amp;logoColor=white" />
   <img alt="React 18" src="https://img.shields.io/badge/React-18-087ea4?logo=react&amp;logoColor=white" />
   <img alt="PostgreSQL 16" src="https://img.shields.io/badge/PostgreSQL-16-31648c?logo=postgresql&amp;logoColor=white" />
-  <img alt="166 tests" src="https://img.shields.io/badge/tests-166%20passing-14b8a6" />
+  <img alt="174 tests" src="https://img.shields.io/badge/tests-174%20passing-14b8a6" />
   <img alt="License: proprietary" src="https://img.shields.io/badge/License-proprietary-6b21a8" />
 </p>
 
@@ -142,6 +142,23 @@ per confirmed link, and observations per session. Lower is better — it measure
 how concentrated the evidence behind a campaign actually is, and it lets two
 campaigns of equal confidence be compared by how cheaply they were earned.
 
+### Kill-chain coverage — progression without assertion
+
+![Kill-chain coverage](docs/assets/kill-chain.png)
+
+Normalized command categories and authentication activity are mapped onto the
+eleven tactics this telemetry can actually evidence. Each tactic carries a coarse
+1–5 consequence weight, so the view reports two different things:
+
+- **Breadth** — how many tactics appeared at all.
+- **Risk-weighted coverage** — how much consequence those tactics carry.
+
+A campaign that only probes a decoy and one that reaches credential access are no
+longer the same shade of "suspicious". The furthest observed tactic breaks ties by
+progression, so reaching command and control is reported as further than privilege
+escalation even though both weigh the same. Collection and exfiltration are absent
+from the model rather than inferred: this telemetry cannot observe them.
+
 <details>
 <summary><strong>More views: adaptive deception and the event stream</strong></summary>
 
@@ -237,12 +254,24 @@ retains every linked pair — it is set by that measurement, not by intuition.
 Full tables: [`docs/research/evaluation-results.md`](docs/research/evaluation-results.md)
 and [`docs/research/correlation-runtime.md`](docs/research/correlation-runtime.md).
 
+The evidence views are measured too. `get_campaign` assembles the plan, ratios and
+tactic coverage from the rows the campaign already reads; it does not re-score.
+
+| Dataset | Sessions | Campaigns | Detail mean | p95 | JSON payload | Plan families (median) | Tactic coverage (median) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Evaluation volume (seed 99) | 165 | 41 | 0.66 ms | 1.01 ms | 28.2 KiB | 2 | 0.53 |
+| 400-session run | 394 | 81 | 2.99 ms | 3.58 ms | 76.4 KiB | 2 | 0.53 |
+
+One campaign in the 400-session run took 46 ms, so a single large campaign can
+dominate a page load; cost tracks campaign size and payload, not the number of
+campaigns. Source: [`docs/research/evidence-views.md`](docs/research/evidence-views.md).
+
 ## Verification
 
 | Check | Result |
 | --- | --- |
-| Backend suite · SQLite | **166 passed** (four of them drive Chrome end to end) |
-| Backend suite · PostgreSQL 16 | **166 passed** against a real service database |
+| Backend suite · SQLite | **174 passed** (five of them drive Chrome end to end) |
+| Backend suite · PostgreSQL 16 | **174 passed** against a real service database |
 | Campaign evidence plan and observation metrics | Unit-tested against a seeded campaign; the same test runs on SQLite and PostgreSQL |
 | Static analysis | Ruff clean on `app`, `tests` and `scripts`; `compileall` clean |
 | Dependency audit | `pip-audit` and `npm audit --audit-level=high` report no known vulnerabilities |

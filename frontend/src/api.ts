@@ -359,6 +359,25 @@ export interface CampaignDetail {
     compression: number | null;
     note: string;
   };
+  kill_chain: {
+    tactics: {
+      key: string;
+      label: string;
+      weight: number;
+      observed: boolean;
+      sessions: string[];
+      session_count: number;
+      evidence: string[];
+    }[];
+    observed: string[];
+    coverage: number;
+    risk_weighted_coverage: number;
+    observed_weight: number;
+    total_weight: number;
+    furthest: { key: string; label: string } | null;
+    asset_criticality: string;
+    note: string;
+  };
 }
 
 export interface Finding {

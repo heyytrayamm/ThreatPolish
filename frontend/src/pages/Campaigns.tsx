@@ -164,6 +164,8 @@ export default function Campaigns({ user }: { user: User }) {
 
           <EvidenceMatrix detail={detail.data} />
 
+          <KillChain coverage={detail.data.kill_chain} />
+
           <EvidencePlan plan={detail.data.evidence_plan} />
 
           <Card title="Relationship evidence">
@@ -332,6 +334,48 @@ function EvidenceMatrix({ detail }: { detail: CampaignDetail }) {
           </p>
           <p className="muted small">{detail.observation.note}</p>
         </div>
+      </div>
+    </Card>
+  );
+}
+
+function KillChain({ coverage }: { coverage: CampaignDetail["kill_chain"] }) {
+  const breadth = Math.round(coverage.coverage * 100);
+  const weighted = Math.round(coverage.risk_weighted_coverage * 100);
+  return (
+    <Card title="Kill-chain coverage">
+      <p className="muted small">
+        Tactics evidenced by this campaign's recorded activity. Breadth counts how
+        many tactics appeared; risk-weighted coverage counts how much consequence
+        they carry. Neither is a prediction of intent.
+      </p>
+      <div className="killchain-summary">
+        <span><strong>{weighted}%</strong> risk-weighted coverage</span>
+        <span><strong>{coverage.observed.length}/{coverage.tactics.length}</strong> tactics observed</span>
+        <span><strong>{coverage.furthest?.label ?? "none"}</strong> furthest tactic</span>
+        <span><strong>{coverage.asset_criticality}</strong> asset criticality</span>
+      </div>
+      <div className="killchain-meter" aria-label={`${weighted}% risk-weighted coverage`}>
+        <span style={{ width: `${weighted}%` }} />
+      </div>
+      <ol className="killchain-rail">
+        {coverage.tactics.map((tactic) => (
+          <li
+            key={tactic.key}
+            className={tactic.observed ? "observed" : "unobserved"}
+            title={tactic.observed ? tactic.evidence.join(" · ") : "not observed in this campaign"}
+          >
+            <span className="killchain-weight">{tactic.weight}</span>
+            <span className="killchain-label">{tactic.label}</span>
+            <span className="killchain-meta">
+              {tactic.observed ? `${tactic.session_count} session${tactic.session_count === 1 ? "" : "s"}` : "not observed"}
+            </span>
+          </li>
+        ))}
+      </ol>
+      <div className="killchain-foot">
+        <span className="muted small">{breadth}% breadth · weights 1–5 by consequence</span>
+        <span className="muted small">{coverage.note}</span>
       </div>
     </Card>
   );

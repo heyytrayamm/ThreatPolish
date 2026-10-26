@@ -122,6 +122,18 @@ Campaign detail also answers two analyst questions about evidence quality:
 | `observation.observations_per_link` | Observations divided by linked pairs; lower means more concentrated evidence |
 | `observation.observations_per_session` | Observations divided by sessions |
 
+`kill_chain` reports ATT&CK-style tactic coverage from the same recorded
+session categories:
+
+| Field | Meaning |
+| --- | --- |
+| `kill_chain.tactics[]` | Every tactic the model can evidence: `key`, `label`, `weight` (1–5 by consequence), `observed`, `session_count`, `sessions` (first 20), `evidence` reasons |
+| `kill_chain.observed` | Observed tactic keys, in model order |
+| `kill_chain.coverage` | Observed tactics over all eleven (breadth) |
+| `kill_chain.risk_weighted_coverage` | Observed consequence weight over total weight |
+| `kill_chain.furthest` | Highest-weight observed tactic, or `null` |
+| `kill_chain.note` | States that collection and exfiltration are not observable from this telemetry |
+
 `edges` contains only relationships that currently support the campaign
 (`status = active`); a demoted relationship leaves the campaign and remains
 visible in the graph as a hypothesis.

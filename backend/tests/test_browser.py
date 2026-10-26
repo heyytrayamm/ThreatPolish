@@ -916,3 +916,57 @@ def test_dashboard_plans_and_activates_an_investigation(live_server: str):
             )
         finally:
             browser.close()
+
+
+def test_campaign_detail_explains_its_evidence(live_server: str):
+    """The campaign view must show the evidence, its gaps and its tactic spread.
+
+    The matrix is built from stored edges, so a two-session campaign must render
+    exactly two linked cells and two diagonal markers. The acquisition plan and
+    the tactic rail are derived from the same components; the seeded HTTP probes
+    are reconnaissance, so at least one tactic has to be lit.
+    """
+    _seed_campaign(live_server)
+    with playwright_api.sync_playwright() as p:
+        browser = _launch(p.chromium)
+        try:
+            page = browser.new_page()
+            console_errors: list[str] = []
+            page.on(
+                "console",
+                lambda message: console_errors.append(message.text)
+                if message.type == "error"
+                else None,
+            )
+            page.on("pageerror", lambda error: console_errors.append(str(error)))
+
+            page.goto(live_server, wait_until="domcontentloaded")
+            page.get_by_label("Email").fill(ADMIN_EMAIL)
+            page.get_by_label("Password", exact=True).fill(ADMIN_PASSWORD)
+            page.get_by_role("button", name="Sign in").click()
+            page.wait_for_selector(".sidebar")
+
+            page.goto(f"{live_server}/?view=campaigns", wait_until="domcontentloaded")
+            page.wait_for_selector(".list .list-item")
+            page.locator(".list .list-item").first.click()
+
+            page.get_by_text("Evidence matrix").wait_for()
+            matrix = page.locator("table.evidence-matrix")
+            assert matrix.count() == 1
+            assert matrix.locator("td.matrix-cell").count() == 2
+            assert matrix.locator("td.matrix-self").count() == 2
+            assert page.get_by_text("observations / link").count() == 1
+
+            page.get_by_text("Evidence acquisition plan").wait_for()
+            page.get_by_text("Kill-chain coverage").wait_for()
+            rail = page.locator(".killchain-rail li")
+            assert rail.count() == 11
+            assert page.locator(".killchain-rail li.observed").count() >= 1
+            assert page.get_by_text("Reconnaissance", exact=True).count() >= 1
+            assert page.get_by_text("risk-weighted coverage").count() >= 1
+
+            # The empty cells are a finding, not a rendering accident.
+            assert page.get_by_text("no stored edge", exact=False).count() >= 1
+            assert console_errors == []
+        finally:
+            browser.close()

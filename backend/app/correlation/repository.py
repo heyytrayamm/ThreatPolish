@@ -12,6 +12,7 @@ from ..core.security import iso, new_id, utcnow
 from ..db.database import connection, loads, query_one
 from ..db.schema import campaigns, feedback, findings, graph_edges
 from ..risk.scoring import explain_finding, score_risk
+from .killchain import campaign_coverage
 from .scoring import ALGORITHM_VERSION, LINK_CONFIDENCE
 
 
@@ -390,6 +391,7 @@ def get_campaign(campaign_id: str) -> dict[str, Any]:
         "explanation": explanation,
         "evidence_plan": _evidence_plan(edges),
         "observation": _observation_efficiency(sessions, len(edges)),
+        "kill_chain": campaign_coverage(sessions, asset_criticality=criticality),
     }
 
 

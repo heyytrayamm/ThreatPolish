@@ -37,6 +37,7 @@ limitation. **Open** — not implemented.
 | Campaign evidence matrix | Pairwise confidence grid over stored edges in `pages/Campaigns.tsx` | `test_correlation.py` asserts only supporting edges are returned |
 | Evidence acquisition plan | `evidence_plan` on campaign detail: families with unavailable components ranked by affected pairs and weight at stake | `test_correlation.py` seeds two edges and checks ranking, coverage and absent families |
 | Observation efficiency | `observation` on campaign detail: events, per-link and per-session ratios | `test_correlation.py` checks the ratios against seeded event counts |
+| Tactic coverage | `kill_chain` on campaign detail: eleven tactics with weights, evidence and risk-weighted coverage | `test_killchain.py` covers classification, aggregation and campaign-detail integration; `test_browser.py` renders the rail |
 | Honeypot sessions | `pages/Deception.tsx` decoy-session table backed by `GET /honeypot/sessions` (source IPs, event count, severity, target) | `test_foundation.py`, `test_deception.py`, `test_browser.py` |
 | Web security findings | `pages/Findings.tsx` | `test_websec.py`, `test_browser.py` |
 | Digital-asset risk intelligence | `pages/Crypto.tsx` with provenance, freshness and disclaimer | `test_crypto.py` |
