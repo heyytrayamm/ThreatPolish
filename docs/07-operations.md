@@ -298,6 +298,19 @@ release exists, record the exposure and the compensating control in the
 security notes, and add a dated ignore for that advisory identifier with the
 reason it cannot affect this deployment; review it at each upgrade.
 
+## Dashboard links
+
+The dashboard keeps its view and filters in the URL. `view` names the open
+page; the Events filters use `event_module`, `event_severity`, `event_hours`
+and `event_q`; the retention run window uses the `history_*` parameters
+described below. A shared link opens the same view and filters, and a reload
+keeps them. Sidebar changes push history, so the browser's back and forward
+buttons move between views. The Retention card has a **Copy link** action that
+copies the current URL with the applied run window already in it. Retention
+filter values from a link are validated before use: malformed or inverted dates
+and unknown triggers are explained on the page and removed from the address bar
+rather than sent to the API.
+
 ## Retention
 
 Events carry `retention_until` (`TP_RETENTION_DAYS`, default 90). The evidence
@@ -349,12 +362,10 @@ a `history_trigger` of `manual` or `scheduled`; the dashboard applies both befor
 charting and exporting, with 24-hour, 7-day and 30-day quick ranges available,
 and the backlog counts above remain deployment-wide. The selected window and
 trigger are kept in the dashboard URL, so a shared link opens the same view and
-a reload keeps it, while the sidebar pushes history so browser back and forward
-move between views. Filter values from a link are validated before use:
-malformed dates or triggers are explained on the page and removed from the
-address bar rather than sent to the API. The card reports the manual and
-scheduled run totals for that window from `history_counts`, even when the table
-is narrowed to one trigger.
+a reload keeps it. The card's **Copy link** action copies that URL, and it
+reports the manual and scheduled run totals for that window from
+`history_counts`, even when the table is narrowed to one trigger. See
+[Dashboard links](#dashboard-links) for the full URL contract.
 `GET /retention/history.csv` (analyst/admin) accepts the same filters and
 exports up to 1,000 recorded runs oldest first for spreadsheet or capacity
 review; the Administration card has a matching **Export CSV** action. An

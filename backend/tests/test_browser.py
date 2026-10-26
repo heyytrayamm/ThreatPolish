@@ -202,6 +202,9 @@ def test_dashboard_password_change_keeps_this_tab_and_revokes_the_others(live_se
         browser = _launch(p.chromium)
         try:
             page = browser.new_page()
+            page.context.grant_permissions(
+                ["clipboard-read", "clipboard-write"], origin=live_server
+            )
             console_errors: list[str] = []
             page.on(
                 "console",
@@ -328,6 +331,27 @@ def test_dashboard_password_change_keeps_this_tab_and_revokes_the_others(live_se
             ):
                 page.get_by_role("button", name=view, exact=True).click()
                 page.wait_for_selector(".page h1")
+                if view == "Events":
+                    page.get_by_label("Module").select_option("honeypot")
+                    page.get_by_label("Severity").select_option("medium")
+                    page.get_by_label("Window").select_option("72")
+                    page.get_by_label("Search").fill("203.0.113")
+                    page.wait_for_function(
+                        "location.search.includes('event_q=203.0.113')"
+                    )
+                    assert "event_module=honeypot" in page.url
+                    assert "event_severity=medium" in page.url
+                    assert "event_hours=72" in page.url
+                    assert "event_q=203.0.113" in page.url
+
+                    # A reload restores the same Events view and filters.
+                    page.reload(wait_until="domcontentloaded")
+                    page.wait_for_selector(".sidebar")
+                    page.wait_for_selector(".page h1:has-text('Events')")
+                    assert page.get_by_label("Module").input_value() == "honeypot"
+                    assert page.get_by_label("Severity").input_value() == "medium"
+                    assert page.get_by_label("Window").input_value() == "72"
+                    assert page.get_by_label("Search").input_value() == "203.0.113"
                 if view == "Deception":
                     note = page.get_by_text("Closed because another investigation", exact=False)
                     note.wait_for()
@@ -363,6 +387,14 @@ def test_dashboard_password_change_keeps_this_tab_and_revokes_the_others(live_se
                     assert "history_since=2026-10-20" in page.url
                     assert "history_until=2026-10-24" in page.url
                     assert "history_trigger=scheduled" in page.url
+
+                    # The card copies the current URL, filters included.
+                    page.get_by_role("button", name="Copy link").click()
+                    page.wait_for_selector("text=Link copied to the clipboard")
+                    copied = page.evaluate("navigator.clipboard.readText()")
+                    assert "view=admin" in copied
+                    assert "history_since=2026-10-20" in copied
+                    assert "history_trigger=scheduled" in copied
 
                     # The URL is the sharing state: reloading restores the
                     # filtered view instead of dropping back to the defaults.
@@ -510,6 +542,19 @@ def test_analyst_sees_read_only_retention_history(live_server: str):
             page.wait_for_selector("text=The shared link has an invalid")
             page.wait_for_function("!location.search.includes('history_since')")
             assert page.get_by_label("Trigger").input_value() == ""
+            page.get_by_text("Graph horizon").wait_for()
+
+            # An inverted window is treated the same way instead of reaching
+            # the API as a validation error.
+            page.goto(
+                f"{live_server}/?view=retention&history_since=2026-10-24"
+                "&history_until=2026-10-20",
+                wait_until="domcontentloaded",
+            )
+            page.get_by_text(
+                "The shared link's start date is after its end date", exact=False
+            ).wait_for()
+            page.wait_for_function("!location.search.includes('history_since')")
             page.get_by_text("Graph horizon").wait_for()
 
             # Analysts now receive the Overview alert, and its link opens

@@ -3,12 +3,52 @@ import { api, EventRecord } from "../api";
 import { Badge, Card, Empty, ErrorBox, Field, formatTime, JsonBlock, Loading, useAsync } from "../ui";
 
 const PAGE_SIZE = 25;
+const MODULES = ["honeypot", "websec", "cryptointel", "app"];
+const SEVERITIES = ["critical", "high", "medium", "low", "info"];
+const WINDOWS = [1, 24, 72, 168];
+
+type EventFilters = {
+  module: string;
+  severity: string;
+  query: string;
+  hours: number;
+};
+
+function readFiltersFromUrl(): EventFilters {
+  const params = new URLSearchParams(window.location.search);
+  const module = params.get("event_module") ?? "";
+  const severity = params.get("event_severity") ?? "";
+  const hours = Number(params.get("event_hours") ?? 24);
+  return {
+    module: MODULES.includes(module) ? module : "",
+    severity: SEVERITIES.includes(severity) ? severity : "",
+    hours: WINDOWS.includes(hours) ? hours : 24,
+    query: params.get("event_q") ?? "",
+  };
+}
+
+function rememberFilters(filters: EventFilters): void {
+  const url = new URL(window.location.href);
+  const params = url.searchParams;
+  const values: [string, string][] = [
+    ["event_module", filters.module],
+    ["event_severity", filters.severity],
+    ["event_q", filters.query],
+    ["event_hours", filters.hours === 24 ? "" : String(filters.hours)],
+  ];
+  for (const [key, value] of values) {
+    if (value) params.set(key, value);
+    else params.delete(key);
+  }
+  window.history.replaceState(null, "", url);
+}
 
 export default function Events() {
-  const [module, setModule] = useState("");
-  const [severity, setSeverity] = useState("");
-  const [query, setQuery] = useState("");
-  const [hours, setHours] = useState(24);
+  const [initial] = useState(readFiltersFromUrl);
+  const [module, setModule] = useState(initial.module);
+  const [severity, setSeverity] = useState(initial.severity);
+  const [query, setQuery] = useState(initial.query);
+  const [hours, setHours] = useState(initial.hours);
   const [page, setPage] = useState(0);
   const [live, setLive] = useState(true);
   const [tick, setTick] = useState(0);
@@ -21,6 +61,12 @@ export default function Events() {
   }, [live]);
 
   useEffect(() => setPage(0), [module, severity, query, hours]);
+
+  // The filter set is shareable and survives a reload, like the Retention
+  // window; pagination stays out of the URL because it moves with new events.
+  useEffect(() => {
+    rememberFilters({ module, severity, query, hours });
+  }, [module, severity, query, hours]);
 
   const since = new Date(Date.now() - hours * 3600 * 1000).toISOString();
   const result = useAsync(

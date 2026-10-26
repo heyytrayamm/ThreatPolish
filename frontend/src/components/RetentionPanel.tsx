@@ -116,6 +116,7 @@ export function RetentionPanel({
   const [notice, setNotice] = useState<string | null>(null);
   const [retentionBusy, setRetentionBusy] = useState(false);
   const [exportBusy, setExportBusy] = useState(false);
+  const [copyBusy, setCopyBusy] = useState(false);
   // Filters live in the URL so a shared link opens the same window, and a
   // reload keeps the view an analyst was looking at.
   const [initial] = useState(readRangeFromUrl);
@@ -212,6 +213,19 @@ export function RetentionPanel({
     }
   }
 
+  async function copyLink() {
+    setCopyBusy(true);
+    setNotice(null);
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setNotice("Link copied to the clipboard.");
+    } catch (error) {
+      setNotice(`Could not copy the link: ${(error as Error).message}`);
+    } finally {
+      setCopyBusy(false);
+    }
+  }
+
   async function exportRetention() {
     if (!retention.data) return;
     setExportBusy(true);
@@ -245,6 +259,14 @@ export function RetentionPanel({
       title="Retention"
       actions={
         <div className="row">
+          <button
+            type="button"
+            className="secondary small"
+            disabled={copyBusy}
+            onClick={copyLink}
+          >
+            {copyBusy ? "Copying…" : "Copy link"}
+          </button>
           <button
             type="button"
             className="secondary small"
