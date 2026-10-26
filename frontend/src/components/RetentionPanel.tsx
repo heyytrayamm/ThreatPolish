@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, RetentionRun } from "../api";
+import { copyText } from "../clipboard";
 import { Card, ErrorBox, Field, Loading, formatTime, useAsync } from "../ui";
 
 function backlog(run: RetentionRun): number {
@@ -82,7 +83,10 @@ function readRangeFromUrl(): { range: RetentionRange; problem: string | null } {
   return { range, problem: null };
 }
 
-function rememberRange(range: RetentionRange): void {
+function rememberRange(
+  range: RetentionRange,
+  mode: "push" | "replace" = "push",
+): void {
   const url = new URL(window.location.href);
   const params = url.searchParams;
   for (const [key, value] of [
@@ -93,7 +97,11 @@ function rememberRange(range: RetentionRange): void {
     if (value) params.set(key, value);
     else params.delete(key);
   }
-  window.history.replaceState(null, "", url);
+  const next = `${url.pathname}${url.search}${url.hash}`;
+  const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  if (next === current) return;
+  if (mode === "replace") window.history.replaceState(null, "", url);
+  else window.history.pushState(null, "", url);
 }
 
 function removed(run: RetentionRun): number {
@@ -129,8 +137,24 @@ export function RetentionPanel({
   // Drop invalid values from the address bar once they have been explained,
   // so a reload does not repeat the error or send them to the API again.
   useEffect(() => {
-    if (initial.problem) rememberRange(initial.range);
+    if (initial.problem) rememberRange(initial.range, "replace");
   }, [initial]);
+
+  // A filter change pushes a history entry; stepping back or forward restores
+  // the controls and the window the table should show.
+  useEffect(() => {
+    function handlePopState() {
+      const next = readRangeFromUrl();
+      setRange(next.range);
+      setHistoryFrom(next.range.since.slice(0, 10));
+      setHistoryTo(next.range.until.slice(0, 10));
+      setTrigger(next.range.trigger);
+      setUrlProblem(next.problem);
+      if (next.problem) rememberRange(next.range, "replace");
+    }
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
 
   const retention = useAsync(
     () =>
@@ -217,7 +241,7 @@ export function RetentionPanel({
     setCopyBusy(true);
     setNotice(null);
     try {
-      await navigator.clipboard.writeText(window.location.href);
+      await copyText(window.location.href);
       setNotice("Link copied to the clipboard.");
     } catch (error) {
       setNotice(`Could not copy the link: ${(error as Error).message}`);

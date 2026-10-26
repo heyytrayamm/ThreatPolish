@@ -304,9 +304,11 @@ The dashboard keeps its view and filters in the URL. `view` names the open
 page; the Events filters use `event_module`, `event_severity`, `event_hours`
 and `event_q`; the retention run window uses the `history_*` parameters
 described below. A shared link opens the same view and filters, and a reload
-keeps them. Sidebar changes push history, so the browser's back and forward
-buttons move between views. The Retention card has a **Copy link** action that
-copies the current URL with the applied run window already in it. Retention
+keeps them. View changes and committed filter changes push history, so the
+browser's back and forward buttons restore both. The Events page and the
+Retention card each have a **Copy link** action that copies the current URL with
+the applied window already in it; it uses the Clipboard API and falls back to a
+selected temporary field when that API is unavailable or denied. Retention
 filter values from a link are validated before use: malformed or inverted dates
 and unknown triggers are explained on the page and removed from the address bar
 rather than sent to the API.

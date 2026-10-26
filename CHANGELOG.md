@@ -56,13 +56,15 @@ All notable changes to this project are recorded here. Dates use ISO 8601.
 - Dashboard views and their filters are now shareable through the URL: the
   Events module, severity, window and search use `event_*` parameters, the
   Retention history window and trigger use `history_*`, and a reload keeps both.
-  The Retention card's **Copy link** action copies the current filtered URL.
-  Sidebar navigation pushes history, so browser back and forward move between
-  views, and malformed or inverted filter values in a shared link are explained
-  and removed instead of being sent to the API. The card also reports manual and
-  scheduled run totals for that window from `history_counts`, even when the
-  table is narrowed to one trigger, and the Overview's overdue alert links
-  straight to the Retention page for administrators and analysts.
+  The Events page and the Retention card both copy the current filtered URL,
+  with a selected-field fallback when the Clipboard API is unavailable or
+  denied. View and committed filter changes push history, so browser back and
+  forward restore them together, and malformed or inverted filter values in a
+  shared link are explained and removed instead of being sent to the API. The
+  card also reports manual and scheduled run totals for that window from
+  `history_counts`, even when the table is narrowed to one trigger, and the
+  Overview's overdue alert links straight to the Retention page for
+  administrators and analysts.
 - `test_retention.py` explicitly asserts that viewer accounts are refused the
   status and CSV endpoints; CI runs that file against PostgreSQL after the full
   suite.

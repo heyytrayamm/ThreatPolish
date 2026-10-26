@@ -336,6 +336,7 @@ def test_dashboard_password_change_keeps_this_tab_and_revokes_the_others(live_se
                     page.get_by_label("Severity").select_option("medium")
                     page.get_by_label("Window").select_option("72")
                     page.get_by_label("Search").fill("203.0.113")
+                    page.get_by_label("Search").press("Enter")
                     page.wait_for_function(
                         "location.search.includes('event_q=203.0.113')"
                     )
@@ -343,6 +344,26 @@ def test_dashboard_password_change_keeps_this_tab_and_revokes_the_others(live_se
                     assert "event_severity=medium" in page.url
                     assert "event_hours=72" in page.url
                     assert "event_q=203.0.113" in page.url
+
+                    page.get_by_role("button", name="Copy link").click()
+                    page.wait_for_selector("text=Link copied to the clipboard")
+                    copied = page.evaluate("navigator.clipboard.readText()")
+                    assert "event_module=honeypot" in copied
+                    assert "event_q=203.0.113" in copied
+
+                    # Committed filters are history entries: back clears the
+                    # search, forward puts it back.
+                    with page.expect_request(
+                        lambda request: "q=203.0.113" not in request.url
+                    ):
+                        page.go_back()
+                    page.wait_for_function("!location.search.includes('event_q=')")
+                    assert page.get_by_label("Search").input_value() == ""
+                    with page.expect_request(
+                        lambda request: "q=203.0.113" in request.url
+                    ):
+                        page.go_forward()
+                    assert page.get_by_label("Search").input_value() == "203.0.113"
 
                     # A reload restores the same Events view and filters.
                     page.reload(wait_until="domcontentloaded")
@@ -409,6 +430,19 @@ def test_dashboard_password_change_keeps_this_tab_and_revokes_the_others(live_se
                         == "2026-10-20"
                     )
 
+                    # A denied Clipboard API still copies through the fallback.
+                    page.evaluate("navigator.clipboard.writeText('sentinel')")
+                    page.evaluate(
+                        "Object.defineProperty(navigator.clipboard, 'writeText', {"
+                        " configurable: true,"
+                        " value: () => Promise.reject(new Error('denied')) })"
+                    )
+                    page.get_by_role("button", name="Copy link").click()
+                    page.wait_for_selector("text=Link copied to the clipboard")
+                    copied = page.evaluate("navigator.clipboard.readText()")
+                    assert "sentinel" not in copied
+                    assert "history_since=2026-10-20" in copied
+
                     with page.expect_download() as download_info:
                         with page.expect_request(
                             lambda request: "history.csv" in request.url
@@ -443,6 +477,41 @@ def test_dashboard_password_change_keeps_this_tab_and_revokes_the_others(live_se
                         "Showing the last 2 of 16 recorded runs", exact=False
                     ).wait_for()
 
+            # Filter changes are history entries too: back restores the quick
+            # range, then the date range, then the unfiltered view.
+            with page.expect_request(
+                lambda request: "history_since=" in request.url
+                and "T" in request.url
+                and "history_trigger=scheduled" in request.url
+            ):
+                page.go_back()
+            page.wait_for_function("location.search.includes('history_since=')")
+            assert "history_since=2026-10-20" not in page.url
+            page.get_by_text(
+                "Showing the last 2 of 16 matching runs", exact=False
+            ).wait_for()
+
+            with page.expect_request(
+                lambda request: "history_since=2026-10-20" in request.url
+                and "history_until=2026-10-24" in request.url
+            ):
+                page.go_back()
+            page.wait_for_function(
+                "location.search.includes('history_since=2026-10-20')"
+            )
+            assert page.get_by_label("Runs from (UTC)").input_value() == "2026-10-20"
+            assert page.get_by_label("Runs to (UTC)").input_value() == "2026-10-24"
+            assert page.get_by_label("Trigger").input_value() == "scheduled"
+
+            with page.expect_request(
+                lambda request: "history_since" not in request.url
+                and "history_trigger" not in request.url
+            ):
+                page.go_back()
+            assert "history_since" not in page.url
+            assert "history_trigger" not in page.url
+            assert "view=admin" in page.url
+
             # The sidebar's history follows the browser's back and forward
             # buttons instead of only changing React state.
             page.go_back()
@@ -451,6 +520,15 @@ def test_dashboard_password_change_keeps_this_tab_and_revokes_the_others(live_se
             page.go_forward()
             page.wait_for_selector(".page h1:has-text('Administration')")
             assert "view=admin" in page.url
+
+            with page.expect_request(
+                lambda request: "history_since=2026-10-20" in request.url
+            ):
+                page.go_forward()
+            page.wait_for_function(
+                "location.search.includes('history_since=2026-10-20')"
+            )
+            assert page.get_by_label("Runs from (UTC)").input_value() == "2026-10-20"
             assert console_errors == [], console_errors
 
             page.get_by_role("button", name="Account").click()
