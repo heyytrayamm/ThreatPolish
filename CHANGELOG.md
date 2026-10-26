@@ -53,6 +53,11 @@ All notable changes to this project are recorded here. Dates use ISO 8601.
   the new `retention:read` permission; running retention remains admin-only.
   The Overview's overdue alert now appears for analysts too and points them at
   the Retention page.
+- The Retention card keeps its history window and trigger in the dashboard URL,
+  so a shared link opens the same view and a reload does not reset the filters.
+  It also reports manual and scheduled run totals for that window from
+  `history_counts`, even when the table is narrowed to one trigger, and the
+  Overview's overdue alert links straight to the Retention page.
 - `test_retention.py` explicitly asserts that viewer accounts are refused the
   status and CSV endpoints; CI runs that file against PostgreSQL after the full
   suite.

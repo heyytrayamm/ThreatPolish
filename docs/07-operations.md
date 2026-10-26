@@ -333,8 +333,8 @@ reports the number of expired events, retired edges, stale observations and the
 current graph size. `overdue: true` means work has waited longer than
 `TP_RETENTION_GRACE_DAYS` (default 2), which points at a missed schedule rather
 than the normal backlog between daily runs; alert on that field. Administration
-shows the same backlog, and the Overview raises an alert to administrators once
-it is overdue. Each `retention` run records the pre-run backlog in
+shows the same backlog, and the Overview raises an alert to administrators and
+analysts once it is overdue; the alert links straight to the Retention page. Each `retention` run records the pre-run backlog in
 `retention_runs` and writes a `retention.run` audit entry with actor role
 `system`; Administration charts the last 14 runs and `GET /retention` returns
 them as `history`, with `history_total` reporting how many runs exist in the
@@ -347,7 +347,10 @@ When the view is truncated, the page says so. A run-history filter takes an
 inclusive UTC date or timestamp through `history_since` and `history_until`, and
 a `history_trigger` of `manual` or `scheduled`; the dashboard applies both before
 charting and exporting, with 24-hour, 7-day and 30-day quick ranges available,
-and the backlog counts above remain deployment-wide.
+and the backlog counts above remain deployment-wide. The selected window and
+trigger are kept in the dashboard URL, so a shared link opens the same view and
+a reload keeps it. The card reports the manual and scheduled run totals for that
+window from `history_counts`, even when the table is narrowed to one trigger.
 `GET /retention/history.csv` (analyst/admin) accepts the same filters and
 exports up to 1,000 recorded runs oldest first for spreadsheet or capacity
 review; the Administration card has a matching **Export CSV** action. An

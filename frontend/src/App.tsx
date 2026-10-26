@@ -24,6 +24,18 @@ type View =
   | "admin"
   | "account";
 
+function viewFromUrl(): View {
+  const requested = new URLSearchParams(window.location.search).get("view");
+  return requested && VIEWS.has(requested as View) ? (requested as View) : "overview";
+}
+
+function rememberView(view: View): void {
+  const url = new URL(window.location.href);
+  if (view === "overview") url.searchParams.delete("view");
+  else url.searchParams.set("view", view);
+  window.history.replaceState(null, "", url);
+}
+
 const NAV: { key: View; label: string }[] = [
   { key: "overview", label: "Overview" },
   { key: "events", label: "Events" },
@@ -37,10 +49,12 @@ const NAV: { key: View; label: string }[] = [
   { key: "account", label: "Account" },
 ];
 
+const VIEWS = new Set<View>(NAV.map((item) => item.key));
+
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [checking, setChecking] = useState(Boolean(getToken()));
-  const [view, setView] = useState<View>("overview");
+  const [view, setView] = useState<View>(viewFromUrl);
   const [error, setError] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -69,6 +83,11 @@ export default function App() {
     } finally {
       setBusy(false);
     }
+  }
+
+  function selectView(next: View) {
+    setView(next);
+    rememberView(next);
   }
 
   if (checking) return <div className="center"><Loading label="Restoring session" /></div>;
@@ -163,7 +182,7 @@ export default function App() {
               type="button"
               className={view === item.key ? "nav-item active" : "nav-item"}
               aria-current={view === item.key ? "page" : undefined}
-              onClick={() => setView(item.key)}
+              onClick={() => selectView(item.key)}
             >
               {item.label}
             </button>
@@ -187,7 +206,9 @@ export default function App() {
         </div>
       </aside>
       <main className="content" id="main">
-        {view === "overview" && <Overview user={user} />}
+        {view === "overview" && (
+          <Overview user={user} onOpenRetention={() => selectView("retention")} />
+        )}
         {view === "events" && <Events />}
         {view === "campaigns" && <Campaigns user={user} />}
         {view === "deception" && <Deception user={user} />}

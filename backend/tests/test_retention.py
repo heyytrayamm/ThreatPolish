@@ -236,6 +236,7 @@ def test_retention_history_filters_by_a_utc_date_range(client, admin_headers):
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["history_total"] == 2
+    assert body["history_counts"] == {"manual": 0, "scheduled": 2}
     assert [run["id"] for run in body["history"]] == [
         "rtn_window_1",
         "rtn_window_2",
@@ -310,6 +311,7 @@ def test_retention_history_filters_by_trigger(client, admin_headers):
     assert body.status_code == 200, body.text
     payload = body.json()
     assert payload["history_total"] == 2
+    assert payload["history_counts"] == {"manual": 2, "scheduled": 2}
     assert [run["id"] for run in payload["history"]] == [
         "rtn_trigger_1",
         "rtn_trigger_2",

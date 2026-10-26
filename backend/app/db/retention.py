@@ -118,8 +118,9 @@ def retention_status(
     ``orphan_nodes`` counts nodes that no edge references now; purging stale
     observations can orphan more, which the next report shows.
     ``history`` and ``history_total`` can be narrowed to a UTC window and a
-    ``manual`` or ``scheduled`` trigger for the dashboard; the backlog counts
-    above always describe the whole deployment.
+    ``manual`` or ``scheduled`` trigger for the dashboard; ``history_counts``
+    reports both trigger totals for the same window regardless of that filter,
+    and the backlog counts above always describe the whole deployment.
     """
     settings = get_settings()
     now = utcnow()
@@ -134,6 +135,9 @@ def retention_status(
     alert_params = {"now": event_alert_cutoff, "cutoff": graph_alert_cutoff}
     history_total = retention_history_total(
         since=history_since, until=history_until, trigger=history_trigger
+    )
+    history_counts = retention_history_counts(
+        since=history_since, until=history_until
     )
     with connection() as conn:
         event_totals = conn.execute(
@@ -172,6 +176,7 @@ def retention_status(
         "overdue": overdue,
         "grace_days": settings.retention_grace_days,
         "history_total": history_total,
+        "history_counts": history_counts,
         "history": retention_history(
             limit=history_limit,
             since=history_since,
@@ -208,6 +213,28 @@ def _history_conditions(
     if trigger:
         conditions.append(retention_runs.c.trigger == trigger)
     return conditions
+
+
+def retention_history_counts(
+    *, since: str | None = None, until: str | None = None
+) -> dict[str, int]:
+    """Count manual and scheduled runs in the window, whatever the trigger filter.
+
+    The dashboard shows both totals beside a history filtered to one trigger, so
+    narrowing the table does not hide how much of the schedule is manual.
+    """
+    counts = {"manual": 0, "scheduled": 0}
+    with connection() as conn:
+        rows = conn.execute(
+            select(retention_runs.c.trigger, func.count())
+            .where(*_history_conditions(since, until, None))
+            .group_by(retention_runs.c.trigger)
+        ).fetchall()
+    for trigger, count in rows:
+        key = str(trigger)
+        if key in counts:
+            counts[key] = int(count)
+    return counts
 
 
 def retention_history_total(

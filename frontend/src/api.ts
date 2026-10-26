@@ -538,6 +538,7 @@ export interface RetentionStatus {
   overdue: boolean;
   grace_days: number;
   history_total: number;
+  history_counts: { manual: number; scheduled: number };
   history: RetentionRun[];
   events: {
     retention_days: number;

@@ -3,7 +3,13 @@ import { api, SessionRecord, User } from "../api";
 import { describeSignInAnomaly } from "../components/SessionTable";
 import { Badge, Card, Empty, ErrorBox, Field, formatTime, Loading, can, useAsync } from "../ui";
 
-export default function Overview({ user }: { user: User }) {
+export default function Overview({
+  user,
+  onOpenRetention,
+}: {
+  user: User;
+  onOpenRetention: () => void;
+}) {
   const [hours, setHours] = useState(24);
   const [tick, setTick] = useState(0);
   const [running, setRunning] = useState(false);
@@ -94,10 +100,14 @@ export default function Overview({ user }: { user: User }) {
       {retention.data?.overdue && (
         <div className="error" role="alert">
           <strong>Retention is overdue.</strong> The backlog is older than the{" "}
-          {retention.data.grace_days}-day grace window. Check the scheduled retention service;{" "}
-          {user.role === "admin"
-            ? "Administration has the counts."
-            : "The Retention page has the counts."}
+          {retention.data.grace_days}-day grace window. Check the scheduled retention service.{" "}
+          <button
+            type="button"
+            className="secondary small alert-action"
+            onClick={onOpenRetention}
+          >
+            Open Retention
+          </button>
         </div>
       )}
 

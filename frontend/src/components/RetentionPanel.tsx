@@ -8,6 +8,32 @@ function backlog(run: RetentionRun): number {
 
 type RetentionTrigger = "" | "manual" | "scheduled";
 
+type RetentionRange = { since: string; until: string; trigger: RetentionTrigger };
+
+function readRangeFromUrl(): RetentionRange {
+  const params = new URLSearchParams(window.location.search);
+  const trigger = params.get("history_trigger");
+  return {
+    since: params.get("history_since")?.trim() ?? "",
+    until: params.get("history_until")?.trim() ?? "",
+    trigger: trigger === "manual" || trigger === "scheduled" ? trigger : "",
+  };
+}
+
+function rememberRange(range: RetentionRange): void {
+  const url = new URL(window.location.href);
+  const params = url.searchParams;
+  for (const [key, value] of [
+    ["history_since", range.since],
+    ["history_until", range.until],
+    ["history_trigger", range.trigger],
+  ] as const) {
+    if (value) params.set(key, value);
+    else params.delete(key);
+  }
+  window.history.replaceState(null, "", url);
+}
+
 function removed(run: RetentionRun): number {
   return (
     run.events_removed +
@@ -28,14 +54,13 @@ export function RetentionPanel({
   const [notice, setNotice] = useState<string | null>(null);
   const [retentionBusy, setRetentionBusy] = useState(false);
   const [exportBusy, setExportBusy] = useState(false);
-  const [historyFrom, setHistoryFrom] = useState("");
-  const [historyTo, setHistoryTo] = useState("");
-  const [trigger, setTrigger] = useState<RetentionTrigger>("");
-  const [range, setRange] = useState<{
-    since: string;
-    until: string;
-    trigger: RetentionTrigger;
-  }>({ since: "", until: "", trigger: "" });
+  // Filters live in the URL so a shared link opens the same window, and a
+  // reload keeps the view an analyst was looking at.
+  const [initialRange] = useState(readRangeFromUrl);
+  const [historyFrom, setHistoryFrom] = useState(initialRange.since.slice(0, 10));
+  const [historyTo, setHistoryTo] = useState(initialRange.until.slice(0, 10));
+  const [trigger, setTrigger] = useState<RetentionTrigger>(initialRange.trigger);
+  const [range, setRange] = useState<RetentionRange>(initialRange);
 
   const retention = useAsync(
     () =>
@@ -56,10 +81,13 @@ export function RetentionPanel({
   // The API returns the newest run first; a chart reads left to right.
   const retentionHistory = [...(retention.data?.history ?? [])].reverse();
   const maxBacklog = Math.max(1, ...retentionHistory.map(backlog));
+  const historyCounts = retention.data?.history_counts ?? { manual: 0, scheduled: 0 };
 
   function applyRange() {
     if (filterInvalid) return;
-    setRange({ since: historyFrom, until: historyTo, trigger });
+    const next = { since: historyFrom, until: historyTo, trigger };
+    setRange(next);
+    rememberRange(next);
   }
 
   function applyPreset(hours: number) {
@@ -67,14 +95,22 @@ export function RetentionPanel({
     const since = new Date(until.getTime() - hours * 3_600_000);
     setHistoryFrom(since.toISOString().slice(0, 10));
     setHistoryTo(until.toISOString().slice(0, 10));
-    setRange({ since: since.toISOString(), until: until.toISOString(), trigger });
+    const next = {
+      since: since.toISOString(),
+      until: until.toISOString(),
+      trigger,
+    };
+    setRange(next);
+    rememberRange(next);
   }
 
   function clearRange() {
     setHistoryFrom("");
     setHistoryTo("");
     setTrigger("");
-    setRange({ since: "", until: "", trigger: "" });
+    const next: RetentionRange = { since: "", until: "", trigger: "" };
+    setRange(next);
+    rememberRange(next);
   }
 
   async function runRetentionNow() {
@@ -313,6 +349,11 @@ export function RetentionPanel({
                   : `${retention.data.history_total} ${
                       filterActive ? "matching" : "recorded"
                     } run${retention.data.history_total === 1 ? "" : "s"}.`}
+              </p>
+              <p className="muted small">
+                {filterActive ? "Runs in the selected window" : "Recorded runs"}:{" "}
+                <strong>{historyCounts.manual}</strong> manual ·{" "}
+                <strong>{historyCounts.scheduled}</strong> scheduled
               </p>
               <table>
                 <thead>
