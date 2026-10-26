@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Query
 
 from ..auth.rbac import Principal
 from ..core.audit import audit_standalone
+from ..core.errors import ValidationFailure
 from ..correlation.engine import correlate, latest_run
 from ..correlation.repository import (
     add_feedback,
@@ -33,8 +34,15 @@ def graph(
 ) -> dict[str, Any]:
     selected = [kind.strip() for kind in kinds.split(",") if kind.strip()] if kinds else None
     allowed = {"session", "ip", "asset", "indicator", "campaign"}
-    if selected and not set(selected) <= allowed:
-        selected = [kind for kind in selected if kind in allowed]
+    if selected:
+        unknown = sorted(set(selected) - allowed)
+        if unknown:
+            # Dropping an unknown kind silently returned every node, which made
+            # a typo look like a successful filter.
+            raise ValidationFailure(
+                "unknown graph node kind",
+                details={"unknown": unknown, "allowed": sorted(allowed)},
+            )
     return graph_view(hours=hours, min_confidence=min_confidence, kinds=selected)
 
 

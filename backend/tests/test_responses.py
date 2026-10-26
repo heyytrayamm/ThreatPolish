@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 
 def _analyst_headers(client, admin_headers):
     from app.auth.users import create_user
@@ -226,6 +228,21 @@ def test_unknown_campaign_is_not_silently_ignored(client, admin_headers):
     )
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "not_found"
+
+
+def test_auto_apply_cannot_be_enabled_without_an_enforcement_adapter(monkeypatch):
+    """The flag must fail loudly instead of implying automatic containment.
+
+    Policy never recommends ``apply_rate_limit`` on its own and nothing calls
+    the adapter outside an approval, so accepting the flag left an operator
+    believing that containment happened while the queue simply waited.
+    """
+    from app.core.config import build_settings
+    from app.core.errors import ConfigurationError
+
+    monkeypatch.setenv("TP_RESPONSE_AUTO_APPLY", "true")
+    with pytest.raises(ConfigurationError, match="TP_RESPONSE_AUTO_APPLY"):
+        build_settings()
 
 
 def test_policy_document_is_transparent(client, admin_headers):

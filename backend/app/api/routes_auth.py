@@ -18,6 +18,7 @@ from ..auth.users import (
     list_users,
     revoke_agent_token,
     revoke_sessions,
+    verify_credentials,
 )
 from ..core.audit import audit_standalone
 from ..core.config import get_settings
@@ -236,7 +237,7 @@ def update_password(
 ) -> dict[str, object]:
     if principal.is_agent:
         raise AuthenticationFailure("agent tokens cannot change passwords")
-    current = authenticate(principal.email, payload.current_password)
+    current = verify_credentials(principal.email, payload.current_password)
     # Every token minted before this call carries the old session version and
     # is rejected on its next use.  The caller receives a replacement token so
     # the session performing the change is not logged out mid-action.

@@ -145,6 +145,23 @@ def assess(
                 REMEDIATION["tls_invalid"],
             )
         )
+    except Exception as exc:
+        # A scan row is created before any network work.  If an unexpected
+        # failure escapes, the row must not stay "running" forever; finalise it
+        # here and let the caller see the failure.
+        failure = f"assessment failed unexpectedly: {type(exc).__name__}"
+        with connection() as conn:
+            conn.execute(
+                scans.update()
+                .where(scans.c.id == scan_id)
+                .values(
+                    finished_at=iso(utcnow()),
+                    status="failed",
+                    error=failure[:1000],
+                )
+            )
+        log.exception("web assessment failed unexpectedly", extra={"scan_id": scan_id})
+        raise
 
     if not active_checks:
         limitations.append("active path probes were not requested")

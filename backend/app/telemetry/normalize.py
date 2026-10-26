@@ -188,6 +188,14 @@ def normalize_event(event: EventIn) -> dict[str, Any]:
                 "auth_attempt": event.event_type.endswith(("login", "login_failed", "login_success")),
             }
         )
+        # The adapter keeps only a truncated digest and the length so credential
+        # reuse is measurable without retaining a working secret.  Dropping
+        # those fields here discarded the only credential-reuse signal an SSH
+        # login attempt carries.
+        digest = str(features.get("password_sha256_prefix", ""))[:16]
+        if digest:
+            normalized["password_sha256_prefix"] = digest
+            normalized["password_length"] = _safe_int(features.get("password_length")) or 0
         if command:
             normalized["command_length"] = len(command)
 

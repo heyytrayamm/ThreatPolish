@@ -176,6 +176,10 @@ def validate_target(target: str, *, allow_active: bool) -> tuple[str, str, str]:
     _assert_public_host(host)
     netloc = f"[{host}]" if ":" in host else host
     url = f"{parsed.scheme}://{netloc}" + (f":{port}" if port else "") + (parsed.path or "/")
+    # The query is part of the target an operator authorized. Dropping it made
+    # an assessment of /search?q=1 silently fetch /search instead.
+    if parsed.query:
+        url += f"?{parsed.query}"
     return host, url, parsed.scheme
 
 

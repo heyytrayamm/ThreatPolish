@@ -44,6 +44,20 @@ def test_cowrie_password_is_never_stored_in_plaintext():
     assert event["features"]["password_length"] == 11
     assert len(event["features"]["password_sha256_prefix"]) == 16
 
+    # The digest has to survive normalization too: the stored event is built
+    # from normalized features, not from the adapter's payload.
+    from app.db.database import init_db
+    from app.telemetry.ingest import Ingestor
+    from app.telemetry.repository import list_events
+
+    init_db()
+    report = Ingestor().ingest([event], actor="test")
+    assert report.accepted == 1
+    stored = list_events(limit=1)[0][0]
+    assert stored["features"]["password_sha256_prefix"] == event["features"]["password_sha256_prefix"]
+    assert stored["features"]["password_length"] == 11
+    assert "Summer2026!" not in json.dumps(stored)
+
 
 def test_unknown_and_malformed_cowrie_lines_are_ignored():
     assert parse_cowrie_line("not json") is None
@@ -267,3 +281,68 @@ def test_cowrie_tailer_defaults_state_to_data_dir(tmp_path):
 
     tailer = CowrieTailer(tmp_path / "cowrie.json")
     assert tailer.state_path.parent == get_settings().data_dir
+
+
+def test_decoy_session_cookie_is_signed_and_survives_reuse(client, admin_headers):
+    """The telemetry session identifier must be server-issued, not client-chosen.
+
+    A raw cookie was previously trusted, so a client could reuse an identifier
+    it had guessed across source addresses and manufacture the cross-IP link
+    the platform exists to measure. The cookie is now signed for the address
+    that received it and rejected on mismatch.
+    """
+    from app.deception.http_decoy import SESSION_COOKIE, start_decoy
+
+    decoy = start_decoy(host="127.0.0.1", port=0, profile_name="http-wordpress")
+    try:
+        base = f"http://127.0.0.1:{decoy.port}"
+        with httpx.Client(timeout=5.0) as http:
+            first = http.get(f"{base}/")
+            assert first.status_code == 200
+            issued = http.cookies[SESSION_COOKIE]
+            assert issued
+            second = http.get(f"{base}/robots.txt")
+            assert second.status_code == 200
+    finally:
+        decoy.stop()
+
+    events = client.get(
+        "/api/v1/events?module=honeypot&limit=200", headers=admin_headers
+    ).json()["items"]
+    request_events = [
+        item for item in events if item["event_type"] == "honeypot.http.request"
+    ]
+    assert len(request_events) >= 2
+    assert len({item["session_id"] for item in request_events}) == 1
+    session_id = request_events[0]["session_id"]
+    assert session_id.startswith("decoy:")
+    assert session_id.removeprefix("decoy:") == issued.split(".", 1)[0]
+
+
+def test_a_forged_decoy_session_cookie_is_not_accepted(client, admin_headers):
+    from app.deception.http_decoy import SESSION_COOKIE, start_decoy
+
+    claimed = "a" * 32
+    decoy = start_decoy(host="127.0.0.1", port=0, profile_name="http-wordpress")
+    try:
+        base = f"http://127.0.0.1:{decoy.port}"
+        response = httpx.get(
+            f"{base}/",
+            headers={"Cookie": f"{SESSION_COOKIE}={claimed}.{'0' * 24}"},
+            timeout=5.0,
+        )
+        assert response.status_code == 200
+        replacement = response.cookies[SESSION_COOKIE]
+        assert replacement
+        assert replacement.split(".", 1)[0] != claimed
+    finally:
+        decoy.stop()
+
+    events = client.get(
+        "/api/v1/events?module=honeypot&limit=200", headers=admin_headers
+    ).json()["items"]
+    request_events = [
+        item for item in events if item["event_type"] == "honeypot.http.request"
+    ]
+    assert request_events
+    assert all(item["session_id"] != f"decoy:{claimed}" for item in request_events)

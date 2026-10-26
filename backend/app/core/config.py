@@ -133,6 +133,16 @@ def build_settings() -> Settings:
     data_dir = Path(os.environ.get("TP_DATA_DIR", "./data")).expanduser()
     db_url = os.environ.get("TP_DB_URL", f"sqlite:///{data_dir / 'threatpolish.db'}")
 
+    # The shipped adapter records intent only, so there is no enforcement path
+    # for an automatically applied action.  Accepting this flag would let an
+    # operator believe containment happens on its own while nothing does.
+    auto_apply = _bool("TP_RESPONSE_AUTO_APPLY", False)
+    if auto_apply:
+        raise ConfigurationError(
+            "TP_RESPONSE_AUTO_APPLY cannot be enabled: this build ships no reviewed "
+            "enforcement adapter; requested responses require explicit approval"
+        )
+
     return Settings(
         env=env,
         db_url=db_url,
@@ -147,7 +157,7 @@ def build_settings() -> Settings:
         log_level=os.environ.get("TP_LOG_LEVEL", "INFO").upper(),
         max_event_bytes=_int("TP_MAX_EVENT_BYTES", 65536, 1024, 1_048_576),
         correlation_window_hours=_int("TP_CORRELATION_WINDOW_HOURS", 72, 1, 24 * 30),
-        response_auto_apply=_bool("TP_RESPONSE_AUTO_APPLY", False),
+        response_auto_apply=auto_apply,
         ingest_rate_limit_per_minute=_int("TP_INGEST_RATE_LIMIT_PER_MINUTE", 6000, 1, 1_000_000),
         decoy_max_sessions_per_hour=_int("TP_DECOY_MAX_SESSIONS_PER_HOUR", 120, 1, 100_000),
         websec_max_requests_per_host=_int("TP_WEB_SEC_MAX_REQUESTS_PER_HOST", 10, 1, 100),

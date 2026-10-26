@@ -14,6 +14,7 @@ Design constraints:
 from __future__ import annotations
 
 import hashlib
+import hmac
 import html
 import json
 import secrets
@@ -39,7 +40,34 @@ log = get_logger(__name__)
 
 MAX_BODY_BYTES = 8192
 SESSION_COOKIE = "tp_sid"
+SESSION_ID_CHARS = 32
+SESSION_SIGNATURE_CHARS = 24
 SAFE_METHODS = {"GET", "HEAD", "POST"}
+
+
+def _session_key(secret: str) -> bytes:
+    """Derive the cookie-signing key so the JWT secret is never used directly."""
+    return hmac.new(secret.encode("utf-8"), b"decoy-session-cookie", hashlib.sha256).digest()
+
+
+def _session_signature(session_id: str, client_ip: str, key: bytes) -> str:
+    material = f"{session_id}|{client_ip}".encode("utf-8")
+    return hmac.new(key, material, hashlib.sha256).hexdigest()[:SESSION_SIGNATURE_CHARS]
+
+
+def _session_cookie_value(session_id: str, client_ip: str, secret: str) -> str:
+    return f"{session_id}.{_session_signature(session_id, client_ip, _session_key(secret))}"
+
+
+def _verified_session(value: str, client_ip: str, secret: str) -> str | None:
+    """Return the identifier only when this client both received and owns it."""
+    session_id, separator, signature = value.partition(".")
+    if not separator or len(session_id) != SESSION_ID_CHARS:
+        return None
+    expected = _session_signature(session_id, client_ip, _session_key(secret))
+    if not hmac.compare_digest(signature, expected):
+        return None
+    return session_id
 
 
 class DecoyHTTPServer(ThreadingHTTPServer):
@@ -197,15 +225,26 @@ class DecoyHandler(BaseHTTPRequestHandler):
         self._respond(status, content, content_type, cookie_needed=cookie_needed, session_id=session_id)
 
     def _session(self) -> tuple[str, bool]:
+        """Return (session id, whether a new cookie must be issued).
+
+        The identifier is telemetry, so it is server-issued and signed for the
+        client address that received it.  Trusting the raw cookie let a client
+        choose an identifier that another session already used — or reuse one
+        across addresses — and thereby manufacture the cross-IP relationship
+        the platform exists to measure.
+        """
         cookie = SimpleCookie()
         try:
             cookie.load(self.headers.get("Cookie", ""))
         except Exception:
             cookie = SimpleCookie()
         if SESSION_COOKIE in cookie:
-            value = cookie[SESSION_COOKIE].value
-            if value and 8 <= len(value) <= 64:
-                return value, False
+            value = cookie[SESSION_COOKIE].value or ""
+            session_id = _verified_session(
+                value, self.client_address[0], self.decoy.settings.jwt_secret
+            )
+            if session_id:
+                return session_id, False
         return secrets.token_hex(16), True
 
     def _route(
@@ -272,8 +311,11 @@ class DecoyHandler(BaseHTTPRequestHandler):
         if close:
             self.send_header("Connection", "close")
         if cookie_needed and session_id:
+            value = _session_cookie_value(
+                session_id, self.client_address[0], self.decoy.settings.jwt_secret
+            )
             self.send_header(
-                "Set-Cookie", f"{SESSION_COOKIE}={session_id}; Path=/; HttpOnly; SameSite=Lax"
+                "Set-Cookie", f"{SESSION_COOKIE}={value}; Path=/; HttpOnly; SameSite=Lax"
             )
         self.end_headers()
         if self.command != "HEAD":

@@ -236,6 +236,25 @@ def test_unusable_redirect_finishes_the_scan_instead_of_leaving_it_running(
     assert stored.json()["status"] == "partial"
 
 
+def test_unexpected_failure_marks_the_scan_failed(client, admin_headers, target_server, monkeypatch):
+    """A scan row is created before network work, so it must never stay running."""
+    from app.websec import scanner
+
+    _create_scope(client, admin_headers, target_server, allow_active=False)
+
+    def explode(*args, **kwargs):
+        raise RuntimeError("unexpected checker failure")
+
+    monkeypatch.setattr(scanner, "_passive_checks", explode)
+    with pytest.raises(RuntimeError):
+        scanner.assess(target=f"http://{target_server}/", active_checks=False, actor="test")
+
+    scans = client.get("/api/v1/websec/scans", headers=admin_headers).json()["items"]
+    assert scans
+    assert scans[0]["status"] == "failed"
+    assert "RuntimeError" in scans[0]["error"]
+
+
 def test_viewer_cannot_scan(client, viewer_headers):
     response = client.post(
         "/api/v1/websec/assess",
@@ -243,3 +262,24 @@ def test_viewer_cannot_scan(client, viewer_headers):
         json={"target": "https://example.com", "active_checks": False},
     )
     assert response.status_code == 403
+
+
+def test_target_query_string_is_part_of_the_authorized_url(monkeypatch):
+    """Normalization must not change which resource is assessed.
+
+    Rebuilding the URL from scheme, host and path dropped ``?q=1``, so an
+    operator who authorized a parameterized endpoint had a different page
+    fetched and reported on.
+    """
+    from app.websec import scope as scope_module
+
+    monkeypatch.setattr(
+        scope_module, "find_active_scope", lambda host: {"id": "scp_test", "allow_active": True}
+    )
+    monkeypatch.setattr(scope_module, "_assert_public_host", lambda host: None)
+
+    host, url, scheme = scope_module.validate_target(
+        "https://example.com/search?q=a+b&page=2#results", allow_active=True
+    )
+    assert (host, scheme) == ("example.com", "https")
+    assert url == "https://example.com/search?q=a+b&page=2"

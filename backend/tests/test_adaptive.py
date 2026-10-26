@@ -127,6 +127,39 @@ def test_plan_activate_and_evaluate_investigation(client, sensor_headers, admin_
     assert stored["hypothesis_before"]["confidence"] == result["confidence_before"]
 
 
+def test_evaluation_counts_only_events_from_the_observed_address(
+    client, sensor_headers, admin_headers
+):
+    """Unrelated ingest traffic must not be credited to this investigation.
+
+    The previous count was platform-wide, so any other sensor event arriving
+    after planning made an observation look productive and could flip the
+    outcome away from ``insufficient_evidence``.
+    """
+    campaign = _build_campaign(client, sensor_headers, admin_headers)
+    plan = client.post(
+        "/api/v1/investigations", json={"campaign_id": campaign["id"]}, headers=admin_headers
+    ).json()
+    activated = client.post(
+        f"/api/v1/investigations/{plan['id']}/activate",
+        json={"source_ip": "198.51.100.7"},
+        headers=admin_headers,
+    )
+    assert activated.status_code == 200, activated.text
+
+    unrelated = _http_event("sess-unrelated", "203.0.113.200", "/unrelated", 0)
+    assert client.post("/api/v1/ingest/events", json=unrelated, headers=sensor_headers).status_code == 202
+
+    evaluation = client.post(
+        f"/api/v1/investigations/{plan['id']}/evaluate", headers=admin_headers
+    )
+    assert evaluation.status_code == 200, evaluation.text
+    result = evaluation.json()
+    assert result["new_events_observed"] == 0
+    assert result["outcome"] == "insufficient_evidence"
+    assert result["delta"] == 0.0
+
+
 def test_activation_is_visible_to_a_separate_decoy_process(client, sensor_headers, admin_headers):
     campaign = _build_campaign(client, sensor_headers, admin_headers)
     plan = client.post(

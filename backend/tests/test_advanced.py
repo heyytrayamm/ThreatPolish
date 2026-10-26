@@ -745,3 +745,37 @@ def test_decoy_rejects_ambiguous_request_framing(client):
         assert smuggled.count(b"HTTP/1.1 ") == 1
     finally:
         decoy.stop()
+
+
+def test_password_change_does_not_rewrite_the_last_sign_in_time(client, admin_headers):
+    """Re-authenticating for a credential change is not a sign-in.
+
+    ``last_login_at`` is read by administrators as evidence of account use. It
+    must change when a session is issued, not when an existing session proves
+    its password to rotate it.
+    """
+    email = "last-login@threatpolish.test"
+    password = "last-login-password-1"
+    created = client.post(
+        "/api/v1/auth/users",
+        headers=admin_headers,
+        json={"email": email, "name": "Last Login", "role": "viewer", "password": password},
+    )
+    assert created.status_code == 201, created.text
+    signed_in = client.post("/api/v1/auth/login", json={"email": email, "password": password})
+    assert signed_in.status_code == 200, signed_in.text
+
+    def last_sign_in() -> str | None:
+        users = client.get("/api/v1/auth/users", headers=admin_headers).json()["users"]
+        return next(user for user in users if user["email"] == email)["last_login_at"]
+
+    before = last_sign_in()
+    assert before
+
+    changed = client.post(
+        "/api/v1/auth/password",
+        headers={"Authorization": f"Bearer {signed_in.json()['access_token']}"},
+        json={"current_password": password, "new_password": "rotated-password-2"},
+    )
+    assert changed.status_code == 200, changed.text
+    assert last_sign_in() == before

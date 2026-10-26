@@ -113,8 +113,12 @@ def _correlate(
     heap: list[tuple[float, int, str, dict[str, Any]]] = []
     fingerprints = {session_id: session.fingerprint() for session_id, session in sessions.items()}
 
-    with connection() as conn:
-        previous_run = conn.execute(
+    # Read the state needed for incremental decisions on its own connection and
+    # close it before scoring.  Keeping that read transaction open while the
+    # quadratic comparison runs would either block writers (SQLite) or fail to
+    # upgrade a stale snapshot when another process ingests telemetry.
+    with connection() as state_conn:
+        previous_run = state_conn.execute(
             select(correlation_runs).order_by(correlation_runs.c.finished_at.desc()).limit(1)
         ).fetchone()
         previous_metrics = loads(previous_run._mapping["metrics"], {}) if previous_run else {}
@@ -132,9 +136,9 @@ def _correlate(
         )
         previous_run_id = previous_run._mapping["id"] if previous_run and incremental else None
         prior_sessions = (
-            _prior_session_state(conn, list(sessions)) if incremental else {}
+            _prior_session_state(state_conn, list(sessions)) if incremental else {}
         )
-        existing_similarity_edges = conn.execute(
+        existing_similarity_edges = state_conn.execute(
             select(
                 graph_edges.c.id,
                 graph_edges.c.src_id,
@@ -150,9 +154,7 @@ def _correlate(
             for edge_id, src, dst, status, confidence in existing_similarity_edges
         }
 
-        for session in sessions.values():
-            _upsert_session_node(conn, session, started_at, run_id, fingerprints[session.id])
-
+    with connection() as conn:
         retained_edge_ids: set[str] = set()
         reused_links: dict[str, float] = {}
 
@@ -200,6 +202,13 @@ def _correlate(
                     )
                     if len(heap) > MAX_EDGES_PER_RUN:
                         heapq.heappop(heap)
+
+        # Write the session nodes only now that the quadratic comparison is
+        # finished.  The first write opens a write transaction, and on SQLite
+        # holding it across pair scoring blocked ingestion, sign-in audits and
+        # every other write for the length of the run (28 s at 788 sessions).
+        for session in sessions.values():
+            _upsert_session_node(conn, session, started_at, run_id, fingerprints[session.id])
 
         # Only persist the strongest relationships; a busy sensor must not be
         # able to inflate the graph without bound.

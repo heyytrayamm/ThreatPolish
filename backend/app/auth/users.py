@@ -94,20 +94,41 @@ def count_users() -> int:
         return int(conn.execute(select(func.count()).select_from(users)).scalar() or 0)
 
 
-def authenticate(email: str, password: str) -> dict[str, Any]:
+def _check_credentials(email: str, password: str) -> dict[str, Any]:
+    """Return the stored row for a valid password; raise otherwise.
+
+    The dummy verification keeps the work constant whether or not the account
+    exists, so response time does not disclose which emails are registered.
+    """
     normalized = email.strip().lower()
     with connection() as conn:
         row = query_one(conn, "SELECT * FROM users WHERE email = :email", {"email": normalized})
-        if not row or not row["is_active"]:
-            # Constant work regardless of account existence.
-            verify_password(password, "pbkdf2_sha256$210000$AAAA$AAAA")
-            raise AuthenticationFailure("invalid credentials")
-        if not verify_password(password, row["password_hash"]):
-            raise AuthenticationFailure("invalid credentials")
+    if not row or not row["is_active"]:
+        verify_password(password, "pbkdf2_sha256$210000$AAAA$AAAA")
+        raise AuthenticationFailure("invalid credentials")
+    if not verify_password(password, row["password_hash"]):
+        raise AuthenticationFailure("invalid credentials")
+    return row
+
+
+def verify_credentials(email: str, password: str) -> dict[str, Any]:
+    """Check a password without recording a sign-in.
+
+    Re-authentication before a credential change is not a sign-in; writing
+    ``last_login_at`` here made the account's last-seen time claim the operator
+    had just logged in, and no session-history entry existed to match it.
+    """
+    return _public_user(_check_credentials(email, password))
+
+
+def authenticate(email: str, password: str) -> dict[str, Any]:
+    row = _check_credentials(email, password)
+    now = iso(utcnow())
+    with connection() as conn:
         conn.execute(
-            users.update().where(users.c.id == row["id"]).values(last_login_at=iso(utcnow()))
+            users.update().where(users.c.id == row["id"]).values(last_login_at=now)
         )
-    return _public_user({**row, "last_login_at": iso(utcnow())})
+    return _public_user({**row, "last_login_at": now})
 
 
 def _increment_session_version(conn: Connection, user_id: str) -> int:

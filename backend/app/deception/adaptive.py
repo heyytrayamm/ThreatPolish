@@ -288,7 +288,11 @@ def evaluate_investigation(investigation_id: str, *, actor: str) -> dict[str, An
         raise ValidationFailure("investigation has no relationship edge to re-evaluate")
 
     since = record["created_at"]
-    new_events = _events_since(since)
+    # Count only telemetry from the address the investigation is observing.
+    # The previous platform-wide count credited unrelated ingest traffic with
+    # changing this hypothesis and could turn an empty observation into a
+    # confident "strengthened" or "weakened" outcome.
+    new_events = _events_since(since, record.get("source_ip"))
 
     run = correlate(trigger="adaptive_investigation", actor=actor)
     try:
@@ -430,10 +434,12 @@ def _select_profile(requested: str | None, observable: list[str]) -> dict[str, A
     return enabled[0] if enabled else None
 
 
-def _events_since(since_iso: str) -> int:
+def _events_since(since_iso: str, source_ip: str | None = None) -> int:
+    clause = "SELECT COUNT(*) FROM events WHERE received_at >= :since"
+    params: dict[str, Any] = {"since": since_iso}
+    if source_ip:
+        clause += " AND source_ip = :source_ip"
+        params["source_ip"] = source_ip
     with connection() as conn:
-        row = conn.execute(
-            text("SELECT COUNT(*) FROM events WHERE received_at >= :since"),
-            {"since": since_iso},
-        ).fetchone()
+        row = conn.execute(text(clause), params).fetchone()
     return int(row[0]) if row else 0

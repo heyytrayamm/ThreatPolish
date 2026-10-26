@@ -75,6 +75,24 @@ All notable changes to this project are recorded here. Dates use ISO 8601.
   validated, DNS failures of any kind become validation errors, and duplicate
   scopes are detected from `IntegrityError` rather than database-specific error
   text (`test_websec.py`).
+- An unexpected exception during an assessment now marks the scan `failed` and
+  records the error instead of leaving the row `running` indefinitely
+  (`test_websec.py`).
+- Cowrie SSH password attempts keep their truncated digest and length through
+  normalization, so the stored event supports credential-reuse analysis; the
+  plaintext is still discarded before storage (`test_deception.py`).
+- `TP_RESPONSE_AUTO_APPLY=true` is now a configuration error. The shipped
+  adapter records intent only, so accepting the flag implied an automatic
+  containment path that did not exist (`test_responses.py`).
+- Adaptive evaluation counts only telemetry received from the activated source
+  address. A platform-wide count credited unrelated ingest traffic with changing
+  the hypothesis and could turn an empty observation into a strengthened or
+  weakened outcome (`test_adaptive.py`).
+- Correlation reads its incremental state on a separate connection and writes
+  session nodes only after pair scoring. A long run no longer holds the SQLite
+  write lock across the quadratic comparison, which previously blocked
+  ingestion and sign-in audits and could fail to upgrade a stale snapshot
+  (`test_correlation.py`).
 - The dashboard replaces a deep link the signed-in role cannot open, late session
   lookups cannot overwrite the account currently under inspection, an investigation
   only offers activation while it is planned or active, and a fast double click no

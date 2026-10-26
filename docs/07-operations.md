@@ -32,7 +32,7 @@ normally change.
 | `TP_MAX_EVENT_BYTES` | `65536` | Per-event payload cap |
 | `TP_INGEST_RATE_LIMIT_PER_MINUTE` | `6000` | Per-principal ingestion limit |
 | `TP_CORRELATION_WINDOW_HOURS` | `72` | Default correlation window |
-| `TP_RESPONSE_AUTO_APPLY` | `false` | Keep disabled: no reviewed execution adapter exists |
+| `TP_RESPONSE_AUTO_APPLY` | `false` | Must stay `false`: no reviewed execution adapter exists and enabling it fails configuration |
 | `TP_WEB_SEC_ALLOW_LOOPBACK` | `false` | Must stay `false` in production |
 | `TP_WEB_SEC_TIMEOUT_SECONDS`, `TP_WEB_SEC_MAX_REQUESTS_PER_HOST` | `10`, `10` | Assessment bounds |
 | `TP_CRYPTO_PROVIDER`, `TP_CRYPTO_API_BASE` | `coingecko`, public API | Market-data source; `fixture` is available for offline use |
