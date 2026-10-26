@@ -33,7 +33,11 @@ function rememberView(view: View): void {
   const url = new URL(window.location.href);
   if (view === "overview") url.searchParams.delete("view");
   else url.searchParams.set("view", view);
-  window.history.replaceState(null, "", url);
+  const next = `${url.pathname}${url.search}${url.hash}`;
+  const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  // A new entry makes the browser's back and forward buttons follow the
+  // sidebar; re-clicking the current view should not add a duplicate.
+  if (next !== current) window.history.pushState(null, "", url);
 }
 
 const NAV: { key: View; label: string }[] = [
@@ -67,6 +71,14 @@ export default function App() {
       .then((me) => setUser({ id: me.id, name: me.name, email: me.email, role: me.role }))
       .catch(() => setToken(null))
       .finally(() => setChecking(false));
+  }, []);
+
+  useEffect(() => {
+    function handlePopState() {
+      setView(viewFromUrl());
+    }
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
   async function signIn(event: FormEvent) {

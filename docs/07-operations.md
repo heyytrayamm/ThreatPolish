@@ -349,8 +349,12 @@ a `history_trigger` of `manual` or `scheduled`; the dashboard applies both befor
 charting and exporting, with 24-hour, 7-day and 30-day quick ranges available,
 and the backlog counts above remain deployment-wide. The selected window and
 trigger are kept in the dashboard URL, so a shared link opens the same view and
-a reload keeps it. The card reports the manual and scheduled run totals for that
-window from `history_counts`, even when the table is narrowed to one trigger.
+a reload keeps it, while the sidebar pushes history so browser back and forward
+move between views. Filter values from a link are validated before use:
+malformed dates or triggers are explained on the page and removed from the
+address bar rather than sent to the API. The card reports the manual and
+scheduled run totals for that window from `history_counts`, even when the table
+is narrowed to one trigger.
 `GET /retention/history.csv` (analyst/admin) accepts the same filters and
 exports up to 1,000 recorded runs oldest first for spreadsheet or capacity
 review; the Administration card has a matching **Export CSV** action. An

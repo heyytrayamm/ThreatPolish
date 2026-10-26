@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, RetentionRun } from "../api";
 import { Card, ErrorBox, Field, Loading, formatTime, useAsync } from "../ui";
 
@@ -10,14 +10,76 @@ type RetentionTrigger = "" | "manual" | "scheduled";
 
 type RetentionRange = { since: string; until: string; trigger: RetentionTrigger };
 
-function readRangeFromUrl(): RetentionRange {
+// Matches what the filter inputs send: a UTC day or a full ISO timestamp.
+const ISO_BOUNDARY =
+  /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,6})?)?(?:Z|[+-]\d{2}:?\d{2}))?$/;
+
+function isIsoBoundary(value: string): boolean {
+  if (!value) return true;
+  if (!ISO_BOUNDARY.test(value)) return false;
+  const day = value.slice(0, 10);
+  if (Number(day.slice(0, 4)) < 1) return false;
+  const parsedDay = new Date(`${day}T00:00:00Z`);
+  return (
+    !Number.isNaN(parsedDay.getTime()) &&
+    parsedDay.toISOString().slice(0, 10) === day &&
+    !Number.isNaN(new Date(value).getTime())
+  );
+}
+
+// The API treats a bare date in ``history_until`` as the end of that UTC day.
+function boundaryTime(value: string, endOfDay: boolean): number {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const clock = endOfDay ? "23:59:59.999" : "00:00:00.000";
+    return new Date(`${value}T${clock}Z`).getTime();
+  }
+  return new Date(value).getTime();
+}
+
+function readRangeFromUrl(): { range: RetentionRange; problem: string | null } {
   const params = new URLSearchParams(window.location.search);
-  const trigger = params.get("history_trigger");
-  return {
+  const raw = {
     since: params.get("history_since")?.trim() ?? "",
     until: params.get("history_until")?.trim() ?? "",
-    trigger: trigger === "manual" || trigger === "scheduled" ? trigger : "",
+    trigger: params.get("history_trigger")?.trim() ?? "",
   };
+  const triggerValid =
+    raw.trigger === "" || raw.trigger === "manual" || raw.trigger === "scheduled";
+  const sinceValid = isIsoBoundary(raw.since);
+  const untilValid = isIsoBoundary(raw.until);
+  const invalid: string[] = [];
+  if (!sinceValid) invalid.push(`start date "${raw.since}"`);
+  if (!untilValid) invalid.push(`end date "${raw.until}"`);
+  if (!triggerValid) invalid.push(`trigger "${raw.trigger}"`);
+
+  if (invalid.length > 0) {
+    return {
+      range: { since: "", until: "", trigger: "" },
+      problem:
+        `The shared link has an invalid ${invalid.join(" and ")}. ` +
+        "Dates must be YYYY-MM-DD or an ISO timestamp, and the trigger must be " +
+        "manual or scheduled. Showing all recorded runs.",
+    };
+  }
+
+  const range: RetentionRange = {
+    since: raw.since,
+    until: raw.until,
+    trigger: raw.trigger as RetentionTrigger,
+  };
+  if (
+    range.since &&
+    range.until &&
+    boundaryTime(range.since, false) > boundaryTime(range.until, true)
+  ) {
+    return {
+      range: { since: "", until: "", trigger: range.trigger },
+      problem:
+        "The shared link's start date is after its end date. Ignoring the " +
+        "date range.",
+    };
+  }
+  return { range, problem: null };
 }
 
 function rememberRange(range: RetentionRange): void {
@@ -56,11 +118,18 @@ export function RetentionPanel({
   const [exportBusy, setExportBusy] = useState(false);
   // Filters live in the URL so a shared link opens the same window, and a
   // reload keeps the view an analyst was looking at.
-  const [initialRange] = useState(readRangeFromUrl);
-  const [historyFrom, setHistoryFrom] = useState(initialRange.since.slice(0, 10));
-  const [historyTo, setHistoryTo] = useState(initialRange.until.slice(0, 10));
-  const [trigger, setTrigger] = useState<RetentionTrigger>(initialRange.trigger);
-  const [range, setRange] = useState<RetentionRange>(initialRange);
+  const [initial] = useState(readRangeFromUrl);
+  const [historyFrom, setHistoryFrom] = useState(initial.range.since.slice(0, 10));
+  const [historyTo, setHistoryTo] = useState(initial.range.until.slice(0, 10));
+  const [trigger, setTrigger] = useState<RetentionTrigger>(initial.range.trigger);
+  const [range, setRange] = useState<RetentionRange>(initial.range);
+  const [urlProblem, setUrlProblem] = useState<string | null>(initial.problem);
+
+  // Drop invalid values from the address bar once they have been explained,
+  // so a reload does not repeat the error or send them to the API again.
+  useEffect(() => {
+    if (initial.problem) rememberRange(initial.range);
+  }, [initial]);
 
   const retention = useAsync(
     () =>
@@ -87,6 +156,7 @@ export function RetentionPanel({
     if (filterInvalid) return;
     const next = { since: historyFrom, until: historyTo, trigger };
     setRange(next);
+    setUrlProblem(null);
     rememberRange(next);
   }
 
@@ -101,6 +171,7 @@ export function RetentionPanel({
       trigger,
     };
     setRange(next);
+    setUrlProblem(null);
     rememberRange(next);
   }
 
@@ -110,6 +181,7 @@ export function RetentionPanel({
     setTrigger("");
     const next: RetentionRange = { since: "", until: "", trigger: "" };
     setRange(next);
+    setUrlProblem(null);
     rememberRange(next);
   }
 
@@ -243,6 +315,11 @@ export function RetentionPanel({
               </tr>
             </tbody>
           </table>
+          {urlProblem && (
+            <div className="error small" role="alert">
+              {urlProblem}
+            </div>
+          )}
           <div className="filters">
             <Field label="Trigger">
               <select

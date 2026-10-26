@@ -410,6 +410,15 @@ def test_dashboard_password_change_keeps_this_tab_and_revokes_the_others(live_se
                     page.get_by_text(
                         "Showing the last 2 of 16 recorded runs", exact=False
                     ).wait_for()
+
+            # The sidebar's history follows the browser's back and forward
+            # buttons instead of only changing React state.
+            page.go_back()
+            page.wait_for_selector(".page h1:has-text('Retention')")
+            assert "view=retention" in page.url
+            page.go_forward()
+            page.wait_for_selector(".page h1:has-text('Administration')")
+            assert "view=admin" in page.url
             assert console_errors == [], console_errors
 
             page.get_by_role("button", name="Account").click()
@@ -490,6 +499,18 @@ def test_analyst_sees_read_only_retention_history(live_server: str):
             page.get_by_text("1 recorded run", exact=False).wait_for()
             page.get_by_role("button", name="Export CSV").wait_for()
             assert page.get_by_role("button", name="Run retention now").count() == 0
+
+            # A link with malformed filters is explained and cleaned up rather
+            # than producing a validation error from the API.
+            page.goto(
+                f"{live_server}/?view=retention&history_since=not-a-date"
+                "&history_trigger=hourly",
+                wait_until="domcontentloaded",
+            )
+            page.wait_for_selector("text=The shared link has an invalid")
+            page.wait_for_function("!location.search.includes('history_since')")
+            assert page.get_by_label("Trigger").input_value() == ""
+            page.get_by_text("Graph horizon").wait_for()
 
             # Analysts now receive the Overview alert, and its link opens
             # their own read-only page rather than Administration.
@@ -660,6 +681,9 @@ def test_session_history_signs_out_one_device_and_admins_can_inspect_it(live_ser
                         "generated_at": "2026-10-24T10:00:00+00:00",
                         "overdue": True,
                         "grace_days": 2,
+                        "history_total": 0,
+                        "history_counts": {"manual": 0, "scheduled": 0},
+                        "history": [],
                         "events": {
                             "retention_days": 90,
                             "total": 10,
@@ -684,6 +708,13 @@ def test_session_history_signs_out_one_device_and_admins_can_inspect_it(live_ser
             page.wait_for_selector("text=Sign-in attention")
             page.wait_for_selector("text=Unusual sign-in")
             assert "5,570 km" in page.inner_text("#main")
+
+            # The administrator's alert opens the same Retention page as the
+            # sidebar entry, not the Administration credentials panel.
+            page.get_by_role("button", name="Open Retention").click()
+            page.wait_for_selector(".page h1:has-text('Retention')")
+            assert "view=retention" in page.url
+            page.get_by_text("Graph horizon").wait_for()
         finally:
             browser.close()
 

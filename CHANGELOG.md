@@ -55,9 +55,12 @@ All notable changes to this project are recorded here. Dates use ISO 8601.
   the Retention page.
 - The Retention card keeps its history window and trigger in the dashboard URL,
   so a shared link opens the same view and a reload does not reset the filters.
-  It also reports manual and scheduled run totals for that window from
-  `history_counts`, even when the table is narrowed to one trigger, and the
-  Overview's overdue alert links straight to the Retention page.
+  Sidebar navigation now pushes history, so browser back and forward move
+  between views, and malformed filter values in a shared link are explained and
+  removed instead of being sent to the API. The card also reports manual and
+  scheduled run totals for that window from `history_counts`, even when the
+  table is narrowed to one trigger, and the Overview's overdue alert links
+  straight to the Retention page for administrators and analysts.
 - `test_retention.py` explicitly asserts that viewer accounts are refused the
   status and CSV endpoints; CI runs that file against PostgreSQL after the full
   suite.
