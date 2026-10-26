@@ -13,7 +13,7 @@ import itertools
 import statistics
 import time
 import tracemalloc
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from ..correlation.features import CorrelationContext, Session, build_sessions
@@ -23,10 +23,14 @@ from ..telemetry.normalize import normalize_event
 from .scenarios import adaptive_probe_events, generate_dataset
 
 
-def run(
-    *, seed: int = 7, high_volume: bool = False, include_ablations: bool = True
-) -> dict[str, Any]:
-    dataset = generate_dataset(
+# The benchmark dataset is anchored to a fixed instant so a seed always describes
+# the same telemetry.  Anchored on the wall clock, the hour-of-day features moved
+# between runs and the published counts drifted with them.
+BENCHMARK_START = datetime(2026, 1, 15, 6, 0, tzinfo=timezone.utc)
+
+
+def benchmark_dataset(*, seed: int = 7, high_volume: bool = False) -> dict[str, Any]:
+    return generate_dataset(
         seed=seed,
         campaign_groups=40 if high_volume else 10,
         sessions_per_group=3,
@@ -34,7 +38,14 @@ def run(
         same_ip_pairs=4,
         incomplete_groups=2,
         delayed_sessions=3,
+        now=BENCHMARK_START,
     )
+
+
+def run(
+    *, seed: int = 7, high_volume: bool = False, include_ablations: bool = True
+) -> dict[str, Any]:
+    dataset = benchmark_dataset(seed=seed, high_volume=high_volume)
     started = time.perf_counter()
     cpu_started = time.process_time()
     tracemalloc.start()

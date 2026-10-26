@@ -14,11 +14,11 @@
   <img alt="Python 3.12" src="https://img.shields.io/badge/Python-3.12-0b7285?logo=python&amp;logoColor=white" />
   <img alt="React 18" src="https://img.shields.io/badge/React-18-087ea4?logo=react&amp;logoColor=white" />
   <img alt="PostgreSQL 16" src="https://img.shields.io/badge/PostgreSQL-16-31648c?logo=postgresql&amp;logoColor=white" />
-  <img alt="174 tests" src="https://img.shields.io/badge/tests-174%20passing-14b8a6" />
+  <img alt="186 tests" src="https://img.shields.io/badge/tests-186%20passing-14b8a6" />
   <img alt="License: proprietary" src="https://img.shields.io/badge/License-proprietary-6b21a8" />
 </p>
 
-> **Status — 1.0.4.** Self-hosted. The Docker/PostgreSQL path is verified end to
+> **Status — 1.0.5.** Self-hosted. The Docker/PostgreSQL path is verified end to
 > end, including restart, backup/restore, database outage and live Cowrie
 > ingestion. Benchmark results use synthetic telemetry; read the
 > [limits](#limits) before drawing operational conclusions.
@@ -242,11 +242,11 @@ mechanism is reported as working, not as proven.
 
 | Target sessions | Actual | Pairs | Stored edges | Cold wall | Warm wall | Per pair |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| 250 | 247 | 30,381 | 3,641 | 3.66 s | 0.41 s | 0.120 ms |
-| 400 | 394 | 77,421 | 8,000 | 9.07 s | 0.68 s | 0.117 ms |
-| 600 | 591 | 174,345 | 8,000 | 17.12 s | 1.01 s | 0.098 ms |
-| 800 | 788 | 310,078 | 8,000 | 28.24 s | 1.51 s | 0.091 ms |
-| 1,000 (cap raised) | 800 | 319,600 | 8,000 | 29.63 s | 1.56 s | 0.093 ms |
+| 250 | 247 | 30,381 | 3,655 | 6.71 s | 0.33 s | 0.221 ms |
+| 400 | 394 | 77,421 | 8,000 | 9.02 s | 0.62 s | 0.116 ms |
+| 600 | 591 | 174,345 | 8,000 | 16.83 s | 0.97 s | 0.097 ms |
+| 800 | 788 | 310,078 | 8,000 | 27.69 s | 1.40 s | 0.089 ms |
+| 1,000 (cap raised) | 800 | 319,600 | 8,000 | 29.06 s | 1.42 s | 0.091 ms |
 
 Pairs are quadratic in sessions; warm runs reuse stored decisions and cost almost
 nothing. The 800-session cap is the largest window at which the 8,000-edge budget
@@ -270,13 +270,14 @@ campaigns. Source: [`docs/research/evidence-views.md`](docs/research/evidence-vi
 
 | Check | Result |
 | --- | --- |
-| Backend suite · SQLite | **174 passed** (five of them drive Chrome end to end) |
-| Backend suite · PostgreSQL 16 | **174 passed** against a real service database |
+| Backend suite · SQLite | **186 passed** in 91.5 s (five of them drive Chrome end to end) |
+| Backend suite · PostgreSQL 16 | **186 passed** in 233.6 s against a real service database |
 | Campaign evidence plan and observation metrics | Unit-tested against a seeded campaign; the same test runs on SQLite and PostgreSQL |
 | Static analysis | Ruff clean on `app`, `tests` and `scripts`; `compileall` clean |
 | Dependency audit | `pip-audit` and `npm audit --audit-level=high` report no known vulnerabilities |
 | Dashboard build | TypeScript project build and Vite production build pass |
-| Determinism | Every benchmark run is seeded and reproducible from its recorded seed |
+| Deep scan | Every API route exercised as each role and anonymously: no authorization disagreement, no 5xx; 23 SSRF payloads, none reached |
+| Determinism | Every benchmark run is seeded and reproducible from its recorded seed; the dataset is anchored, so two runs agree exactly |
 
 ```bash
 cd backend

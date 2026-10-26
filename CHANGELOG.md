@@ -2,6 +2,42 @@
 
 All notable changes to this project are recorded here. Dates use ISO 8601.
 
+## 1.0.5 — 2026-10-27
+
+### Added
+
+- `backend/scripts/deepscan.py` asks the same questions of every route instead of
+  the routes a test happened to cover: it derives each route's permissions from
+  its FastAPI dependency closure, calls it as every RBAC role and anonymously,
+  then sends hostile parameters, malformed bodies, tampered tokens and SSRF
+  targets. It fails on a 5xx, on an authorization decision that disagrees with
+  the role matrix, or on a target it should have refused.
+- `docs/research/deepscan-results.md` records what that scan measured on this
+  host — 57 routes, 285 authorization checks and 0 disagreements; 60 operations
+  and 652 hostile requests with no 5xx; 23 SSRF payloads across 9 scopes with no
+  target reached — together with the cross-engine suite times, the browser run
+  and the write latency measured during a correlation run.
+- `tests/test_determinism.py` holds the benchmark to its seed: dataset generation
+  must not read the wall clock, the same seed must reproduce identical telemetry,
+  and different seeds must not.
+
+### Changed
+
+- The evaluation dataset is anchored to a fixed instant (`runner.BENCHMARK_START`)
+  instead of `datetime.now()`. The demo seeder and the runtime benchmark keep the
+  wall clock, where "recent" is the point, and `generate_dataset` takes an optional
+  `now` for both.
+- The evaluation and correlation-runtime reports were regenerated from the
+  anchored dataset; headline precision and recall are unchanged.
+
+### Fixed
+
+- The seeded benchmark was not reproducible. While re-running the evaluation, seed
+  7 reported 214, then 213, then 211 ambiguous pairs and seed 2026 reported 208,
+  then 205, because the hour-of-day features moved with the time of day the
+  benchmark was started. Two consecutive full evaluations now produce identical
+  JSON apart from `generated_at` and the resource timings.
+
 ## 1.0.4 — 2026-10-26
 
 ### Added

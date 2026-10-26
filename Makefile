@@ -1,4 +1,4 @@
-.PHONY: install test audit benchmark evaluate build serve decoy demo demo-docker clean
+.PHONY: install test audit benchmark evaluate deepscan build serve decoy demo demo-docker clean
 
 install:
 	cd backend && pip install -r requirements-dev.txt
@@ -16,6 +16,9 @@ benchmark:
 
 evaluate:
 	cd backend && python scripts/evaluate.py
+
+deepscan:
+	cd backend && python scripts/deepscan.py
 
 build:
 	cd frontend && npm run build

@@ -6,6 +6,7 @@
 cd backend
 python -m pytest -q              # full suite
 python scripts/evaluate.py       # benchmark, writes docs/research/
+python scripts/deepscan.py       # authorization, hostile-input and SSRF scans
 ```
 
 The suite runs on SQLite with an in-process ASGI client and needs no external
@@ -25,6 +26,14 @@ python -m pytest tests/test_browser.py -q
 It starts the API on a free port, which also serves `frontend/dist`, and skips
 when the bundle is missing, stale or Playwright is absent.
 
+`scripts/deepscan.py` asks the same questions of every route rather than of the
+routes a test happened to cover: it derives each route's permissions from its
+dependency closure, calls it as every role and anonymously, then sends hostile
+parameters, malformed bodies, tampered tokens and SSRF targets. It exits non-zero
+on a 5xx, on an authorization decision that disagrees with the role matrix, or on
+a target it should have refused. Results and the environment they were measured
+in are in [`research/deepscan-results.md`](research/deepscan-results.md).
+
 ## Suite structure
 
 | File | Covers |
@@ -38,6 +47,7 @@ when the bundle is missing, stale or Playwright is absent.
 | `test_responses.py` | Policy matrix, approval requirement, expiry, rollback, state machine |
 | `test_pipeline.py` | Ingestion idempotency, quarantine, attribution, modules sharing one contract |
 | `test_end_to_end.py` | Login → ingest → correlate → campaign → response → audit over HTTP |
+| `test_determinism.py` | The seeded benchmark describes the same dataset on every run: dataset generation never reads the wall clock, the same seed reproduces identical telemetry, different seeds do not, and the anchor is a fixed instant |
 | `test_retention.py` | Role-scoped retention status and admin-only manual run, backlog-versus-overdue grace, expired and retired counts, a combined purge clearing both horizons, scheduled-run history plus audit, total-run reporting when the 14-row view is truncated, CSV export beyond that view, UTC date-range and trigger filtering with matching totals and per-trigger counts, analyst read-only access, explicit viewer denial and Prometheus metrics |
 | `test_demo.py` | Development seed populates telemetry, correlation, retention history and a demo login idempotently, and refuses to run in production |
 | `test_security.py` | Auth bypass attempts, injection strings, oversized payloads, token tampering |
@@ -49,10 +59,11 @@ when the bundle is missing, stale or Playwright is absent.
 
 ## Measured behaviour
 
-Latest full run: **174 passed on SQLite**, including the five browser cases;
-the same suite passes against PostgreSQL 16.2. CI runs both engines on every
-push; the PostgreSQL job starts a service database and the fixture resets its
-schema per test, so isolation matches the SQLite path.
+Latest full run: **186 passed on SQLite in 91.5 s**, including the five browser
+cases only when the bundle is built; the same 186 pass against PostgreSQL 16.15
+in 233.6 s. CI runs both engines on every push; the PostgreSQL job starts a
+service database and the fixture resets its schema per test, so isolation matches
+the SQLite path.
 Static checks: the frontend builds with `tsc -b` and `vite build`; the backend
 passes Ruff and compiles with `compileall`.
 
@@ -78,6 +89,11 @@ sessions (310,078 pairs) a run takes about 28 s, and the 8,000-edge cap retains
 every linked pair. At 982 sessions the same cap starts discarding links (1,953),
 so the session cap is 800 — the largest measured window that keeps all links —
 rather than the largest that fits a time budget.
+
+The evaluation dataset is anchored to a fixed instant rather than the wall clock,
+so a seed reproduces the same telemetry and the same counts on every run; two
+consecutive full evaluations produced identical JSON apart from timestamps and
+resource timings (`test_determinism.py`).
 
 Benchmark, 63 sessions / 1953 pairs, two seeds, algorithm `corr-1.3.0`:
 
@@ -139,6 +155,22 @@ adaptive experiment are in `docs/research/evaluation-results.md`.
   sample to call a demonstrated benefit; the production path records real decoy
   traffic and cannot add evidence, and every investigation stores before/after
   values.
+
+## Deep scan
+
+`scripts/deepscan.py` was run against the whole API surface on this host:
+
+| Scan | Coverage | Findings |
+| --- | --- | --- |
+| Authorization matrix | 57 routes, 285 requests as admin, analyst, viewer, sensor and anonymous | 0 roles refused a permission they hold, 0 roles granted one they lack, 0 anonymous requests to guarded routes allowed, 0 5xx |
+| Hostile inputs | 60 OpenAPI operations, 652 requests | 0 5xx; 413 above the 32.77 MB ingest bound; tampered and `alg: none` tokens 401; non-JSON parsed as nothing |
+| SSRF payloads | 23 payloads across 9 loopback, link-local, private and IPv6 scopes | 0 targets reached |
+
+Write latency during a 12,720-pair correlation run (13.4 s on 160 sessions) was
+p50 1.45 ms, max 2.02 ms across 20 unrelated audit writes, against p50 1.49 ms,
+max 2.69 ms when idle, so the run does not block unrelated writes on this host.
+The full protocol, per-scan detail and what the scan does not cover are in
+[`research/deepscan-results.md`](research/deepscan-results.md).
 
 ## Container deployment verification
 

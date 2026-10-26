@@ -92,9 +92,19 @@ def generate_dataset(
     incomplete_groups: int = 2,
     delayed_sessions: int = 3,
     generic_groups: int = 2,
+    now: datetime | None = None,
 ) -> dict[str, Any]:
+    """Build a labelled dataset.
+
+    ``now`` anchors the telemetry.  Callers that load it into a live window (the
+    demo seeder, the runtime benchmark) leave it as ``None`` so events stay
+    recent; the evaluation runner passes a fixed instant so a seed always
+    describes the same dataset.  While the anchor was the wall clock, the
+    hour-of-day features shifted between runs and the published counts moved
+    with them, which made the reported seed irreproducible.
+    """
     rng = random.Random(seed)
-    base = datetime.now(timezone.utc) - timedelta(hours=6)
+    base = (now or datetime.now(timezone.utc)) - timedelta(hours=6)
     sessions: list[dict[str, Any]] = []
     truth: dict[str, str] = {}
     ip_counter = 0
