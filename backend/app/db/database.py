@@ -335,9 +335,20 @@ MIGRATIONS: list[tuple[int, str, Any]] = [
 ]
 
 
+MIGRATION_LOCK_KEY = 0x54504D494752  # "TPMIGR"
+
+
 def init_db(url: str | None = None) -> Engine:
     engine = get_engine(url)
     with engine.begin() as conn:
+        if conn.dialect.name == "postgresql":
+            # Every API worker runs this at startup.  Without a lock, workers
+            # starting against an empty database apply (and record) the same
+            # migrations concurrently and one of them crashes on a duplicate
+            # DDL statement.  The transaction-scoped lock serialises them.
+            conn.execute(
+                text("SELECT pg_advisory_xact_lock(:key)"), {"key": MIGRATION_LOCK_KEY}
+            )
         schema_migrations.create(bind=conn, checkfirst=True)
         applied = {
             row[0]

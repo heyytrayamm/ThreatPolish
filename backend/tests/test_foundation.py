@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from .conftest import make_event
+from .conftest import ADMIN_EMAIL, make_event
 
 
 def test_health_endpoints_are_public(client):
@@ -293,3 +293,22 @@ def test_production_rejects_placeholder_signing_secret(monkeypatch):
 
     with pytest.raises(ConfigurationError):
         build_settings()
+
+
+def test_bootstrap_admin_loses_the_startup_race_without_failing(monkeypatch):
+    """Two workers on an empty database both try to create the first admin.
+
+    The loser hits the unique constraint.  That must not abort its lifespan, or
+    ``uvicorn --workers N`` stops the whole server during startup.
+    """
+    from app.auth import users
+    from app.db.database import init_db
+
+    init_db()
+    real_count = users.count_users
+    # Both workers observed an empty table before either insert completed.
+    monkeypatch.setattr(users, "count_users", lambda: 0)
+
+    assert users.ensure_bootstrap_admin() == ADMIN_EMAIL
+    assert users.ensure_bootstrap_admin() is None
+    assert real_count() == 1

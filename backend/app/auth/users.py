@@ -11,6 +11,7 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError
 
 from ..core.errors import AuthenticationFailure, Conflict, NotFound, ValidationFailure
+from ..core.logging import get_logger
 from ..core.security import (
     hash_agent_token,
     hash_password,
@@ -24,6 +25,7 @@ from ..db.database import connection, query_one
 from ..db.schema import agent_tokens, users
 from .rbac import validate_role
 
+log = get_logger(__name__)
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
@@ -246,6 +248,12 @@ def revoke_agent_token(token_id: str) -> None:
 def ensure_bootstrap_admin() -> str | None:
     """Create the first administrator from environment variables if the user
     table is empty.  Returns the email when a user was created.
+
+    Every API worker runs this at startup.  The count check and the insert are
+    not atomic, so on a fresh database two workers can both decide to create the
+    account; the loser gets a unique-constraint Conflict.  That is the expected
+    outcome of a concurrent start, not a startup failure, and returning ``None``
+    is truthful: this process did not create the account.
     """
     if count_users() > 0:
         return None
@@ -253,5 +261,9 @@ def ensure_bootstrap_admin() -> str | None:
     password = os.environ.get("TP_BOOTSTRAP_ADMIN_PASSWORD", "")
     if not email or not password:
         return None
-    create_user(email=email, name="Administrator", role="admin", password=password)
+    try:
+        create_user(email=email, name="Administrator", role="admin", password=password)
+    except Conflict:
+        log.info("bootstrap administrator was created by another worker", extra={"email": email})
+        return None
     return email

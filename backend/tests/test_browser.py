@@ -486,7 +486,10 @@ def test_dashboard_password_change_keeps_this_tab_and_revokes_the_others(live_se
             ):
                 page.go_back()
             page.wait_for_function("location.search.includes('history_since=')")
-            assert "history_since=2026-10-20" not in page.url
+            # The day filter is a bare date; the quick range is a full
+            # timestamp that happens to start with the same day once "7 days
+            # ago" is 2026-10-20, so compare the delimiter, not the prefix.
+            assert "history_since=2026-10-20&" not in page.url
             page.get_by_text(
                 "Showing the last 2 of 16 matching runs", exact=False
             ).wait_for()
@@ -968,5 +971,83 @@ def test_campaign_detail_explains_its_evidence(live_server: str):
             # The empty cells are a finding, not a rendering accident.
             assert page.get_by_text("no stored edge", exact=False).count() >= 1
             assert console_errors == []
+        finally:
+            browser.close()
+
+
+def test_campaign_graph_labels_stay_apart_and_inside_the_frame(live_server: str):
+    """Campaign labels share a prefix, so placement has to separate them.
+
+    Both candidates are named "cross-IP campaign candidate <hash>".  Rendering
+    the full name cut to a fixed length produced two identical labels drawn on
+    top of each other, one of them running out of the graph.  The labels must
+    keep the discriminating suffix, avoid each other and stay in the viewBox.
+    """
+    graph = {
+        "window_hours": 72,
+        "note": "synthetic graph for label placement",
+        "edges": [],
+        "nodes": [
+            {"id": f"campaign:cmp_{suffix}", "kind": "campaign",
+             "label": f"cross-IP campaign candidate {suffix}", "props": {}, "last_seen": "2026-10-24T10:00:00+00:00"}
+            for suffix in ("5a9676", "4bad6a")
+        ]
+        + [
+            {"id": f"session:sess-{index}", "kind": "session", "label": f"sess-{index}",
+             "props": {}, "last_seen": "2026-10-24T10:00:00+00:00"}
+            for index in range(4)
+        ]
+        + [
+            {"id": f"ip:203.0.113.{index}", "kind": "ip", "label": f"203.0.113.{index}",
+             "props": {}, "last_seen": "2026-10-24T10:00:00+00:00"}
+            for index in (10, 11)
+        ],
+    }
+    with playwright_api.sync_playwright() as p:
+        browser = _launch(p.chromium)
+        try:
+            page = browser.new_page(viewport={"width": 1560, "height": 1000})
+            page.route(
+                re.compile(r".*/api/v1/graph\?.*$"),
+                lambda route: route.fulfill(json=graph),
+            )
+            page.goto(live_server, wait_until="domcontentloaded")
+            page.get_by_label("Email").fill(ADMIN_EMAIL)
+            page.get_by_label("Password", exact=True).fill(ADMIN_PASSWORD)
+            page.get_by_role("button", name="Sign in").click()
+            page.wait_for_selector(".sidebar")
+            page.goto(f"{live_server}/?view=campaigns", wait_until="domcontentloaded")
+            page.wait_for_selector("svg.graph .node-label")
+
+            measured = page.evaluate(
+                """() => {
+                    const svg = document.querySelector('svg.graph').getBoundingClientRect();
+                    const labels = [...document.querySelectorAll('.node-label')].map((node) => {
+                        const box = node.getBoundingClientRect();
+                        return { text: node.textContent, x: box.x, y: box.y,
+                                 right: box.right, bottom: box.bottom };
+                    });
+                    const overlaps = [];
+                    for (let i = 0; i < labels.length; i += 1) {
+                        for (let j = i + 1; j < labels.length; j += 1) {
+                            const a = labels[i];
+                            const b = labels[j];
+                            if (!(a.right < b.x || b.right < a.x || a.bottom < b.y || b.bottom < a.y)) {
+                                overlaps.push([a.text, b.text]);
+                            }
+                        }
+                    }
+                    return { labels, overlaps, svg: { x: svg.x, y: svg.y, right: svg.right, bottom: svg.bottom } };
+                }"""
+            )
+            labels = measured["labels"]
+            assert len(labels) == 2, labels
+            assert labels[0]["text"] != labels[1]["text"], labels
+            assert measured["overlaps"] == [], measured["overlaps"]
+            for label in labels:
+                assert label["x"] >= measured["svg"]["x"] - 1, label
+                assert label["right"] <= measured["svg"]["right"] + 1, label
+                assert label["y"] >= measured["svg"]["y"] - 1, label
+                assert label["bottom"] <= measured["svg"]["bottom"] + 1, label
         finally:
             browser.close()

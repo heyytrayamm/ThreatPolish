@@ -14,7 +14,7 @@
   <img alt="Python 3.12" src="https://img.shields.io/badge/Python-3.12-0b7285?logo=python&amp;logoColor=white" />
   <img alt="React 18" src="https://img.shields.io/badge/React-18-087ea4?logo=react&amp;logoColor=white" />
   <img alt="PostgreSQL 16" src="https://img.shields.io/badge/PostgreSQL-16-31648c?logo=postgresql&amp;logoColor=white" />
-  <img alt="186 tests" src="https://img.shields.io/badge/tests-186%20passing-14b8a6" />
+  <img alt="193 tests" src="https://img.shields.io/badge/tests-193%20passing-14b8a6" />
   <img alt="License: proprietary" src="https://img.shields.io/badge/License-proprietary-6b21a8" />
 </p>
 
@@ -266,17 +266,31 @@ One campaign in the 400-session run took 46 ms, so a single large campaign can
 dominate a page load; cost tracks campaign size and payload, not the number of
 campaigns. Source: [`docs/research/evidence-views.md`](docs/research/evidence-views.md).
 
+Ingestion was measured against a real API with four worker processes on
+PostgreSQL 16, six clients writing while one correlation run scanned 165 sessions
+and 13,530 pairs (6.4 s). Two runs on a reset schema:
+
+| Condition | p50 | p95 | Worst request | Errors |
+| --- | ---: | ---: | ---: | ---: |
+| Idle | 10.5–12.5 ms | 13.4–18.7 ms | 43–134 ms | 0 |
+| During correlation | 10.7–16.3 ms | 23.8–25.1 ms | 555–699 ms | 0 |
+
+The median moves within run-to-run noise; the tail does not. Accepted events
+reconciled exactly with the stored count in both runs. Source:
+[`docs/research/write-contention.md`](docs/research/write-contention.md).
+
 ## Verification
 
 | Check | Result |
 | --- | --- |
-| Backend suite · SQLite | **186 passed** in 91.5 s (five of them drive Chrome end to end) |
-| Backend suite · PostgreSQL 16 | **186 passed** in 233.6 s against a real service database |
+| Backend suite · SQLite | **193 passed** in 83.2 s (six of them drive Chrome end to end) |
+| Backend suite · PostgreSQL 16 | **193 passed** in 172.3 s against a real service database |
+| Four API workers, six writers, PostgreSQL 16 | No write errors while correlation ran; accepted events reconciled exactly; p95 18.7 → 24.5 ms and the worst request 43 → 555 ms |
 | Campaign evidence plan and observation metrics | Unit-tested against a seeded campaign; the same test runs on SQLite and PostgreSQL |
 | Static analysis | Ruff clean on `app`, `tests` and `scripts`; `compileall` clean |
 | Dependency audit | `pip-audit` and `npm audit --audit-level=high` report no known vulnerabilities |
 | Dashboard build | TypeScript project build and Vite production build pass |
-| Deep scan | Every API route exercised as each role and anonymously: no authorization disagreement, no 5xx; 23 SSRF payloads, none reached |
+| Deep scan | Every API route exercised as each role and anonymously: no authorization disagreement, no 5xx; 23 SSRF payloads, none reached; every outbound call pointed at a hostile probe refused the redirect and stopped at the 1 MiB bound |
 | Determinism | Every benchmark run is seeded and reproducible from its recorded seed; the dataset is anchored, so two runs agree exactly |
 
 ```bash

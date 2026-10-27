@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Scan every API route for authorization and input-handling defects.
+"""Scan every API route for authorization, input and outbound-call defects.
 
-Three checks run against a freshly created app in a temporary SQLite database:
+Four checks run against a freshly created app in a temporary SQLite database:
 
 * **Authorization matrix** — every route's required permissions are read from its
   FastAPI dependency closure, then the route is exercised as each RBAC role and
@@ -12,14 +12,20 @@ Three checks run against a freshly created app in a temporary SQLite database:
   tampered bearer tokens, wrong content types and oversized bodies.
 * **SSRF payloads** — the assessment endpoint is called with loopback, metadata
   and private-range targets while loopback is disabled.
+* **Outbound calls** — every call the platform makes to another service is
+  pointed at a local probe that redirects, answers with a 33 MiB body or serves
+  valid JSON: the market-data refresh, the optional geolocation lookup and an
+  assessment whose target redirects to a private address.
 
-The scans are non-destructive: they create their own database and only call the
-application's own HTTP surface.  Output is a JSON report per scan; the exit code
-is non-zero when a scan finds something, so this can gate a release.
+The scans are non-destructive: they create their own database, their own probe
+server and only call the application's own HTTP surface.  The exit code is
+non-zero when a scan finds something, so this can gate a release; each report is
+written to ``--out`` (default ``deepscan-reports/``) for CI to keep.
 
 Usage:
     python scripts/deepscan.py
     python scripts/deepscan.py --only authz
+    python scripts/deepscan.py --only outbound --json
 """
 
 from __future__ import annotations
@@ -31,8 +37,11 @@ import random
 import re
 import sys
 import tempfile
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -147,6 +156,10 @@ def _environment(tmp: str) -> None:
         TP_BOOTSTRAP_ADMIN_PASSWORD=ADMIN_PASSWORD,
         TP_WEB_SEC_ALLOW_LOOPBACK="false",
         TP_RESPONSE_AUTO_APPLY="false",
+        # The input scan calls the refresh endpoint with hostile bodies; a
+        # fixture keeps that call local.  The outbound scan switches providers
+        # itself when it points the adapter at its probe.
+        TP_CRYPTO_PROVIDER="fixture",
         # Request logs would bury the report; failures still surface as statuses.
         TP_LOG_LEVEL="ERROR",
     )
@@ -396,10 +409,293 @@ def scan_ssrf(client, headers: dict[str, str]) -> dict[str, Any]:
     }
 
 
+HUGE_BYTES = 33 * 1024 * 1024
+PROBE_CHUNK = 64 * 1024
+PRICE_PAYLOAD = {
+    "bitcoin": {
+        "usd": 64000.0,
+        "usd_24h_change": 2.1,
+        "usd_24h_vol": 3.4e10,
+        "usd_market_cap": 1.26e12,
+        "last_updated_at": 1793000000,
+    },
+    "ethereum": {
+        "usd": 3200.0,
+        "usd_24h_change": -4.1,
+        "usd_24h_vol": 1.6e10,
+        "usd_market_cap": 3.8e11,
+        "last_updated_at": 1793000000,
+    },
+}
+
+
+class _ProbeServer(ThreadingHTTPServer):
+    """Records which paths were fetched and how much of a huge body was sent."""
+
+    daemon_threads = True
+
+    def __init__(self, *args: Any, **kwargs: Any):
+        super().__init__(*args, **kwargs)
+        self.hits: list[str] = []
+        self.transferred: dict[str, int] = {}
+        self.lock = threading.Lock()
+
+
+class _ProbeHandler(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+    server_version = "deepscan-probe"
+
+    def log_message(self, *args: Any) -> None:
+        return
+
+    @property
+    def probe(self) -> _ProbeServer:
+        return self.server  # type: ignore[return-value]
+
+    def _send(self, status: int, payload: Any) -> None:
+        body = json.dumps(payload).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _redirect(self, location: str) -> None:
+        self.send_response(302)
+        self.send_header("Location", location)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def _huge(self, path: str) -> None:
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(HUGE_BYTES))
+        self.end_headers()
+        chunk = b"x" * PROBE_CHUNK
+        sent = 0
+        try:
+            while sent < HUGE_BYTES:
+                self.wfile.write(chunk)
+                sent += len(chunk)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        with self.probe.lock:
+            self.probe.transferred[path] = sent
+
+    def do_GET(self) -> None:
+        path = urlsplit(self.path).path
+        port = self.probe.server_port
+        with self.probe.lock:
+            self.probe.hits.append(path)
+        if path == "/internal-secret":
+            # Reaching this path proves a redirect was followed.
+            self._send(200, {"reached": True})
+        elif path == "/redirect":
+            self._redirect("http://10.0.0.1/")
+        elif path.startswith("/redirect/") or path.startswith("/geo-redirect/"):
+            self._redirect(f"http://127.0.0.1:{port}/internal-secret")
+        elif path.startswith("/huge/") or path.startswith("/geo-huge/"):
+            self._huge(path)
+        elif path.startswith("/price/"):
+            self._send(200, PRICE_PAYLOAD)
+        elif path.startswith("/geo/"):
+            self._send(200, {"loc": "37.4056,-122.0775"})
+        else:
+            self._send(404, {"error": "not found"})
+
+
+class _Probe:
+    def __enter__(self) -> tuple[str, _ProbeServer]:
+        self.server = _ProbeServer(("127.0.0.1", 0), _ProbeHandler)
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        return f"http://127.0.0.1:{self.server.server_port}", self.server
+
+    def __exit__(self, *args: Any) -> None:
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join(timeout=5)
+
+
+def scan_outbound(client, headers: dict[str, str]) -> dict[str, Any]:
+    """Point every outbound call at a probe that redirects or floods."""
+    from app.auth import geo
+    from app.core.config import reset_settings_cache
+    from app.core.outbound import MAX_OUTBOUND_JSON_BYTES
+
+    probes: list[dict[str, Any]] = []
+    unsafe: list[str] = []
+
+    def error_code(response) -> str:
+        try:
+            return str(response.json().get("error", {}).get("code", ""))
+        except ValueError:
+            return "non_json_body"
+
+    with _Probe() as (base, server):
+        def clear_snapshots() -> None:
+            # The scan's own database; earlier refreshes (the input scan uses the
+            # fixture provider) would otherwise make the provider call "not due"
+            # and the probes would pass without touching the probe server.
+            from sqlalchemy import text
+
+            from app.db.database import connection
+
+            with connection() as conn:
+                conn.execute(text("DELETE FROM crypto_risk"))
+                conn.execute(text("DELETE FROM crypto_snapshots"))
+
+        clear_snapshots()
+
+        def refresh(prefix: str) -> Any:
+            os.environ.update(
+                TP_CRYPTO_PROVIDER="coingecko",
+                TP_CRYPTO_API_BASE=f"{base}/{prefix}",
+                TP_CRYPTO_MIN_REFRESH_SECONDS="5",
+            )
+            reset_settings_cache()
+            return client.post(
+                "/api/v1/crypto/refresh", headers=headers, json={"symbols": ["BTC"]}
+            )
+
+        # A provider that answers with a redirect must not be followed; the
+        # redirect points back at the probe so a followed hop is observable.
+        redirect = refresh("redirect")
+        followed = "/internal-secret" in server.hits
+        probes.append(
+            {
+                "call": "crypto refresh",
+                "case": "redirect",
+                "status": redirect.status_code,
+                "code": error_code(redirect),
+                "reached_redirect_target": followed,
+            }
+        )
+        if redirect.status_code == 200 or followed:
+            unsafe.append("provider redirect was followed or accepted")
+
+        oversized = refresh("huge")
+        transferred = server.transferred.get("/huge/simple/price", 0)
+        probes.append(
+            {
+                "call": "crypto refresh",
+                "case": "oversized body",
+                "status": oversized.status_code,
+                "code": error_code(oversized),
+                "bytes_read": transferred,
+                "limit": MAX_OUTBOUND_JSON_BYTES,
+            }
+        )
+        if oversized.status_code == 200:
+            unsafe.append("provider oversized body was accepted")
+        if transferred > MAX_OUTBOUND_JSON_BYTES * 4:
+            unsafe.append("provider response was read past the documented limit")
+
+        # The valid call runs last: the minimum refresh interval would otherwise
+        # skip the provider for the two failure cases above.
+        valid = refresh("price")
+        retrieved = [item.get("symbol") for item in valid.json().get("refreshed", [])] if valid.status_code == 200 else []
+        probes.append(
+            {
+                "call": "crypto refresh",
+                "case": "valid payload",
+                "status": valid.status_code,
+                "code": error_code(valid) if valid.status_code >= 400 else "",
+                "refreshed": retrieved,
+            }
+        )
+        if valid.status_code != 200 or "BTC" not in retrieved:
+            unsafe.append("provider refresh rejected a valid payload")
+
+        geo.clear_cache()
+        for case, path, address in (
+            ("valid payload", "/geo/{ip}", "8.8.8.8"),
+            ("redirect", "/geo-redirect/{ip}", "8.8.4.4"),
+            ("oversized body", "/geo-huge/{ip}", "1.1.1.1"),
+        ):
+            before = len(server.hits)
+            point = geo.locate(address, url=f"{base}{path}", timeout=5.0)
+            served = server.hits[before:]
+            probes.append(
+                {
+                    "call": "geolocation lookup",
+                    "case": case,
+                    "located": point is not None,
+                    "paths": served,
+                }
+            )
+            if case == "valid payload" and point is None:
+                unsafe.append("geolocation lookup rejected a valid payload")
+            if case == "redirect" and ("/internal-secret" in served or point is not None):
+                unsafe.append("geolocation redirect was followed")
+            if case == "oversized body" and point is not None:
+                unsafe.append("geolocation oversized body was accepted")
+
+        # An assessment redirect must not reach a private address, even when
+        # that address has its own authorization scope.
+        loopback = os.environ.get("TP_WEB_SEC_ALLOW_LOOPBACK")
+        os.environ["TP_WEB_SEC_ALLOW_LOOPBACK"] = "true"
+        reset_settings_cache()
+        try:
+            for domain in ("127.0.0.1", "10.0.0.1"):
+                client.post(
+                    "/api/v1/websec/scopes",
+                    headers=headers,
+                    json={
+                        "domain": domain,
+                        "authorized_by": "deepscan",
+                        "expires_in_days": 1,
+                        "allow_active": False,
+                    },
+                )
+            assessment = client.post(
+                "/api/v1/websec/assess",
+                headers=headers,
+                json={"target": f"http://127.0.0.1:{server.server_port}/redirect", "active_checks": False},
+            )
+        finally:
+            if loopback is None:
+                os.environ.pop("TP_WEB_SEC_ALLOW_LOOPBACK", None)
+            else:
+                os.environ["TP_WEB_SEC_ALLOW_LOOPBACK"] = loopback
+            reset_settings_cache()
+        report = assessment.json() if assessment.status_code == 200 else {}
+        limitations = [str(item) for item in report.get("limitations", [])]
+        refused = any("non-public address" in item for item in limitations)
+        probes.append(
+            {
+                "call": "web assessment",
+                "case": "redirect to private address",
+                "status": assessment.status_code,
+                "code": error_code(assessment),
+                "scan_status": report.get("status", ""),
+                "refused": refused,
+            }
+        )
+        # A refusal is reported inside a 200 response as a partial scan, so the
+        # status line alone cannot tell whether the redirect was followed.
+        if not refused or report.get("status") == "completed":
+            unsafe.append("assessment followed a redirect to a private address")
+
+        hits = list(server.hits)
+        transferred_all = dict(server.transferred)
+
+    return {
+        "scan": "outbound",
+        "probes": probes,
+        "requested_paths": hits,
+        "bytes_written": transferred_all,
+        "unsafe": unsafe,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--only", choices=["authz", "inputs", "ssrf"], default=None)
+    parser.add_argument("--only", choices=["authz", "inputs", "ssrf", "outbound"], default=None)
     parser.add_argument("--json", action="store_true", help="print the full report")
+    parser.add_argument(
+        "--out", type=Path, default=Path("deepscan-reports"), help="directory for the JSON reports"
+    )
     args = parser.parse_args()
 
     tmp = tempfile.mkdtemp(prefix="tp-deepscan-")
@@ -425,18 +721,28 @@ def main() -> int:
             reports.append(scan_inputs(client, roles["admin"]))
         if args.only in (None, "ssrf"):
             reports.append(scan_ssrf(client, roles["admin"]))
+        if args.only in (None, "outbound"):
+            reports.append(scan_outbound(client, roles["admin"]))
 
+    args.out.mkdir(parents=True, exist_ok=True)
     failed = False
     for report in reports:
         summary = {key: value for key, value in report.items() if key != "results"}
+        (args.out / f"{report['scan']}.json").write_text(
+            json.dumps(report, indent=2, sort_keys=True), encoding="utf-8"
+        )
         if args.json:
             print(json.dumps(report, indent=2, sort_keys=True))
         else:
             print(json.dumps(summary, sort_keys=True))
-        if report.get("unexpected") or report.get("server_errors") or report.get(
-            "accepted_unsafe"
+        if (
+            report.get("unexpected")
+            or report.get("server_errors")
+            or report.get("accepted_unsafe")
+            or report.get("unsafe")
         ):
             failed = True
+    print(f"reports written to {args.out.resolve()}")
     return 1 if failed else 0
 
 

@@ -1,0 +1,102 @@
+{
+  "correlation": {
+    "campaigns": 41,
+    "duration_ms": 6568.08,
+    "edges_created": 1734,
+    "pairs_scored": 13530,
+    "run_id": "run_fba0d224b6e1f2b5ef1336c6",
+    "seconds": 6.64,
+    "sessions": 165
+  },
+  "during_correlation": {
+    "accepted_events": 1651,
+    "error_samples": [],
+    "errors": 0,
+    "max_ms": 554.71,
+    "p50_ms": 10.74,
+    "p95_ms": 24.45,
+    "requests": 1651
+  },
+  "engine": "PostgreSQL 16.15",
+  "generated_at": "2026-10-27T10:06:38.488120+00:00",
+  "idle": {
+    "accepted_events": 730,
+    "error_samples": [],
+    "errors": 0,
+    "max_ms": 43.14,
+    "p50_ms": 12.52,
+    "p95_ms": 18.7,
+    "requests": 730
+  },
+  "integrity": {
+    "events_after": 3665,
+    "events_before": 1284,
+    "events_expected": 3665,
+    "reconciled": true,
+    "write_errors": []
+  },
+  "repeats": [
+    {
+      "correlation": {
+        "campaigns": 41,
+        "duration_ms": 6333.34,
+        "edges_created": 1733,
+        "pairs_scored": 13530,
+        "run_id": "run_731a45b3f8c851b65b79bb10",
+        "seconds": 6.42,
+        "sessions": 165
+      },
+      "during_correlation": {
+        "accepted_events": 1589,
+        "error_samples": [],
+        "errors": 0,
+        "max_ms": 698.64,
+        "p50_ms": 11.08,
+        "p95_ms": 23.78,
+        "requests": 1589
+      },
+      "idle": {
+        "accepted_events": 807,
+        "error_samples": [],
+        "errors": 0,
+        "max_ms": 120.36,
+        "p50_ms": 10.47,
+        "p95_ms": 13.4,
+        "requests": 807
+      }
+    },
+    {
+      "correlation": {
+        "campaigns": 41,
+        "duration_ms": 6568.08,
+        "edges_created": 1734,
+        "pairs_scored": 13530,
+        "run_id": "run_fba0d224b6e1f2b5ef1336c6",
+        "seconds": 6.64,
+        "sessions": 165
+      },
+      "during_correlation": {
+        "accepted_events": 1651,
+        "error_samples": [],
+        "errors": 0,
+        "max_ms": 554.71,
+        "p50_ms": 10.74,
+        "p95_ms": 24.45,
+        "requests": 1651
+      },
+      "idle": {
+        "accepted_events": 730,
+        "error_samples": [],
+        "errors": 0,
+        "max_ms": 43.14,
+        "p50_ms": 12.52,
+        "p95_ms": 18.7,
+        "requests": 730
+      }
+    }
+  ],
+  "seeded_events": 1284,
+  "seeded_sessions": 165,
+  "workers": 4,
+  "writer_threads": 6
+}

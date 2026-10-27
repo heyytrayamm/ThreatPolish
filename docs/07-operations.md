@@ -163,10 +163,13 @@ telemetry and must be encrypted at rest.
 3. Verify `/api/v1/health/ready` and one authenticated read.
 4. Keep the previous image tag for 7 days.
 
-Schema changes are applied at startup. The container runs a single API worker
-because concurrent workers would race on the migration table; apply migrations
-before adding replicas. There is no automatic downgrade: roll back the image
-**and** restore the pre-upgrade backup. Treat a change to the
+Schema changes are applied at startup. Several workers may start against the
+same database: PostgreSQL migrations take a transaction-scoped advisory lock, and
+the bootstrap-administrator and decoy-profile seeds accept losing their insert
+race to another worker. The Compose file starts one worker; running more is
+supported and was exercised with four workers against PostgreSQL 16
+(`docs/research/write-contention.md`). There is no automatic downgrade: roll back
+the image **and** restore the pre-upgrade backup. Treat a change to the
 correlation `algorithm_version` as a behavioural change and re-run
 `python scripts/evaluate.py` before promoting.
 
@@ -435,5 +438,6 @@ the API is healthy.
 - Cowrie was exercised with connection attempts, not a full interactive shell
   session; validate the fake filesystem against your image version.
 - Single-node deployment; correlation does not scale horizontally (it processes
-  at most 800 sessions per run), and the API runs one worker so startup
-  migrations cannot race.
+  at most 800 sessions per run). The API can run several workers — startup is
+  serialised and measured with four — but each correlation run is still one
+  batch job.

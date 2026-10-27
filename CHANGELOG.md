@@ -20,9 +20,31 @@ All notable changes to this project are recorded here. Dates use ISO 8601.
 - `tests/test_determinism.py` holds the benchmark to its seed: dataset generation
   must not read the wall clock, the same seed must reproduce identical telemetry,
   and different seeds must not.
+- The scan has a fourth mode: **outbound calls**. A local probe answers valid
+  JSON, redirects, or announces a 33 MiB body, and the market-data refresh, the
+  geolocation lookup and an assessment whose target redirects are all pointed at
+  it. A followed redirect or a body read past the bound fails the run.
+- `backend/scripts/benchmark_write_contention.py` starts the real API with
+  `uvicorn --workers N` against PostgreSQL, ingests the evaluation dataset, then
+  times single-event writes from six clients while a correlation run scans the
+  window, and reconciles the stored event count afterwards. It refuses a SQLite
+  target, which would serialise the writers and answer a different question.
+- `docs/research/write-contention.md` and `docs/research/deepscan-results.md`
+  record the two-run measurement — no write errors, exact reconciliation, p95
+  19.0 → 24.5 ms, worst request 43 → 555 ms — and the defects it exposed.
+- CI runs the deep scan on every push and keeps its reports as an artifact.
 
 ### Changed
 
+- Campaign graph labels keep the suffix that distinguishes two candidates
+  (`cross-IP campaign…4bad6a`), are placed to avoid each other and are kept inside
+  the frame instead of running under the graph's edge. A halo keeps them legible
+  where they cross an edge.
+- The README artwork and screenshots were regenerated: the architecture diagram's
+  right-hand panels were widened so no sentence crossed the border, the three
+  campaign evidence views are captured as whole cards rather than as a viewport
+  slice that repeats the previous card, and all screenshots are framed from the
+  top of the card they document.
 - The evaluation dataset is anchored to a fixed instant (`runner.BENCHMARK_START`)
   instead of `datetime.now()`. The demo seeder and the runtime benchmark keep the
   wall clock, where "recent" is the point, and `generate_dataset` takes an optional
@@ -32,6 +54,20 @@ All notable changes to this project are recorded here. Dates use ISO 8601.
 
 ### Fixed
 
+- A four-worker API could not start against a fresh database. `ensure_bootstrap_admin`
+  and `seed_default_profiles` counted rows and then inserted, so two workers
+  starting together raced and the loser's lifespan aborted with a unique
+  constraint; PostgreSQL migrations also ran without a lock. The seeds now treat
+  the lost race as the expected outcome, and migrations take a transaction-scoped
+  advisory lock (`test_foundation.py`).
+- Market-data refresh and geolocation lookup buffered whatever the remote sent
+  before parsing it, so a provider, proxy or DNS hijack could exhaust memory with
+  a large or endless body. Both now use `app/core/outbound.py`, which streams,
+  stops at 1 MiB, refuses redirects and parses only what it read
+  (`test_outbound.py`).
+- The browser test that steps back from the retention quick range compared the
+  day filter's prefix, which collides with "seven days ago" on 2026-10-27; it now
+  compares the delimiter, so the assertion means what it says on any date.
 - The seeded benchmark was not reproducible. While re-running the evaluation, seed
   7 reported 214, then 213, then 211 ambiguous pairs and seed 2026 reported 208,
   then 205, because the hour-of-day features moved with the time of day the

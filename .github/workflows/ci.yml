@@ -71,6 +71,31 @@ jobs:
         working-directory: backend
         run: python -m pytest tests/test_retention.py -q
 
+  deepscan:
+    name: API deep scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+      - name: Install dependencies
+        working-directory: backend
+        run: pip install -r requirements-dev.txt
+      - name: Scan authorization, inputs, SSRF and outbound calls
+        working-directory: backend
+        run: python scripts/deepscan.py
+      - name: Upload the reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deepscan-reports
+          path: backend/deepscan-reports/
+          if-no-files-found: warn
+
   dependencies:
     name: Dependency audit
     runs-on: ubuntu-24.04

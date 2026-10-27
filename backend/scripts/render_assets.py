@@ -202,7 +202,7 @@ def architecture(out: Path) -> None:
     top, height = 190, 96
     for index, (number, title, detail, color) in enumerate(stages):
         y = top + index * 118
-        panel(image, [80, y, 1120, y + height], border=mix(color, BG_TOP, 0.35) + (120,))
+        panel(image, [80, y, 1020, y + height], border=mix(color, BG_TOP, 0.35) + (120,))
         text(draw, (104, y + 26), number, size=24, color=color, mono=True, bold=True)
         text(draw, (166, y + 24), title, size=25, color=INK, bold=True)
         text(draw, (166, y + 58), detail, size=17, color=MUTED)
@@ -212,8 +212,10 @@ def architecture(out: Path) -> None:
             draw.polygon([(126, mid + 30), (120, mid + 20), (132, mid + 20)], fill=(90, 200, 200))
             add_glow(image, [("line", [(126, mid), (126, mid + 22)])], (30, 150, 160), radius=8, strength=0.6)
 
-    panel(image, [1170, 190, 1520, 460], border=(120, 220, 220, 40))
-    text(draw, (1194, 214), "INVARIANTS", size=15, color=TEAL, mono=True)
+    # The right column carries full sentences; it is sized so no line reaches
+    # the panel border at the type sizes below.
+    panel(image, [1060, 190, 1520, 460], border=(120, 220, 220, 40))
+    text(draw, (1084, 214), "INVARIANTS", size=15, color=TEAL, mono=True)
     invariants = [
         "Confidence is monotone in evidence.",
         "Missing data lowers weight; it never adds it.",
@@ -223,12 +225,12 @@ def architecture(out: Path) -> None:
     ]
     y = 250
     for line in invariants:
-        draw.ellipse([1196, y + 7, 1204, y + 15], fill=TEAL)
-        text(draw, (1216, y), line, size=16, color=(198, 218, 232))
+        draw.ellipse([1086, y + 7, 1094, y + 15], fill=TEAL)
+        text(draw, (1106, y), line, size=16, color=(198, 218, 232))
         y += 38
 
-    panel(image, [1170, 500, 1520, 726], border=(120, 220, 220, 40))
-    text(draw, (1194, 524), "THREAT MODEL", size=15, color=VIOLET, mono=True)
+    panel(image, [1060, 500, 1520, 726], border=(120, 220, 220, 40))
+    text(draw, (1084, 524), "THREAT MODEL", size=15, color=VIOLET, mono=True)
     assets = [
         "Forged sensor payloads · schema + rate limits",
         "Cross-tenant leakage · RBAC on every route",
@@ -237,8 +239,8 @@ def architecture(out: Path) -> None:
     ]
     y = 560
     for line in assets:
-        text(draw, (1194, y), "·", size=18, color=VIOLET, bold=True)
-        text(draw, (1210, y), line, size=15, color=(190, 206, 224))
+        text(draw, (1084, y), "·", size=18, color=VIOLET, bold=True)
+        text(draw, (1100, y), line, size=15, color=(190, 206, 224))
         y += 38
 
     text(draw, (80, 920), "Batch correlation · single writer · 800 sessions per run · Postgres or SQLite", size=15,

@@ -7,30 +7,32 @@ estimated.
 
 The scan complements the test suite rather than replacing it: the suite asserts
 specific behaviours, the scan asks the same questions of *every* route, including
-routes added later, and fails on any 5xx or any authorization decision that
-disagrees with the role matrix.
+routes added later, and fails on any 5xx, any authorization decision that
+disagrees with the role matrix, or any outbound redirect it followed. It runs as
+a CI job and the reports are uploaded as an artifact.
 
 ## Reproducing
 
 ```bash
 cd backend
-python scripts/deepscan.py                    # all three scans
+python scripts/deepscan.py                    # all four scans
 python scripts/deepscan.py --only authz       # one scan
 python scripts/deepscan.py --json             # full report, including per-payload rows
 
 python -m pytest -q                                                    # SQLite
 TP_TEST_DB_URL=postgresql+psycopg://... python -m pytest -q            # PostgreSQL 16
 python -m pytest -q tests/test_browser.py                              # built bundle + Chromium
+
+# Needs PostgreSQL; starts its own four-worker API against a reset schema.
+python scripts/benchmark_write_contention.py \
+  --db-url postgresql+psycopg://... --workers 4 --writers 6 --repeat 2
 ```
 
 `deepscan.py` creates a temporary SQLite database, bootstraps an administrator,
 creates a viewer, an analyst and a sensor, and drives the application through
-`TestClient`. It only calls the application's own HTTP surface — no third-party
-host is contacted, and no state outside the temporary database is touched.
-The one exception is `POST /api/v1/crypto/refresh`, which the input scan calls
-with hostile bodies; the endpoint itself may reach the market-data provider on a
-successful refresh, so the scan's `status_distribution` counts that call as a 200
-without asserting anything about the provider.
+`TestClient`. It only calls the application's own HTTP surface and its own local
+probe server; no third-party host is contacted, and no state outside the temporary
+database is touched. Reports are written to `backend/deepscan-reports/`.
 
 ## Authorization matrix
 
@@ -92,12 +94,36 @@ octal, integer, IPv4-mapped IPv6, zone-id and redirect-style spellings included.
 Non-HTTP schemes, credentials in the URL, unparseable hosts and port 0 are
 refused with `422 validation_failed`.
 
+## Outbound calls
+
+The platform makes three kinds of outbound call: market-data refresh,
+geolocation lookup and an assessment of an authorized target. The scan runs a
+local probe that answers valid JSON, redirects, or announces a 33 MiB body, and
+then asserts what the platform did with each.
+
+| Call | Case | Result |
+| --- | --- | --- |
+| Market-data refresh | Valid payload | 200, `BTC` observed |
+| Market-data refresh | Redirect to a loopback path | 502 `upstream_failure`, redirect target never requested |
+| Market-data refresh | 33 MiB body | 502 `upstream_failure`, 256 KiB written by the probe, refused at the 1 MiB bound |
+| Geolocation | Valid payload | Located |
+| Geolocation | Redirect | Not located, redirect target never requested |
+| Geolocation | 33 MiB body | Not located, refused at the bound |
+| Web assessment | Target redirects to an authorized `10.0.0.1` | Partial scan, `target resolves to a non-public address` |
+
+Two calls, the market-data provider and geolocation lookup, previously used
+`httpx.get(...).json()`: a provider, proxy or DNS hijack could have made the
+process buffer an unbounded body. Both now go through
+`app/core/outbound.py`, which streams, stops at 1 MiB, refuses a non-200
+(including every redirect) and parses only what it read. The assessment path
+already had its own per-hop authorization and bound in `websec/scanner.py`.
+
 ## Suite across engines
 
 | Engine | Tests | Wall time |
 | --- | --- | --- |
-| SQLite 3.45.1 | 186 passed | 91.51 s |
-| PostgreSQL 16.15 | 186 passed | 233.59 s |
+| SQLite 3.45.1 | 193 passed | 83.22 s |
+| PostgreSQL 16.15 | 193 passed | 172.34 s |
 
 The conftest fixture drops and recreates the `public` schema before each test on
 PostgreSQL, so the two runs have the same isolation. Timing differs because each
@@ -106,28 +132,52 @@ test also pays for a schema reset and a fresh connection pool.
 ## Browser end-to-end
 
 `tests/test_browser.py` starts the API on a free port, serves the built React
-bundle and drives Chromium: **5 passed in 23.73 s**. It is skipped when the
+bundle and drives Chromium: **6 passed in 24.83 s**. It is skipped when the
 bundle is missing, stale relative to its sources, or Playwright is absent, so the
 default suite stays dependency-free.
 
+One case renders a synthetic graph with two campaigns whose labels share the
+prefix `cross-IP campaign candidate`; it asserts that the two labels are
+distinguishable, do not overlap each other and stay inside the SVG frame.
+
 ## Write latency during a correlation run
 
-160 sessions were ingested, then correlation was run on a background thread while
-20 unrelated audit writes were timed inside the same window. The baseline is the
-same 20 writes with no correlation running.
+A real API with **four worker processes** ran against PostgreSQL 16. The labelled
+evaluation dataset (165 sessions, 1,284 events) was ingested through the public
+endpoint, then six clients posted unrelated events continuously while one client
+triggered a correlation run over 13,530 pairs. The same clients also ran for
+three seconds with no correlation, as the baseline. Each run started from a reset
+schema; the two runs are independent.
 
-| Condition | Writes | p50 | max | Errors |
-| --- | --- | --- | --- | --- |
-| Correlation running (12,720 pairs, 13.38 s) | 20 | 1.45 ms | 2.02 ms | 0 |
-| Idle | 20 | 1.49 ms | 2.69 ms | 0 |
+| Metric | Idle (run 1) | Busy (run 1) | Idle (run 2) | Busy (run 2) |
+| --- | ---: | ---: | ---: | ---: |
+| Requests | 730 | 1,651 | 724 | 1,420 |
+| Accepted events | 730 | 1,651 | 724 | 1,420 |
+| p50 | 10.47 ms | 11.08 ms | 12.52 ms | 10.74 ms |
+| p95 | 13.40 ms | 23.78 ms | 18.70 ms | 24.45 ms |
+| Worst request | 120.36 ms | 698.64 ms | 43.14 ms | 554.71 ms |
+| Errors | 0 | 0 | 0 | 0 |
+| Correlation wall | — | 6.42 s | — | 6.64 s |
 
-Writes issued while pairs were being scored were not slower than idle writes on
-this host, so the correlation transaction does not hold a lock that blocks
-unrelated writes for the duration of a run. This is a single-process SQLite
-measurement; it says nothing about many API workers sharing one PostgreSQL
-instance, which is not measured here.
+The median is inside this host's run-to-run noise and actually measured lower in
+one busy run. The tail is consistent: p95 roughly doubles, and the worst request
+is 5–13× slower while the scan holds its transaction. No write failed, and in
+both runs the stored event count equalled the seed plus every accepted write
+(3,631 after run 1's sequence), so the reader and the writers neither lost nor
+duplicated an event.
 
-## Defect found and fixed: the benchmark was not reproducible
+Write traffic is timestamped two days in the past so that it falls outside the
+24-hour correlation window: the run still scores exactly the seeded corpus, while
+the rows and indexes being written are the same ones the scan reads.
+
+An earlier single-process SQLite measurement (160 sessions, 12,720 pairs, 20
+unrelated audit writes, p50 1.45 ms idle and while correlating) is not comparable:
+SQLite serialises writers, so it could not show contention between processes.
+That is why the multi-worker measurement exists.
+
+## Defects found and fixed
+
+### The seeded benchmark was not reproducible
 
 While re-running the evaluation for this scan, the same seed produced different
 counts on different runs:
@@ -146,23 +196,42 @@ The fix anchors the evaluation dataset to a fixed instant
 (`runner.BENCHMARK_START`) while leaving the demo seeder and the runtime
 benchmark on the wall clock, where "recent" is the point. `generate_dataset`
 takes an optional `now`, and `tests/test_determinism.py` fails if dataset
-generation consults the clock at all.
+generation consults the clock at all. Two consecutive full evaluations now
+produce byte-identical JSON apart from `generated_at` and resource timings.
 
-After the fix, two consecutive full evaluations produced byte-identical JSON
-apart from `generated_at` and the resource timings, and the seed 7 ambiguity
-count is stable at 213. The regenerated report in
-[`evaluation-results.md`](evaluation-results.md) carries those numbers.
+### A four-worker API could not start on a fresh database
+
+The first contention run failed before it measured anything: with four workers
+starting together, the server exited during startup.
+
+- `ensure_bootstrap_admin()` counted users and then inserted. Two workers both saw
+  an empty table; the loser hit the unique constraint and its lifespan aborted.
+- `seed_default_profiles()` did the same for the four shipped decoy profiles.
+- `init_db()` applied and recorded migrations with no lock, so concurrent workers
+  could run the same DDL twice.
+
+The first two now treat the unique-constraint loser as the expected outcome of a
+concurrent start (`test_foundation.py` reproduces it by forcing both workers to
+see an empty table). PostgreSQL migrations take a transaction-scoped advisory
+lock. After the fix, four workers start reliably against a reset schema, which is
+what the measurement above ran on.
+
+### Unbounded provider responses
+
+The market-data adapter and the geolocation lookup buffered whatever the remote
+sent before parsing it. Both now use the bounded helper described above, and
+`tests/test_outbound.py` fails if a declared 8 MiB body is read rather than
+refused.
 
 ## What this scan does not cover
 
-- Only the application's own HTTP surface: no third-party hosts, no dependency
-  version audit (`pip-audit` / `npm audit` run separately in CI).
-- No multi-worker or multi-process contention test, and no PostgreSQL write
-  contention measurement.
-- The SSRF scan exercises the assessment endpoint, not every outbound call the
-  platform can make (market-data provider, decoy redirects).
+- Only the application's own HTTP surface and its outbound calls: no dependency
+  version audit (`pip-audit` / `npm audit` run separately in CI) and no
+  third-party service behaviour.
+- No sustained saturation, failover across API hosts, or multi-host database
+  contention; the write measurement is one host, four workers and six clients.
 - No timing side channels, no password-cracking cost measurement, and no test of
-  the container image's runtime hardening (that is recorded in
+  the container image's runtime hardening (recorded in
   [`../06-testing-and-evaluation.md`](../06-testing-and-evaluation.md)).
 - The scans run as an administrator who creates the authorization scopes they
   need; they do not model an attacker without credentials beyond the anonymous

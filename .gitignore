@@ -36,3 +36,6 @@ frontend/.vite/
 
 # Python build artifacts
 backend/build/
+
+# Deep scan output
+backend/deepscan-reports/

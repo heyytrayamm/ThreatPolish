@@ -10,6 +10,94 @@ const COLORS: Record<string, string> = {
   indicator: "#d267d2",
 };
 
+// .node-label is 10px monospace; its advance is stable enough to reserve a box
+// before the SVG has been laid out, which is what makes collision avoidance
+// possible in a pure render pass.
+const GLYPH_WIDTH = 6.05;
+const LABEL_HEIGHT = 11;
+
+interface Box {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+}
+
+interface Placed {
+  x: number;
+  y: number;
+  anchor: "middle" | "start" | "end";
+  box: Box;
+}
+
+/**
+ * Keep the tail of a long label: campaign candidates share a prefix and differ
+ * by the identifier at the end, so truncating from the right made every label
+ * identical.
+ */
+function shorten(label: string, limit: number): string {
+  if (label.length <= limit) return label;
+  const tail = 6;
+  const head = label.slice(0, limit - tail - 1);
+  const boundary = head.lastIndexOf(" ");
+  const prefix = boundary > 6 ? head.slice(0, boundary) : head;
+  return `${prefix.trimEnd()}…${label.slice(-tail)}`;
+}
+
+function overlaps(a: Box, b: Box): boolean {
+  return !(a.x2 < b.x1 || b.x2 < a.x1 || a.y2 < b.y1 || b.y2 < a.y1);
+}
+
+/**
+ * Try positions in order and keep the first that stays inside the frame and
+ * clear of the labels already placed.
+ */
+function place(
+  text: string,
+  x: number,
+  y: number,
+  radius: number,
+  width: number,
+  height: number,
+  taken: Box[],
+): Placed | null {
+  const span = text.length * GLYPH_WIDTH;
+  const candidates: { x: number; y: number; anchor: Placed["anchor"] }[] = [
+    { x, y: y - radius - 7, anchor: "middle" },
+    { x, y: y + radius + 14, anchor: "middle" },
+    { x: x - radius - 6, y: y + 4, anchor: "end" },
+    { x: x + radius + 6, y: y + 4, anchor: "start" },
+    { x, y: y - radius - 20, anchor: "middle" },
+    { x, y: y + radius + 27, anchor: "middle" },
+  ];
+  for (const candidate of candidates) {
+    const left =
+      candidate.anchor === "middle"
+        ? candidate.x - span / 2
+        : candidate.anchor === "end"
+          ? candidate.x - span
+          : candidate.x;
+    const box: Box = {
+      x1: left - 2,
+      y1: candidate.y - LABEL_HEIGHT + 1,
+      x2: left + span + 2,
+      y2: candidate.y + 2,
+    };
+    if (box.x1 < 4 || box.x2 > width - 4 || box.y1 < 4 || box.y2 > height - 2) continue;
+    if (taken.some((existing) => overlaps(box, existing))) continue;
+    return { ...candidate, box };
+  }
+  return null;
+}
+
+function labelText(graph: GraphView, id: string): string {
+  return graph.nodes.find((node) => node.id === id)?.label ?? id;
+}
+
+function radiusFor(kind: string | undefined): number {
+  return kind === "campaign" ? 11 : kind === "session" ? 7 : 5;
+}
+
 export default function EvidenceGraph({
   graph,
   onSelect,
@@ -45,12 +133,47 @@ export default function EvidenceGraph({
     return { positions, width, height };
   }, [graph]);
 
+  // Campaign labels are always visible, so they are placed first and in a
+  // stable order; a hovered node gets a label only if one more free slot exists.
+  const labels = useMemo(() => {
+    const taken: Box[] = [];
+    const items: { id: string; text: string; x: number; y: number; anchor: Placed["anchor"] }[] = [];
+    const campaigns = [...layout.positions.entries()]
+      .filter(([id]) => graph.nodes.find((node) => node.id === id)?.kind === "campaign")
+      .sort(([leftId, left], [rightId, right]) => left.x - right.x || left.y - right.y || leftId.localeCompare(rightId));
+    for (const [id, position] of campaigns) {
+      const text = shorten(labelText(graph, id), 26);
+      const spot = place(text, position.x, position.y, radiusFor("campaign"), layout.width, layout.height, taken);
+      if (!spot) continue;
+      taken.push(spot.box);
+      items.push({ id, text, x: spot.x, y: spot.y, anchor: spot.anchor });
+    }
+    return { items, taken };
+  }, [graph, layout]);
+
   if (graph.nodes.length === 0) {
     return <Empty>No graph nodes in this window. Run correlation after ingesting events.</Empty>;
   }
 
   const visible = new Set(layout.positions.keys());
   const edges = graph.edges.filter((edge) => visible.has(edge.source) && visible.has(edge.target));
+
+  const hoveredNode = hovered ? graph.nodes.find((node) => node.id === hovered) : undefined;
+  const hoveredPosition = hovered ? layout.positions.get(hovered) : undefined;
+  let hoverLabel: (Placed & { text: string }) | null = null;
+  if (hoveredNode && hoveredPosition && hoveredNode.kind !== "campaign") {
+    const text = shorten(hoveredNode.label, 34);
+    const spot = place(
+      text,
+      hoveredPosition.x,
+      hoveredPosition.y,
+      radiusFor(hoveredNode.kind),
+      layout.width,
+      layout.height,
+      labels.taken,
+    );
+    if (spot) hoverLabel = { ...spot, text };
+  }
 
   return (
     <div className="graph-wrap">
@@ -83,7 +206,6 @@ export default function EvidenceGraph({
         })}
         {[...layout.positions.entries()].map(([id, position]) => {
           const node = graph.nodes.find((item) => item.id === id)!;
-          const radius = node.kind === "campaign" ? 11 : node.kind === "session" ? 7 : 5;
           return (
             <g
               key={id}
@@ -93,16 +215,27 @@ export default function EvidenceGraph({
               onClick={() => onSelect?.(id)}
               className="node"
             >
-              <circle r={radius} fill={COLORS[node.kind] ?? "#999"} />
-              {(hovered === id || node.kind === "campaign") && (
-                <text y={-radius - 5} textAnchor="middle" className="node-label">
-                  {node.label.length > 28 ? `${node.label.slice(0, 27)}…` : node.label}
-                </text>
-              )}
+              <circle r={radiusFor(node.kind)} fill={COLORS[node.kind] ?? "#999"} />
               <title>{`${node.kind}: ${node.label}`}</title>
             </g>
           );
         })}
+        {labels.items.map((item) => (
+          <text
+            key={`label-${item.id}`}
+            x={item.x}
+            y={item.y}
+            textAnchor={item.anchor}
+            className="node-label"
+          >
+            {item.text}
+          </text>
+        ))}
+        {hoverLabel && (
+          <text x={hoverLabel.x} y={hoverLabel.y} textAnchor={hoverLabel.anchor} className="node-label hover">
+            {hoverLabel.text}
+          </text>
+        )}
       </svg>
       {hovered && <p className="muted small">Selected: {hovered}</p>}
     </div>

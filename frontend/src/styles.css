@@ -525,7 +525,17 @@ svg g:nth-child(4n) .bar { fill: var(--accent-3); }
 .edge:hover { stroke: var(--accent); }
 .node { cursor: pointer; }
 .node:hover circle { filter: drop-shadow(0 0 10px rgba(94, 234, 212, 0.7)); }
-.node-label { fill: #cbd5e1; font-size: 10px; font-family: var(--font-mono); }
+.node-label {
+  fill: #cbd5e1;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  /* A thin halo keeps a label legible where it crosses an edge or a node. */
+  paint-order: stroke;
+  stroke: rgba(6, 12, 20, 0.85);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+.node-label.hover { fill: #e8f4ff; }
 .legend { display: flex; gap: 0.9rem; flex-wrap: wrap; font-size: 0.72rem; color: var(--muted); font-family: var(--font-mono); }
 .legend-item { display: flex; gap: 0.3rem; align-items: center; }
 .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
@@ -699,6 +709,8 @@ svg g:nth-child(4n) .bar { fill: var(--accent-3); }
 .killchain-label { font-size: 0.78rem; color: #dbe7f3; }
 .killchain-meta { font-family: var(--font-mono); font-size: 0.62rem; color: var(--muted); }
 .killchain-foot { display: flex; flex-direction: column; gap: 0.25rem; margin-top: 0.7rem; }
+/* Keep the closing sentence off the card border it would otherwise touch. */
+.killchain-foot .muted { max-width: 96ch; }
 .plan-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0.7rem; }
 .plan-item {
   border: 1px solid var(--border);

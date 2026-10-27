@@ -6,7 +6,11 @@
 cd backend
 python -m pytest -q              # full suite
 python scripts/evaluate.py       # benchmark, writes docs/research/
-python scripts/deepscan.py       # authorization, hostile-input and SSRF scans
+python scripts/deepscan.py       # authorization, input, SSRF and outbound scans
+
+# Needs a PostgreSQL database; starts its own four-worker API.
+python scripts/benchmark_write_contention.py --db-url postgresql+psycopg://... \
+  --workers 4 --writers 6 --repeat 2
 ```
 
 The suite runs on SQLite with an in-process ASGI client and needs no external
@@ -29,10 +33,13 @@ when the bundle is missing, stale or Playwright is absent.
 `scripts/deepscan.py` asks the same questions of every route rather than of the
 routes a test happened to cover: it derives each route's permissions from its
 dependency closure, calls it as every role and anonymously, then sends hostile
-parameters, malformed bodies, tampered tokens and SSRF targets. It exits non-zero
-on a 5xx, on an authorization decision that disagrees with the role matrix, or on
-a target it should have refused. Results and the environment they were measured
-in are in [`research/deepscan-results.md`](research/deepscan-results.md).
+parameters, malformed bodies, tampered tokens and SSRF targets. A fourth scan
+points every outbound call — market-data refresh, geolocation lookup and an
+assessment whose target redirects — at a local probe that redirects or answers
+with 33 MiB. It exits non-zero on a 5xx, on an authorization decision that
+disagrees with the role matrix, on a target it should have refused, or on a
+redirect the platform followed. Results and the environment they were measured in
+are in [`research/deepscan-results.md`](research/deepscan-results.md).
 
 ## Suite structure
 
@@ -59,9 +66,9 @@ in are in [`research/deepscan-results.md`](research/deepscan-results.md).
 
 ## Measured behaviour
 
-Latest full run: **186 passed on SQLite in 91.5 s**, including the five browser
-cases only when the bundle is built; the same 186 pass against PostgreSQL 16.15
-in 233.6 s. CI runs both engines on every push; the PostgreSQL job starts a
+Latest full run: **193 passed on SQLite in 83.2 s**, including the six browser
+cases only when the bundle is built; the same 193 pass against PostgreSQL 16.15
+in 172.3 s. CI runs both engines on every push; the PostgreSQL job starts a
 service database and the fixture resets its schema per test, so isolation matches
 the SQLite path.
 Static checks: the frontend builds with `tsc -b` and `vite build`; the backend
@@ -75,6 +82,7 @@ passes Ruff and compiles with `compileall`.
 | --- | --- |
 | Backend tests (SQLite) | Ruff `F,E9`; full pytest suite |
 | Backend tests (PostgreSQL) | Full pytest suite against a PostgreSQL 16 service |
+| API deep scan | `scripts/deepscan.py`: 57 routes as every role and anonymously, 652 hostile requests, 23 SSRF payloads and every outbound call pointed at a hostile local probe; reports uploaded as an artifact |
 | Dependency audit | `pip-audit` over the installed backend environment; `npm audit --audit-level=high` over the dashboard lockfile |
 | Dashboard build | `npm ci`; TypeScript build and Vite bundle |
 | Dashboard end-to-end | Builds the bundle, installs Playwright, drives the password, session, token, investigation and retention filter/export flows in Chromium against a live API |
@@ -165,12 +173,18 @@ adaptive experiment are in `docs/research/evaluation-results.md`.
 | Authorization matrix | 57 routes, 285 requests as admin, analyst, viewer, sensor and anonymous | 0 roles refused a permission they hold, 0 roles granted one they lack, 0 anonymous requests to guarded routes allowed, 0 5xx |
 | Hostile inputs | 60 OpenAPI operations, 652 requests | 0 5xx; 413 above the 32.77 MB ingest bound; tampered and `alg: none` tokens 401; non-JSON parsed as nothing |
 | SSRF payloads | 23 payloads across 9 loopback, link-local, private and IPv6 scopes | 0 targets reached |
+| Outbound calls | 7 cases across market-data refresh, geolocation and an assessment redirect, against a local probe that redirects or announces a 33 MiB body | 0 redirects followed, 0 oversized bodies buffered, valid payloads still accepted |
 
-Write latency during a 12,720-pair correlation run (13.4 s on 160 sessions) was
-p50 1.45 ms, max 2.02 ms across 20 unrelated audit writes, against p50 1.49 ms,
-max 2.69 ms when idle, so the run does not block unrelated writes on this host.
-The full protocol, per-scan detail and what the scan does not cover are in
-[`research/deepscan-results.md`](research/deepscan-results.md).
+Write latency was then measured against a real API with four worker processes on
+PostgreSQL 16, six concurrent clients and a 6.4 s correlation run over 165
+sessions and 13,530 pairs. Across two runs on a reset schema, idle p50 10.5–12.5 ms
+and p95 13.4–18.7 ms became p50 10.7–16.3 ms and p95 23.8–25.1 ms during the scan;
+the worst request moved from 43–134 ms to 555–699 ms. No write failed and the
+accepted-event count reconciled exactly with the stored count. The median is
+inside run-to-run noise; the tail is not. Per-scan detail, the two startup races
+that measurement exposed, and what the scan does not cover are in
+[`research/deepscan-results.md`](research/deepscan-results.md) and
+[`research/write-contention.md`](research/write-contention.md).
 
 ## Container deployment verification
 
@@ -232,5 +246,7 @@ conditionally.
 - The adaptive simulation is not a substitute for field measurement.
 - The upgrade test covered schema v3 → v5 on a copy of the deployment database,
   not a rolling multi-version production cluster.
-- No load test beyond the 63-session benchmark and the volume run.
+- No load test beyond the 63-session benchmark, the volume run and the
+  four-worker write measurement; sustained saturation, failover and multiple API
+  hosts are not measured.
 - Web assessment was tested against loopback targets, not a real external host.

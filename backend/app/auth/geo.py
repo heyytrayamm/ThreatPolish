@@ -18,9 +18,8 @@ import ipaddress
 import math
 from typing import Any
 
-import httpx
-
 from ..core.logging import get_logger
+from ..core.outbound import OutboundError, get_json
 
 log = get_logger(__name__)
 
@@ -87,10 +86,8 @@ def locate(
     params = {"token": token} if token else None
     point: tuple[float, float] | None = None
     try:
-        response = httpx.get(template, params=params, timeout=timeout)
-        response.raise_for_status()
-        point = _point(response.json())
-    except (httpx.HTTPError, ValueError, TypeError) as exc:
+        point = _point(get_json(template, params=params, timeout=timeout))
+    except (OutboundError, ValueError, TypeError) as exc:
         log.warning("geolocation lookup failed", extra={"error": str(exc)})
 
     if len(_CACHE) >= _CACHE_LIMIT:
