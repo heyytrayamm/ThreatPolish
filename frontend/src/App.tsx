@@ -42,6 +42,10 @@ function rememberView(view: View, mode: "push" | "replace" = "push"): void {
   else window.history.pushState(null, "", url);
 }
 
+function utcClock(): string {
+  return `${new Date().toISOString().slice(11, 19)} UTC`;
+}
+
 const NAV: { key: View; label: string }[] = [
   { key: "overview", label: "Overview" },
   { key: "events", label: "Events" },
@@ -71,6 +75,14 @@ export default function App() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
+  // The console ribbon runs a live clock so the workspace reads as a station
+  // rather than a report.
+  const [clock, setClock] = useState(utcClock);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setClock(utcClock()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     if (!getToken()) return;
@@ -124,6 +136,7 @@ export default function App() {
   if (!user) {
     return (
       <main className="login">
+        <div className="hud-scan" aria-hidden="true" />
         <div className="login-aurora" aria-hidden="true" />
         <section className="login-shell">
           <div className="login-intro">
@@ -139,6 +152,11 @@ export default function App() {
               <li>Adaptive decoys that observe without inventing evidence</li>
               <li>Response actions with approval, expiry and rollback</li>
             </ul>
+            <div className="login-orbit" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+            </div>
           </div>
           <form onSubmit={signIn} className="login-card" aria-label="sign in">
             <div className="login-card-head">
@@ -175,6 +193,10 @@ export default function App() {
             <p className="muted small">
               Sessions expire automatically. Contact an administrator if you do not have an account.
             </p>
+            <div className="login-card-meta">
+              <span>HS256 session</span>
+              <span>every decision retained</span>
+            </div>
           </form>
         </section>
         <footer className="login-foot">Authorized defensive use only · Evidence retained with every decision</footer>
@@ -186,10 +208,13 @@ export default function App() {
 
   return (
     <div className="app">
+      <div className="hud-scan" aria-hidden="true" />
       <a className="skip-link" href="#main">Skip to content</a>
       <aside className="sidebar">
         <div className="brand">
-          <img className="brand-mark brand-logo" src="/logo-mark.png" alt="" width={40} height={40} />
+          <span className="brand-sigil">
+            <img className="brand-mark brand-logo" src="/logo-mark.png" alt="" width={42} height={42} />
+          </span>
           <div>
             <strong>ThreatPolish</strong>
             <span className="brand-sub">Security workspace</span>
@@ -198,18 +223,31 @@ export default function App() {
         <div className="side-status">
           <span className="status-dot" />
           Evidence engine
+          <span className="signal-bars" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+            <i />
+          </span>
         </div>
         <nav>
           <span className="nav-label">Workspace</span>
-          {NAV.filter((item) => canView(item.key, user.role)).map((item) => (
+          {NAV.filter((item) => canView(item.key, user.role)).map((item, index) => (
             <button
               key={item.key}
               type="button"
               className={activeView === item.key ? "nav-item active" : "nav-item"}
+              // The rail index is drawn from markup rather than generated
+              // content so it never joins the button's accessible name.
+              aria-label={item.label}
               aria-current={activeView === item.key ? "page" : undefined}
               onClick={() => selectView(item.key)}
             >
-              {item.label}
+              <span className="nav-index" aria-hidden="true">
+                {String(index + 1).padStart(2, "0")}
+              </span>
+              <span className="nav-text">{item.label}</span>
+              {activeView === item.key && <span className="nav-beacon" aria-hidden="true" />}
             </button>
           ))}
         </nav>
@@ -231,6 +269,14 @@ export default function App() {
         </div>
       </aside>
       <main className="content" id="main">
+        <div className="hud-ribbon">
+          <span className="ribbon-path">
+            ThreatPolish <span className="ribbon-sep">/</span>{" "}
+            <b>{NAV.find((item) => item.key === activeView)?.label}</b>
+          </span>
+          <span className="ribbon-meta">{user.role} clearance</span>
+          <span className="ribbon-clock">{clock}</span>
+        </div>
         {activeView === "overview" && (
           <Overview user={user} onOpenRetention={() => selectView("retention")} />
         )}

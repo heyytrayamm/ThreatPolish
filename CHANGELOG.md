@@ -70,6 +70,15 @@ All notable changes to this project are recorded here. Dates use ISO 8601.
   `now` for both.
 - The evaluation and correlation-runtime reports were regenerated from the
   anchored dataset; headline precision and recall are unchanged.
+- The dashboard was redesigned as a holographic analyst console: a receding
+  floor grid and scanning band behind hairline instrument panels with
+  calibration ticks, numbered rail navigation, a sticky workspace ribbon with a
+  UTC clock, beveled gauges whose charge bars are drawn only where a real
+  fraction backs them, and an orbital sign-in screen. The palette moved to
+  cyan/azure/violet on near-black. Campaign candidates carry a confidence meter
+  and the Events filters read as one filter bank. Panel and gauge ideas live in
+  `frontend/src/styles.css`; the shell, login and three page layouts changed in
+  `App.tsx`, `Overview.tsx`, `Events.tsx` and `Campaigns.tsx`.
 
 ### Fixed
 

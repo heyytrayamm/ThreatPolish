@@ -143,6 +143,7 @@ export default function Events() {
     <div className="page">
       <header className="page-head">
         <div>
+          <span className="eyebrow">Event stream</span>
           <h1>Events</h1>
           <p className="muted">Normalized telemetry from decoys, assessments and application sources.</p>
         </div>
@@ -152,7 +153,8 @@ export default function Events() {
         </label>
       </header>
 
-      <div className="filters">
+      <div className="filters control-strip">
+        <span className="strip-label">Filter bank</span>
         <Field label="Module">
           <select
             value={module}

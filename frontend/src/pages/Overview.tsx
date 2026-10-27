@@ -69,11 +69,14 @@ export default function Overview({
   const fleetAlerts = (audit.data?.items ?? []).filter(
     (entry) => entry.action === "auth.signin.anomaly",
   );
+  const severeEvents = (data?.by_severity.high ?? 0) + (data?.by_severity.critical ?? 0);
+  const severeShare = data?.total ? severeEvents / data.total : 0;
 
   return (
     <div className="page">
       <header className="page-head">
         <div>
+          <span className="eyebrow">Live telemetry envelope</span>
           <h1>Overview</h1>
           <p className="muted">Live telemetry, correlation status and campaign candidates.</p>
         </div>
@@ -129,10 +132,23 @@ export default function Overview({
       )}
 
       <div className="metrics">
-        <Metric label="Events" value={data?.total ?? 0} />
-        <Metric label="Severe events" value={(data?.by_severity.high ?? 0) + (data?.by_severity.critical ?? 0)} />
-        <Metric label="Sessions correlated" value={latest.data?.run?.sessions ?? 0} />
-        <Metric label="Campaign candidates" value={campaigns.data?.items.length ?? 0} />
+        <Metric label="Events" value={data?.total ?? 0} hint={`last ${hours}h`} />
+        <Metric
+          label="Severe events"
+          value={severeEvents}
+          hint={data?.total ? `${Math.round(severeShare * 100)}% of events` : "no events in window"}
+          meter={severeShare}
+        />
+        <Metric
+          label="Sessions correlated"
+          value={latest.data?.run?.sessions ?? 0}
+          hint={latest.data?.run ? "latest correlation run" : "no run recorded"}
+        />
+        <Metric
+          label="Campaign candidates"
+          value={campaigns.data?.items.length ?? 0}
+          hint="tracked in this window"
+        />
       </div>
 
       <div className="grid two">
@@ -267,11 +283,29 @@ export default function Overview({
   );
 }
 
-function Metric({ label, value }: { label: string; value: number }) {
+function Metric({
+  label,
+  value,
+  hint,
+  meter,
+}: {
+  label: string;
+  value: number;
+  hint: string;
+  meter?: number;
+}) {
   return (
     <div className="metric">
       <span className="muted small">{label}</span>
       <strong>{value}</strong>
+      <span className="metric-hint">{hint}</span>
+      {/* Only gauges with a real fraction behind them carry a charge bar; the
+          hint above states the same number in words. */}
+      {meter !== undefined && (
+        <span className="metric-meter" aria-hidden="true">
+          <span style={{ width: `${Math.round(Math.min(1, Math.max(0, meter)) * 100)}%` }} />
+        </span>
+      )}
     </div>
   );
 }

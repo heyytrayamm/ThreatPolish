@@ -44,6 +44,7 @@ export default function Campaigns({ user }: { user: User }) {
     <div className="page">
       <header className="page-head">
         <div>
+          <span className="eyebrow">Relationship hypotheses</span>
           <h1>Campaigns</h1>
           <p className="muted">
             Relationship hypotheses derived from evidence. Confidence is not an attribution.
@@ -73,6 +74,13 @@ export default function Campaigns({ user }: { user: User }) {
                   {campaign.member_count} sessions · {campaign.ip_count} IPs · confidence{" "}
                   {campaign.confidence.toFixed(2)}
                 </div>
+                <span className="list-meter" aria-hidden="true">
+                  <span
+                    style={{
+                      width: `${Math.round(Math.max(0, Math.min(1, campaign.confidence)) * 100)}%`,
+                    }}
+                  />
+                </span>
               </button>
             ))}
           </div>
@@ -294,7 +302,7 @@ function EvidenceMatrix({ detail }: { detail: CampaignDetail }) {
                     <td
                       key={column.id}
                       className="matrix-cell active"
-                      style={{ background: `rgba(94, 234, 212, ${strength})` }}
+                      style={{ background: `rgba(95, 245, 224, ${strength})` }}
                       title={`${row.id} × ${column.id} · ${edge.status} · confidence ${edge.confidence.toFixed(3)} · score ${edge.score.toFixed(3)}`}
                     >
                       {edge.confidence.toFixed(2)}
