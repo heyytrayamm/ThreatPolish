@@ -16,37 +16,53 @@ from .killchain import campaign_coverage
 from .scoring import ALGORITHM_VERSION, LINK_CONFIDENCE
 
 
+# The graph endpoint backs a fixed-size drawing, so the payload is bounded
+# rather than "everything in the window": unbounded responses grew past a
+# megabyte on the evaluation corpus alone and kept growing with the corpus.
+# Node ``props`` are intentionally absent: only the campaign detail view reads
+# them, and copying them into every graph node made up a fifth of the payload.
+DEFAULT_GRAPH_NODES = 400
+MAX_GRAPH_NODES = 2000
+MAX_GRAPH_EDGES = 4000
+
+
 def graph_view(
     *,
     hours: int = 24,
     min_confidence: float = 0.0,
     kinds: list[str] | None = None,
-    limit: int = 1500,
+    limit: int = DEFAULT_GRAPH_NODES,
+    edge_limit: int | None = None,
 ) -> dict[str, Any]:
     since = iso(utcnow() - timedelta(hours=hours))
+    node_budget = max(1, min(int(limit), MAX_GRAPH_NODES))
+    edge_budget = max(1, min(int(edge_limit or node_budget * 2), MAX_GRAPH_EDGES))
     clauses = ["last_seen >= :since"]
-    params: dict[str, Any] = {"since": since, "limit": limit}
+    params: dict[str, Any] = {"since": since, "limit": node_budget + 1}
     if kinds:
         placeholders = ", ".join(f":kind_{index}" for index in range(len(kinds)))
         clauses.append(f"kind IN ({placeholders})")
         for index, kind in enumerate(kinds):
             params[f"kind_{index}"] = kind
-    node_rows = []
     with connection() as conn:
         node_rows = conn.execute(
             text(
-                f"SELECT id, kind, label, props, first_seen, last_seen FROM graph_nodes "
+                f"SELECT id, kind, label, first_seen, last_seen FROM graph_nodes "
                 f"WHERE {' AND '.join(clauses)} ORDER BY last_seen DESC LIMIT :limit"
             ),
             params,
         ).fetchall()
+        # One row over budget is enough to know the window was cut without
+        # running a second counting query.
+        nodes_truncated = len(node_rows) > node_budget
+        node_rows = node_rows[:node_budget]
         node_ids = [row[0] for row in node_rows]
         edge_rows: list[Any] = []
         if node_ids:
             placeholders = ", ".join(f":n{index}" for index in range(len(node_ids)))
             edge_params: dict[str, Any] = {f"n{index}": value for index, value in enumerate(node_ids)}
             edge_params["min_confidence"] = min_confidence
-            edge_params["statuses"] = ("active", "hypothesis")
+            edge_params["edge_limit"] = edge_budget + 1
             edge_rows = conn.execute(
                 text(
                     "SELECT id, kind, src_id, dst_id, confidence, score, status, campaign_id, "
@@ -54,19 +70,20 @@ def graph_view(
                     f"WHERE src_id IN ({placeholders}) AND dst_id IN ({placeholders}) "
                     "AND confidence >= :min_confidence "
                     "AND status IN ('active', 'hypothesis') "
-                    f"ORDER BY confidence DESC LIMIT {int(limit)}"
+                    "ORDER BY confidence DESC LIMIT :edge_limit"
                 ),
                 edge_params,
             ).fetchall()
 
+    edges_truncated = len(edge_rows) > edge_budget
+    edge_rows = edge_rows[:edge_budget]
     nodes = [
         {
             "id": row[0],
             "kind": row[1],
             "label": row[2],
-            "props": loads(row[3], {}),
-            "first_seen": row[4],
-            "last_seen": row[5],
+            "first_seen": row[3],
+            "last_seen": row[4],
         }
         for row in node_rows
     ]
@@ -91,17 +108,25 @@ def graph_view(
                 "contradictions": evidence.get("contradictions", []),
             }
         )
+    note = (
+        "Edges marked 'hypothesis' are unconfirmed relationships. "
+        "An IP node is an observation, never an identity."
+    )
+    if nodes_truncated or edges_truncated:
+        note += (
+            f" The view is capped at {node_budget} nodes and {edge_budget} edges; "
+            "narrow the window or filter by node kind to see the rest."
+        )
     return {
         "window_hours": hours,
         "nodes": nodes,
         "edges": edges,
         "node_count": len(nodes),
         "edge_count": len(edges),
+        "limits": {"nodes": node_budget, "edges": edge_budget},
+        "truncated": {"nodes": nodes_truncated, "edges": edges_truncated},
         "algorithm_version": ALGORITHM_VERSION,
-        "note": (
-            "Edges marked 'hypothesis' are unconfirmed relationships. "
-            "An IP node is an observation, never an identity."
-        ),
+        "note": note,
     }
 
 

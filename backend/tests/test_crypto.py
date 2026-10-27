@@ -100,3 +100,12 @@ def test_unknown_symbol_is_rejected(client, admin_headers, fixture_provider):
     )
     assert response.status_code == 422
     assert "unsupported" in response.text.lower()
+
+
+def test_provider_catalogue_reports_the_active_adapter(client, admin_headers, fixture_provider):
+    response = client.get("/api/v1/crypto/providers", headers=admin_headers)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["active"] == "fixture"
+    assert {item["name"] for item in body["supported"]} == {"coingecko", "fixture"}
+    assert body["freshness_threshold_seconds"] == 900

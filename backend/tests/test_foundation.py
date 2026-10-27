@@ -312,3 +312,33 @@ def test_bootstrap_admin_loses_the_startup_race_without_failing(monkeypatch):
     assert users.ensure_bootstrap_admin() == ADMIN_EMAIL
     assert users.ensure_bootstrap_admin() is None
     assert real_count() == 1
+
+
+def test_role_matrix_lists_every_role_and_token_revocation_is_effective(client, admin_headers):
+    """The capability matrix is public surface, and revoking a token is final."""
+    roles = client.get("/api/v1/auth/roles", headers=admin_headers)
+    assert roles.status_code == 200, roles.text
+    assert set(roles.json()["roles"]) == {"admin", "analyst", "viewer", "sensor"}
+
+    created = client.post(
+        "/api/v1/auth/tokens",
+        headers=admin_headers,
+        json={"name": "surface-test", "role": "sensor"},
+    )
+    assert created.status_code == 201, created.text
+    token_id = created.json()["id"]
+    plaintext = created.json()["token"]
+
+    listed = client.get("/api/v1/auth/tokens", headers=admin_headers)
+    assert listed.status_code == 200, listed.text
+    assert any(item["id"] == token_id for item in listed.json()["tokens"])
+
+    revoked = client.delete(f"/api/v1/auth/tokens/{token_id}", headers=admin_headers)
+    assert revoked.status_code == 200, revoked.text
+
+    rejected = client.post(
+        "/api/v1/ingest/events",
+        headers={"X-Agent-Token": plaintext},
+        json=[make_event()],
+    )
+    assert rejected.status_code == 401, rejected.text

@@ -260,7 +260,13 @@ export interface EventRecord {
 
 export interface GraphView {
   window_hours: number;
-  nodes: { id: string; kind: string; label: string; props: Record<string, unknown>; last_seen: string }[];
+  // Node props are served by the campaign detail endpoint, not copied into
+  // every node of the graph payload.
+  nodes: { id: string; kind: string; label: string; first_seen?: string; last_seen: string }[];
+  node_count?: number;
+  edge_count?: number;
+  limits?: { nodes: number; edges: number };
+  truncated?: { nodes: boolean; edges: boolean };
   edges: {
     id: string;
     kind: string;

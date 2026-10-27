@@ -197,3 +197,25 @@ def test_normalization_is_deterministic_and_bounded():
     assert first == second
     assert first["category"] == "download"
     assert normalize_path_template("/users/12345/profile?x=1") == "/users/{n}/profile"
+
+
+def test_event_summary_breaks_the_window_down_by_module_and_severity(
+    client, sensor_headers, admin_headers
+):
+    """The summary is what the dashboard renders; its buckets must match the rows."""
+    events = [
+        make_event(session_id="sess-summary-1", severity="medium"),
+        make_event(session_id="sess-summary-2", severity="low"),
+        make_event(session_id="sess-summary-3", severity="low"),
+    ]
+    ingested = client.post("/api/v1/ingest/events", json=events, headers=sensor_headers)
+    assert ingested.status_code == 202, ingested.text
+
+    summary = client.get("/api/v1/events/summary?hours=24", headers=admin_headers)
+    assert summary.status_code == 200, summary.text
+    body = summary.json()
+    assert body["since"]
+    assert body["total"] == 3
+    assert body["by_module"] == {"honeypot": 3}
+    assert body["by_severity"] == {"medium": 1, "low": 2}
+    assert body["hourly"] and sum(item["count"] for item in body["hourly"]) == 3

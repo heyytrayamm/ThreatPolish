@@ -33,7 +33,8 @@ recorded in the audit log.
 | POST | `/auth/users/{id}/revoke-sessions` | admin | Invalidate every token issued to an account |
 | GET | `/auth/users/{id}/sessions` | admin | Any account's session history, including flagged sign-ins |
 | DELETE | `/auth/users/{id}/sessions/{jti}` | admin | Sign out one device of any account, leaving its other sessions |
-| GET/POST/DELETE | `/auth/tokens` | admin | Service token management: list, create (plaintext returned once), revoke |
+| GET/POST | `/auth/tokens` | admin | Service token management: list, create (plaintext returned once) |
+| DELETE | `/auth/tokens/{id}` | admin | Revoke one service token |
 | GET | `/auth/roles` | any | Role capability matrix |
 | POST | `/ingest/events` | sensor | Batch ingestion |
 | GET | `/events` | viewer | Filter by module, severity, source, time |
@@ -43,7 +44,7 @@ recorded in the audit log.
 | GET | `/sources` | viewer | Known collectors and freshness |
 | POST | `/correlate` | analyst | Rebuild edges and campaigns for a window |
 | GET | `/correlation/latest` | viewer | Summary of the last run |
-| GET | `/graph` | viewer | Nodes and edges for visualisation |
+| GET | `/graph` | viewer | Nodes and edges for visualisation; `limit` bounds nodes (default 400, max 2000) and `edge_limit` bounds edges (default twice the node limit, max 4000), `limits` echoes both and `truncated` says whether the window was cut. Node properties are not included: `/campaigns/{id}` serves them |
 | GET | `/campaigns`, `/campaigns/{id}` | viewer | Campaign list and detail; archived rows are excluded unless `include_archived=true` |
 | GET | `/edges/{id}` | viewer | Full evidence for one edge |
 | POST/GET | `/feedback` | analyst | Confirm or reject an edge |
@@ -55,10 +56,13 @@ recorded in the audit log.
 | GET | `/crypto/assets`, `/crypto/assets/{symbol}/history`, `/crypto/providers` | viewer | Asset data |
 | POST | `/crypto/refresh` | analyst | Refresh quotes |
 | POST | `/investigations` | analyst | Open an uncertainty-driven investigation |
-| POST | `/investigations/{id}/activate`, `/evaluate` | analyst | Observe, then re-score |
+| POST | `/investigations/{id}/activate` | analyst | Start observation on a chosen decoy profile |
+| POST | `/investigations/{id}/evaluate` | analyst | Close observation and re-score the edge |
 | GET | `/investigations`, `/investigations/{id}` | viewer | History with before/after |
-| GET/POST | `/responses` | viewer/analyst | Propose actions |
-| POST | `/responses/{id}/approve`, `/rollback` | admin/analyst | Approve or reverse |
+| GET/POST | `/responses` | viewer/analyst | List and propose actions |
+| GET | `/responses/{id}` | viewer | One action with its state history |
+| POST | `/responses/{id}/approve` | admin/analyst | Approve a pending action |
+| POST | `/responses/{id}/rollback` | admin/analyst | Reverse an applied action |
 | POST | `/responses/emergency-disable` | admin | Stop all active actions |
 | POST | `/responses/evaluate` | analyst | Dry-run a policy decision |
 | GET | `/responses/policies` | viewer | Policy matrix |

@@ -15,7 +15,7 @@ a CI job and the reports are uploaded as an artifact.
 
 ```bash
 cd backend
-python scripts/deepscan.py                    # all four scans
+python scripts/deepscan.py                    # all six scans
 python scripts/deepscan.py --only authz       # one scan
 python scripts/deepscan.py --json             # full report, including per-payload rows
 
@@ -175,7 +175,79 @@ unrelated audit writes, p50 1.45 ms idle and while correlating) is not comparabl
 SQLite serialises writers, so it could not show contention between processes.
 That is why the multi-worker measurement exists.
 
+## Development scope
+
+The scan compares the routes the application actually serves with the API
+reference (`docs/05-api.md`), the test modules and the RBAC matrix, and the
+configuration keys the code reads with `.env.example`. A route that appears in
+only one of those places is either a feature nobody documented or documentation
+for something that no longer exists; a declared permission no route requires, or
+a configuration key an operator cannot discover, is the same mismatch from the
+other side.
+
+| Measurement | Result |
+| --- | ---: |
+| API routes served | 60 |
+| Routes in the API reference | 60 |
+| Routes referenced by the suite | 60 |
+| Reference entries for routes that no longer exist | 0 |
+| Declared permissions no route requires | 0 |
+| Configuration keys missing from `.env.example` | 0 |
+| `.env.example` keys nothing reads | 0 |
+
+`tests/test_efficiency.py` asserts the same result in CI, so the property cannot
+regress between manual scans.
+
+## Read-path efficiency
+
+Every read endpoint was timed on the evaluation corpus (165 sessions, 1,284
+events, correlated), with the SQL statements it issued counted through a
+SQLAlchemy event hook. Five requests per endpoint after one warm-up; the figures
+are the median.
+
+| Endpoint | p50 | Statements | Response |
+| --- | ---: | ---: | ---: |
+| `/graph?hours=24` | 26.1 ms | 4 | 394.2 KiB |
+| `/events` | 2.5 ms | 4 | 40.0 KiB |
+| `/campaigns/{id}` | 4.5 ms | 7 | 29.4 KiB |
+| `/campaigns` | 2.3 ms | 3 | 21.9 KiB |
+| `/honeypot/sessions` | 6.3 ms | 4 | 10.3 KiB |
+| `/retention` | 5.5 ms | 15 | 0.5 KiB |
+| `/metrics` | 4.9 ms | 15 | 1.3 KiB |
+
+No endpoint issued more than 15 statements, and no single statement ran more
+than twice in one request, which is what a query inside a row loop looks like.
+The budgets are 512 KiB, 40 statements and 8 repeats; all endpoints are inside
+them. The graph endpoint is by far the largest response and still bounded: see
+the defect below.
+
 ## Defects found and fixed
+
+### The evidence graph returned an unbounded page
+
+`GET /graph` serialised every node in the window with its stored properties and
+up to 1,500 edges, with no request parameter to ask for less and no indication
+that anything had been dropped. On the evaluation corpus it had reached the
+1024 KiB budget:
+
+| Measurement | Before | After |
+| --- | ---: | ---: |
+| Response, 165 sessions | 1,020.7 KiB | 394.2 KiB |
+| p50 | 54.4 ms | 26.1 ms |
+| Node properties in payload | 197 KiB, read by no client | not serialised |
+| Node limit | fixed at 1,500 internally | `limit`, default 400, max 2,000 |
+| Edge limit | fixed at 1,500 internally | `edge_limit`, default 2× nodes, max 4,000 |
+| Truncation | silent | `truncated` and a note naming both caps |
+
+Node `props` are the session summary that only the campaign detail view reads;
+copying them into every graph node made the response grow with each ingested
+session for no consumer. The dashboard now looks nodes up through a `Map`
+instead of scanning the node array once per label and once per rendered node,
+which was quadratic in the number of nodes.
+
+`tests/test_efficiency.py` fails if the payload exceeds 512 KiB, if a graph node
+carries `props`, if the endpoint stops reporting truncation, or if the statement
+count depends on the page size.
 
 ### The seeded benchmark was not reproducible
 
@@ -222,6 +294,17 @@ The market-data adapter and the geolocation lookup buffered whatever the remote
 sent before parsing it. Both now use the bounded helper described above, and
 `tests/test_outbound.py` fails if a declared 8 MiB body is read rather than
 refused.
+
+### A probe test depended on a thread winning a race
+
+`test_oversized_body_is_refused_before_it_is_buffered` asserted on the number of
+bytes the local probe had written, but the handler recorded that number only
+after its write loop finished. On a loaded machine the client saw the refusal and
+asserted while the handler thread was still unwinding, and the test failed with
+`'_Probe' object has no attribute 'transferred'` — it passed alone and failed in
+the full suite. The probe now starts at zero and records each chunk as it is
+written, so the assertion reflects what was actually sent regardless of which
+thread gets there first.
 
 ## What this scan does not cover
 

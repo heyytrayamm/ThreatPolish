@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Scan every API route for authorization, input and outbound-call defects.
+"""Scan every API route for authorization, input, scope and efficiency defects.
 
-Four checks run against a freshly created app in a temporary SQLite database:
+Six checks run against a freshly created app in a temporary SQLite database:
 
 * **Authorization matrix** — every route's required permissions are read from its
   FastAPI dependency closure, then the route is exercised as each RBAC role and
@@ -16,6 +16,15 @@ Four checks run against a freshly created app in a temporary SQLite database:
   pointed at a local probe that redirects, answers with a 33 MiB body or serves
   valid JSON: the market-data refresh, the optional geolocation lookup and an
   assessment whose target redirects to a private address.
+* **Development scope** — every served route is matched against the API
+  reference, the test suite and the RBAC matrix, and every configuration value
+  the code reads against ``.env.example``.  A route or setting that exists in
+  only one of those places is a feature that has quietly left the documented
+  scope, or documentation for something that no longer exists.
+* **Read-path efficiency** — the read endpoints are timed on a populated
+  database with the statements they issue counted, so a query in a loop and a
+  response that grows with the data are both visible.  Budgets are bytes per
+  response, statements per request and repeats of one statement.
 
 The scans are non-destructive: they create their own database, their own probe
 server and only call the application's own HTTP surface.  The exit code is
@@ -35,9 +44,11 @@ import json
 import os
 import random
 import re
+import statistics
 import sys
 import tempfile
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -689,9 +700,242 @@ def scan_outbound(client, headers: dict[str, str]) -> dict[str, Any]:
     }
 
 
+# Variables only the Compose file consumes; they are not read by the app.
+COMPOSE_ONLY_ENV = {"TP_DB_PASSWORD", "TP_RETENTION_INTERVAL_SECONDS"}
+
+# A read endpoint is expected to stay inside these budgets. They are deliberately
+# loose enough for a cold cache and tight enough to catch a query in a loop.
+MAX_QUERIES_PER_REQUEST = 40
+MAX_P50_MS = 250.0
+# 512 KiB is four times the largest read response on the evaluation corpus and
+# half the size the unbounded graph view used to return for the same data.
+MAX_RESPONSE_KIB = 512
+MAX_DUPLICATE_STATEMENTS = 8
+
+
+def _path_key(path: str) -> str:
+    return re.sub(r"\{[^}]+\}", "{*}", path)
+
+
+def scan_scope(client) -> dict[str, Any]:
+    """Check that the developed surface is documented, tested and reachable.
+
+    Compares the routes the application actually serves with the API reference,
+    the test modules and the RBAC matrix, and compares the configuration the
+    code reads with the environment file an operator copies.  A route or a
+    setting that exists in only one of those places is how a development scope
+    silently stops matching what is documented and exercised.
+    """
+    from app.auth.rbac import ROLES
+    from app.main import app
+
+    docs = (ROOT.parent / "docs" / "05-api.md").read_text(encoding="utf-8")
+    documented = {_path_key(item.split("?")[0]) for item in re.findall(r"`(/[^`\s]+)`", docs)}
+    tests_text = "\n".join(
+        path.read_text(encoding="utf-8") for path in sorted((ROOT / "tests").glob("*.py"))
+    )
+    # ".env.example" documents variables the application reads, not just the
+    # ones the settings object reads: bootstrap credentials live in users.py.
+    config_text = "\n".join(
+        path.read_text(encoding="utf-8") for path in sorted((ROOT / "app").rglob("*.py"))
+    )
+    env_text = (ROOT.parent / ".env.example").read_text(encoding="utf-8")
+    # A commented line is still documentation of an optional variable.
+    env_keys = set(re.findall(r"^#?\s*(TP_[A-Z0-9_]+)=", env_text, re.MULTILINE))
+    config_keys = set(re.findall(r"TP_[A-Z0-9_]+", config_text)) | COMPOSE_ONLY_ENV
+
+    routes = [(path, route) for path, route in _iter_routes(app.routes) if path.startswith("/api/")]
+    undocumented: list[str] = []
+    untested: list[str] = []
+    used_permissions: set[str] = set()
+    for path, route in sorted(routes, key=lambda item: item[0]):
+        relative = path.removeprefix("/api/v1")
+        if _path_key(relative) not in documented:
+            undocumented.append(path)
+        base = path.split("{")[0].rstrip("/")
+        # Tests build URLs from a base fixture, so the path is not always
+        # preceded by a quote; a bare occurrence is enough to count.
+        if base not in tests_text:
+            untested.append(path)
+        used_permissions |= _required_permissions(route)
+
+    declared_permissions = {
+        permission for permissions in ROLES.values() for permission in permissions if permission != "*"
+    }
+    orphan_permissions = sorted(declared_permissions - used_permissions)
+    undocumented_config = sorted(config_keys - env_keys)
+    unused_env = sorted(env_keys - config_keys)
+    route_keys = {_path_key(item.removeprefix("/api/v1")) for item, _ in routes}
+    route_segments = {key.lstrip("/").split("/")[0] for key in route_keys}
+    stale_docs = sorted(
+        path
+        for path in documented
+        if path.lstrip("/").split("/")[0] in route_segments and path not in route_keys
+    )
+
+    findings: list[str] = []
+    findings += [f"undocumented route {path}" for path in undocumented]
+    findings += [f"undocumented configuration {key}" for key in undocumented_config]
+    findings += [f"generated from configuration but missing from .env.example {key}" for key in unused_env]
+
+    return {
+        "scan": "scope",
+        "routes": len(routes),
+        "documented_routes": len(routes) - len(undocumented),
+        "tested_routes": len(routes) - len(untested),
+        "undocumented_routes": undocumented,
+        "untested_routes": untested,
+        "stale_documentation": stale_docs[:20],
+        "orphan_permissions": orphan_permissions,
+        "documented_environment_keys": len(env_keys),
+        "undocumented_config": undocumented_config,
+        "unused_env": unused_env,
+        "findings": findings,
+    }
+
+
+def scan_efficiency(client, headers: dict[str, str]) -> dict[str, Any]:
+    """Time the read endpoints and count the SQL statements each one issues.
+
+    The database is seeded with the evaluation corpus and correlated once, so the
+    numbers describe a populated installation rather than an empty one.  A
+    statement repeated many times inside one request is the signature of a query
+    in a loop, which is what makes a read endpoint slow as data accumulates.
+    """
+    from collections import Counter
+
+    from sqlalchemy import event
+
+    from app.core.config import get_settings
+    from app.correlation.engine import correlate
+    from app.db.database import get_engine
+    from app.evaluation.scenarios import generate_dataset
+    from app.telemetry.ingest import Ingestor
+
+    dataset = generate_dataset(
+        seed=99,
+        campaign_groups=40,
+        sessions_per_group=3,
+        benign_sessions=24,
+        same_ip_pairs=4,
+        incomplete_groups=2,
+        delayed_sessions=3,
+    )
+    events = [item for session in dataset["sessions"] for item in session["events"]]
+    Ingestor(get_settings()).ingest(events, actor="deepscan-efficiency")
+    correlate(window_hours=24, trigger="deepscan")
+
+    campaigns = client.get("/api/v1/campaigns", headers=headers).json()["items"]
+    detail = client.get(f"/api/v1/campaigns/{campaigns[0]['id']}", headers=headers).json()
+    edge_id = detail["edges"][0]["id"]
+    event_id = client.get("/api/v1/events", headers=headers, params={"limit": 1}).json()["items"][0]["id"]
+
+    endpoints = [
+        ("events", "/api/v1/events"),
+        ("event", f"/api/v1/events/{event_id}"),
+        ("events summary", "/api/v1/events/summary"),
+        ("sources", "/api/v1/sources"),
+        ("quarantine", "/api/v1/quarantine"),
+        ("graph", "/api/v1/graph?hours=24"),
+        ("correlation latest", "/api/v1/correlation/latest"),
+        ("campaigns", "/api/v1/campaigns"),
+        ("campaign detail", f"/api/v1/campaigns/{campaigns[0]['id']}"),
+        ("edge", f"/api/v1/edges/{edge_id}"),
+        ("honeypot profiles", "/api/v1/honeypot/profiles"),
+        ("honeypot sessions", "/api/v1/honeypot/sessions"),
+        ("websec findings", "/api/v1/websec/findings"),
+        ("websec scopes", "/api/v1/websec/scopes"),
+        ("crypto assets", "/api/v1/crypto/assets"),
+        ("crypto history", "/api/v1/crypto/assets/BTC/history"),
+        ("crypto providers", "/api/v1/crypto/providers"),
+        ("investigations", "/api/v1/investigations"),
+        ("responses", "/api/v1/responses"),
+        ("response policies", "/api/v1/responses/policies"),
+        ("audit", "/api/v1/audit"),
+        ("retention", "/api/v1/retention"),
+        ("metrics", "/api/v1/metrics"),
+        ("identity", "/api/v1/auth/me"),
+        ("sessions", "/api/v1/auth/sessions"),
+    ]
+
+    statements: list[str] = []
+
+    def _record(conn, cursor, statement, parameters, context, executemany) -> None:
+        statements.append(" ".join(statement.split()))
+
+    engine = get_engine()
+    event.listen(engine, "before_cursor_execute", _record)
+    measurements: list[dict[str, Any]] = []
+    over_budget: list[str] = []
+    try:
+        for label, path in endpoints:
+            client.get(path, headers=headers)  # warm-up
+            latencies: list[float] = []
+            query_counts: list[int] = []
+            repeated = 0
+            body = 0
+            status = 0
+            for _ in range(5):
+                statements.clear()
+                started = time.perf_counter()
+                response = client.get(path, headers=headers)
+                latencies.append((time.perf_counter() - started) * 1000)
+                query_counts.append(len(statements))
+                counted = Counter(statements)
+                repeated = max(repeated, max(counted.values(), default=0))
+                body = max(body, len(response.content))
+                status = response.status_code
+            p50 = statistics.median(latencies)
+            queries = int(statistics.median(query_counts))
+            entry = {
+                "endpoint": label,
+                "path": path,
+                "status": status,
+                "p50_ms": round(p50, 2),
+                "max_ms": round(max(latencies), 2),
+                "queries": queries,
+                "repeated_statement": repeated,
+                "response_kib": round(body / 1024, 1),
+            }
+            if status >= 400:
+                entry["skipped"] = f"HTTP {status}"
+            else:
+                if queries > MAX_QUERIES_PER_REQUEST:
+                    over_budget.append(f"{label}: {queries} statements (> {MAX_QUERIES_PER_REQUEST})")
+                if p50 > MAX_P50_MS:
+                    over_budget.append(f"{label}: p50 {p50:.1f} ms (> {MAX_P50_MS:.0f})")
+                if body / 1024 > MAX_RESPONSE_KIB:
+                    over_budget.append(f"{label}: {body / 1024:.0f} KiB response")
+                if repeated > MAX_DUPLICATE_STATEMENTS:
+                    over_budget.append(
+                        f"{label}: one statement ran {repeated}x in a request (> {MAX_DUPLICATE_STATEMENTS})"
+                    )
+            measurements.append(entry)
+    finally:
+        event.remove(engine, "before_cursor_execute", _record)
+
+    return {
+        "scan": "efficiency",
+        "seed_sessions": len(dataset["sessions"]),
+        "seed_events": len(events),
+        "budgets": {
+            "queries_per_request": MAX_QUERIES_PER_REQUEST,
+            "p50_ms": MAX_P50_MS,
+            "response_kib": MAX_RESPONSE_KIB,
+            "repeated_statement": MAX_DUPLICATE_STATEMENTS,
+        },
+        "endpoints": measurements,
+        "over_budget": over_budget,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--only", choices=["authz", "inputs", "ssrf", "outbound"], default=None)
+    parser.add_argument(
+        "--only",
+        choices=["authz", "inputs", "ssrf", "outbound", "scope", "efficiency"],
+        default=None,
+    )
     parser.add_argument("--json", action="store_true", help="print the full report")
     parser.add_argument(
         "--out", type=Path, default=Path("deepscan-reports"), help="directory for the JSON reports"
@@ -723,6 +967,10 @@ def main() -> int:
             reports.append(scan_ssrf(client, roles["admin"]))
         if args.only in (None, "outbound"):
             reports.append(scan_outbound(client, roles["admin"]))
+        if args.only in (None, "scope"):
+            reports.append(scan_scope(client))
+        if args.only in (None, "efficiency"):
+            reports.append(scan_efficiency(client, roles["admin"]))
 
     args.out.mkdir(parents=True, exist_ok=True)
     failed = False
@@ -740,6 +988,8 @@ def main() -> int:
             or report.get("server_errors")
             or report.get("accepted_unsafe")
             or report.get("unsafe")
+            or report.get("findings")
+            or report.get("over_budget")
         ):
             failed = True
     print(f"reports written to {args.out.resolve()}")

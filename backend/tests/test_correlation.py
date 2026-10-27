@@ -1193,3 +1193,31 @@ def test_graph_rejects_an_unknown_node_kind(client, admin_headers):
     error = response.json()["error"]
     assert error["code"] == "validation_failed" or error["details"]["unknown"] == ["contoso"]
     assert "contoso" in str(error)
+
+
+def test_latest_correlation_run_is_reported_before_and_after_a_run(
+    client, admin_headers, sensor_headers
+):
+    """The dashboard's status card must distinguish 'never run' from a real run."""
+    before = client.get("/api/v1/correlation/latest", headers=admin_headers)
+    assert before.status_code == 200, before.text
+    assert before.json()["run"] is None
+    assert before.json()["algorithm"]["version"] == ALGORITHM_VERSION
+
+    from .conftest import make_event
+
+    ingested = client.post(
+        "/api/v1/ingest/events",
+        json=[make_event(), make_event(session_id="sess-latest-2", source_ip="203.0.113.11")],
+        headers=sensor_headers,
+    )
+    assert ingested.status_code == 202, ingested.text
+    run = client.post("/api/v1/correlate", headers=admin_headers, json={"window_hours": 24})
+    assert run.status_code == 200, run.text
+
+    after = client.get("/api/v1/correlation/latest", headers=admin_headers)
+    assert after.status_code == 200, after.text
+    latest = after.json()["run"]
+    assert latest["run_id"] == run.json()["run_id"]
+    assert latest["sessions"] == run.json()["sessions"]
+    assert latest["finished_at"]

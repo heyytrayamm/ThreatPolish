@@ -90,8 +90,8 @@ function place(
   return null;
 }
 
-function labelText(graph: GraphView, id: string): string {
-  return graph.nodes.find((node) => node.id === id)?.label ?? id;
+function labelText(byId: Map<string, GraphView["nodes"][number]>, id: string): string {
+  return byId.get(id)?.label ?? id;
 }
 
 function radiusFor(kind: string | undefined): number {
@@ -106,6 +106,14 @@ export default function EvidenceGraph({
   onSelect?: (nodeId: string) => void;
 }) {
   const [hovered, setHovered] = useState<string | null>(null);
+
+  // Node lookup is a Map: the render pass resolves every id several times, and
+  // a linear scan per lookup is quadratic once a window holds hundreds of
+  // nodes.
+  const byId = useMemo(
+    () => new Map(graph.nodes.map((node) => [node.id, node] as const)),
+    [graph],
+  );
 
   const layout = useMemo(() => {
     const nodes = graph.nodes.filter((node) => node.kind !== "asset" && node.kind !== "indicator");
@@ -139,17 +147,17 @@ export default function EvidenceGraph({
     const taken: Box[] = [];
     const items: { id: string; text: string; x: number; y: number; anchor: Placed["anchor"] }[] = [];
     const campaigns = [...layout.positions.entries()]
-      .filter(([id]) => graph.nodes.find((node) => node.id === id)?.kind === "campaign")
+      .filter(([id]) => byId.get(id)?.kind === "campaign")
       .sort(([leftId, left], [rightId, right]) => left.x - right.x || left.y - right.y || leftId.localeCompare(rightId));
     for (const [id, position] of campaigns) {
-      const text = shorten(labelText(graph, id), 26);
+      const text = shorten(labelText(byId, id), 26);
       const spot = place(text, position.x, position.y, radiusFor("campaign"), layout.width, layout.height, taken);
       if (!spot) continue;
       taken.push(spot.box);
       items.push({ id, text, x: spot.x, y: spot.y, anchor: spot.anchor });
     }
     return { items, taken };
-  }, [graph, layout]);
+  }, [graph, layout, byId]);
 
   if (graph.nodes.length === 0) {
     return <Empty>No graph nodes in this window. Run correlation after ingesting events.</Empty>;
@@ -158,7 +166,7 @@ export default function EvidenceGraph({
   const visible = new Set(layout.positions.keys());
   const edges = graph.edges.filter((edge) => visible.has(edge.source) && visible.has(edge.target));
 
-  const hoveredNode = hovered ? graph.nodes.find((node) => node.id === hovered) : undefined;
+  const hoveredNode = hovered ? byId.get(hovered) : undefined;
   const hoveredPosition = hovered ? layout.positions.get(hovered) : undefined;
   let hoverLabel: (Placed & { text: string }) | null = null;
   if (hoveredNode && hoveredPosition && hoveredNode.kind !== "campaign") {
@@ -205,7 +213,7 @@ export default function EvidenceGraph({
           );
         })}
         {[...layout.positions.entries()].map(([id, position]) => {
-          const node = graph.nodes.find((item) => item.id === id)!;
+          const node = byId.get(id)!;
           return (
             <g
               key={id}

@@ -6,6 +6,17 @@ All notable changes to this project are recorded here. Dates use ISO 8601.
 
 ### Added
 
+- `tests/test_efficiency.py` makes development scope and read-path cost CI
+  gates: every route must be documented, exercised and governed by a permission
+  some role holds, every configuration value must appear in `.env.example`, and
+  no read endpoint may exceed 20 statements in a request or repeat one statement
+  per row. The graph view is pinned to a bounded page that reports truncation.
+- `scripts/deepscan.py` gains `--only scope` and `--only efficiency`: the first
+  compares served routes, permissions and configuration against the reference,
+  the suite and `.env.example`; the second times every read endpoint on the
+  evaluation corpus with its statements counted, against a 512 KiB response
+  budget, 40 statements and 8 repeats of one statement.
+
 - `backend/scripts/deepscan.py` asks the same questions of every route instead of
   the routes a test happened to cover: it derives each route's permissions from
   its FastAPI dependency closure, calls it as every RBAC role and anonymously,
@@ -36,6 +47,14 @@ All notable changes to this project are recorded here. Dates use ISO 8601.
 
 ### Changed
 
+- `GET /graph` returns a bounded page instead of the whole window: `limit`
+  (default 400, max 2,000) bounds nodes and `edge_limit` (default twice the node
+  limit, max 4,000) bounds edges, `limits` echoes both and `truncated` says
+  whether anything was cut. Node properties are no longer serialised into the
+  payload; the campaign detail endpoint serves them. On the evaluation corpus
+  the response fell from 1,020.7 KiB and 54.4 ms to 394.2 KiB and 26.1 ms.
+- The dashboard resolves graph nodes through a `Map` rather than scanning the
+  node array for every label and every rendered node.
 - Campaign graph labels keep the suffix that distinguishes two candidates
   (`cross-IP campaign…4bad6a`), are placed to avoid each other and are kept inside
   the frame instead of running under the graph's edge. A halo keeps them legible

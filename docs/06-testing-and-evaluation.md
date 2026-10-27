@@ -36,10 +36,16 @@ dependency closure, calls it as every role and anonymously, then sends hostile
 parameters, malformed bodies, tampered tokens and SSRF targets. A fourth scan
 points every outbound call — market-data refresh, geolocation lookup and an
 assessment whose target redirects — at a local probe that redirects or answers
-with 33 MiB. It exits non-zero on a 5xx, on an authorization decision that
-disagrees with the role matrix, on a target it should have refused, or on a
-redirect the platform followed. Results and the environment they were measured in
-are in [`research/deepscan-results.md`](research/deepscan-results.md).
+with 33 MiB. A fifth compares the served routes, their permissions and the
+configuration the code reads against the API reference, the suite and
+`.env.example`, so a feature cannot leave the documented scope unnoticed. A sixth
+times every read endpoint on the evaluation corpus with its statements counted,
+and fails on a response over 512 KiB, more than 40 statements in a request, or
+one statement repeated per row. It exits non-zero on a 5xx, on an authorization
+decision that disagrees with the role matrix, on a target it should have refused,
+on a redirect the platform followed, or on a scope or budget mismatch. Results
+and the environment they were measured in are in
+[`research/deepscan-results.md`](research/deepscan-results.md).
 
 ## Suite structure
 
@@ -62,15 +68,19 @@ are in [`research/deepscan-results.md`](research/deepscan-results.md).
 | `test_signin_alerts.py` | Network-change and distance alerts: same-network silence, window and revoked-session suppression, distant and nearby geolocation, unlocatable fallback |
 | `test_killchain.py` | Tactic classification (reconnaissance before access, discovery after it, each command family, unclassified commands as execution), breadth and risk-weighted coverage, later-tactic tie-breaking, empty campaigns, and campaign-detail integration |
 | `test_properties.py` | Invariants rather than scenarios: score symmetry and determinism, bounded outputs, monotone confidence, unique relationship keys for every accepted identifier, rejection of control characters in session and target ids, isolation of legacy corrupt ids, corpus-relative family weights against the uniform-weight ablation, and the narrowest authorization governing a host |
+| `test_efficiency.py` | Development scope and read-path cost, measured on the evaluation corpus: every route is documented, exercised and guarded by a permission that some role holds, every configuration value appears in `.env.example`, and every read endpoint stays inside its statement and byte budgets. The graph view is pinned to a bounded page, must report truncation instead of silently returning part of the window, must not serialise stored node properties, and must cost the same number of statements whatever the page size |
 | `test_browser.py` | Chrome-driven dashboard flow against a live API: every view renders without console errors, the duplicate-resolution note shows on the Deception page, the Account page changes the password, the replacement token survives a reload and an earlier token is refused; a second run plans and activates an investigation through the Campaigns and Deception pages; a third signs a device out from the session table, opens the admin session panel, signs another account's device out from it, creates and revokes a sensor token on the same page, sets the Events module, severity, window and search, copies the Events link and steps back and forward through its filter states, reloads into them, filters the retention run history by UTC date and trigger, keeps that window in the URL across a reload, copies the filtered retention link and reads it back from the clipboard, checks the Clipboard API fallback, moves between retention filter states and views with the browser's back and forward buttons, exports it as CSV and checks the Overview attention card; a fourth signs in as an analyst, confirms the read-only Retention view has history and export but no run control or Administration entry, checks that malformed and inverted shared filter links are explained and cleaned up, and follows the analyst-facing overdue alert to that page, as an administrator does from the Overview alert |
 
 ## Measured behaviour
 
-Latest full run: **193 passed on SQLite in 83.2 s**, including the six browser
-cases only when the bundle is built; the same 193 pass against PostgreSQL 16.15
-in 172.3 s. CI runs both engines on every push; the PostgreSQL job starts a
-service database and the fixture resets its schema per test, so isolation matches
-the SQLite path.
+Latest full run: **201 passed on SQLite in 92.2 s**, including the six browser
+cases with the bundle built (195 pass and those six skip when it is missing). The
+recorded PostgreSQL 16.15 figure is 193 cases in 172.3 s, taken before
+`test_efficiency.py` was added; the three new cases seed the evaluation corpus
+and add about six seconds, and the PostgreSQL job in CI runs the suite as it
+stands. CI runs both engines on every push; the PostgreSQL job starts a service
+database and the fixture resets its schema per test, so isolation matches the
+SQLite path.
 Static checks: the frontend builds with `tsc -b` and `vite build`; the backend
 passes Ruff and compiles with `compileall`.
 

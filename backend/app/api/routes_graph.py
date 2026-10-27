@@ -11,6 +11,9 @@ from ..core.audit import audit_standalone
 from ..core.errors import ValidationFailure
 from ..correlation.engine import correlate, latest_run
 from ..correlation.repository import (
+    DEFAULT_GRAPH_NODES,
+    MAX_GRAPH_EDGES,
+    MAX_GRAPH_NODES,
     add_feedback,
     feedback_summary,
     get_campaign,
@@ -30,6 +33,8 @@ def graph(
     hours: int = Query(default=24, ge=1, le=720),
     min_confidence: float = Query(default=0.0, ge=0.0, le=1.0),
     kinds: str | None = Query(default=None, max_length=120),
+    limit: int = Query(default=DEFAULT_GRAPH_NODES, ge=1, le=MAX_GRAPH_NODES),
+    edge_limit: int | None = Query(default=None, ge=1, le=MAX_GRAPH_EDGES),
     principal: Principal = Depends(require("graph:read")),
 ) -> dict[str, Any]:
     selected = [kind.strip() for kind in kinds.split(",") if kind.strip()] if kinds else None
@@ -43,7 +48,13 @@ def graph(
                 "unknown graph node kind",
                 details={"unknown": unknown, "allowed": sorted(allowed)},
             )
-    return graph_view(hours=hours, min_confidence=min_confidence, kinds=selected)
+    return graph_view(
+        hours=hours,
+        min_confidence=min_confidence,
+        kinds=selected,
+        limit=limit,
+        edge_limit=edge_limit,
+    )
 
 
 @router.post("/correlate")

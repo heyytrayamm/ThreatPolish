@@ -31,6 +31,10 @@ class _Probe(ThreadingHTTPServer):
         super().__init__(*args, **kwargs)
         self.hits: list[str] = []
         self.lock = threading.Lock()
+        # Written before the handler thread starts, so a caller that has already
+        # seen the refusal can read the count: the handler records each chunk as
+        # it goes and may still be unwinding when the client gives up.
+        self.transferred = 0
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -61,6 +65,8 @@ class _Handler(BaseHTTPRequestHandler):
             while sent < HUGE:
                 self.wfile.write(b"x" * CHUNK)
                 sent += CHUNK
+                with self.probe.lock:
+                    self.probe.transferred = sent
         except (BrokenPipeError, ConnectionResetError):
             pass
         with self.probe.lock:

@@ -346,3 +346,16 @@ def test_a_forged_decoy_session_cookie_is_not_accepted(client, admin_headers):
     ]
     assert request_events
     assert all(item["session_id"] != f"decoy:{claimed}" for item in request_events)
+
+
+def test_decoy_profile_catalogue_is_served(client, admin_headers):
+    """Only declarative profiles are exposed, and the seeded set is complete."""
+    response = client.get("/api/v1/honeypot/profiles", headers=admin_headers)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    names = {item["name"] for item in body["items"]}
+    assert {"ssh-bastion", "http-wordpress", "http-admin-console"} <= names
+    assert "declarative data" in body["note"]
+    for item in body["items"]:
+        assert item["config"]
+        assert item["kind"] in {"ssh", "http", "db", "telnet"}
