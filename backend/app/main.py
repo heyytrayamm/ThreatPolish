@@ -168,6 +168,36 @@ def create_app() -> FastAPI:
     dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
     if dist.is_dir():
         app.mount("/", StaticFiles(directory=str(dist), html=True), name="dashboard")
+    else:
+        # The bundle is built separately and mounted at startup, so a source
+        # checkout answers the root with nothing until it has been built.  Say
+        # what is missing instead of leaving a bare 404 that reads like a broken
+        # API.  This is the router's fallback rather than a route: the served
+        # route inventory is a contract the deep scan, the scope check and the
+        # API reference depend on, and a dashboard hint is not part of the API.
+        # Not a 5xx either: the dashboard really is absent, not failing.
+        missing_bundle = JSONResponse(
+            status_code=404,
+            content={
+                "error": {
+                    "code": "dashboard_not_built",
+                    "message": (
+                        "the dashboard bundle is not built; run "
+                        "`npm --prefix frontend run build` to have the API serve it "
+                        "(or `npm run dev` in frontend/ for the development server), "
+                        "then restart the API"
+                    ),
+                    "details": {},
+                }
+            },
+        )
+        standard_not_found = JSONResponse(status_code=404, content={"detail": "Not Found"})
+
+        async def dashboard_fallback(scope: Any, receive: Any, send: Any) -> None:
+            response = missing_bundle if scope.get("path") == "/" else standard_not_found
+            await response(scope, receive, send)
+
+        app.router.default = dashboard_fallback
 
     return app
 

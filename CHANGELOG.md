@@ -106,6 +106,16 @@ captures the daylight overview alongside the console set. It no longer writes
   the host instead of failing to render, and a browser without `matchMedia`
   falls back to the console rather than throwing before the first paint
   (`theme.ts`).
+- The setup documentation states which layer consumes `.env` — Docker Compose
+  reads it, the API process reads environment variables directly and does not
+  parse it — and that the demo overlay needs `TP_ENV=development`, which
+  `.env.example` does not ship. Following the overlay command with a fresh copy
+  of that file made the seed service exit 1 with
+  `seed-demo is disabled when TP_ENV=production` and left the dashboard empty.
+  Re-verified after the change: the Compose quickstart (api, db and retention
+  healthy, bootstrap administrator signing in) and the demo overlay (seed exit 0,
+  demo login, 121 events, idempotent on a second run) both work, on this host and
+  against a throwaway PostgreSQL 16.15 container for the suite.
 - The workspace follows the host colour scheme for as long as no switch has been
 made, and keeps following it: `theme.ts` separates applying a theme from
 remembering one, and `watchHostTheme` reports a live `prefers-color-scheme`
@@ -135,6 +145,20 @@ rule-level opacities that faded text below the floor. Worst text pair is now
 
 ### Fixed
 
+- Setting up from a source checkout no longer ends at a bare 404. The dashboard
+  is mounted only when `frontend/dist` exists, and the documented local quickstart
+  never built it, so `http://127.0.0.1:8000/` answered `{"detail":"Not Found"}`
+  with nothing to say why. The root now answers `dashboard_not_built` with the
+  command to run, and the quickstart builds the bundle before starting the API (or
+  runs `npm run dev` on 5173). The hint is the router's fallback rather than a
+  route, so the served route inventory the deep scan, the scope check and the API
+  reference depend on is unchanged — verified with the bundle absent: 57 routes
+  and 285 checks, as before (`test_foundation.py`).
+- `create-admin` and `create-user` without a terminal printed a `GetPassWarning`
+  and then `error: ` with an empty message and exit 1, which is what a setup
+  script sees. They now fail with an instruction to pass `--password`, and the
+  CLI names the exception class when a failure carries no message of its own
+  (`test_foundation.py`).
 - The browser tests waited on a JavaScript expression through
   `page.wait_for_function`, which the dashboard's `script-src 'self'` policy
   forbids, because Playwright evaluates a string predicate with `eval`. The theme

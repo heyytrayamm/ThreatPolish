@@ -1,8 +1,38 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from .conftest import ADMIN_EMAIL, make_event
+
+
+def test_root_serves_the_dashboard_or_explains_its_absence(client):
+    """A source checkout that has not built the bundle must not look broken.
+
+    The dashboard is mounted at startup when `frontend/dist` exists, so the
+    root answers either the built page or a stated reason.  CI builds the
+    bundle in a different job, which is why both outcomes are valid here.
+    """
+    response = client.get("/")
+    dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+    if dist.is_dir():
+        assert response.status_code == 200
+        assert "text/html" in response.headers["content-type"]
+    else:
+        assert response.status_code == 404
+        body = response.json()
+        assert body["error"]["code"] == "dashboard_not_built"
+        assert "npm" in body["error"]["message"]
+
+
+def test_create_admin_without_a_terminal_says_how_to_pass_a_password(capsys):
+    """A setup script must get an instruction, not an empty error line."""
+    from app import cli
+
+    assert cli.main(["create-admin", "--email", "no-tty@threatpolish.test"]) == 1
+    captured = capsys.readouterr()
+    assert "terminal" in captured.err
+    assert "--password" in captured.err
 
 
 def test_health_endpoints_are_public(client):

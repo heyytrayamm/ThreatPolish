@@ -72,14 +72,19 @@ docker compose --profile honeypot up -d cowrie
 
 ### Demo overlay
 
-For a development host that should show a populated dashboard, add the demo
-overlay:
+For a development host that should show a populated dashboard, set the
+environment to development in `.env` and add the demo overlay:
 
 ```bash
+sed -i 's/^TP_ENV=.*/TP_ENV=development/' .env   # seed-demo refuses in production
 make demo-docker
 # equivalent to:
 docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d --build
 ```
+
+`.env.example` ships `TP_ENV=production`, so a fresh `cp .env.example .env` must
+be edited first; without that the seed service exits 1 with
+`seed-demo is disabled when TP_ENV=production` and the dashboard stays empty.
 
 The overlay adds a one-shot `seed` service. It waits for the API to be healthy,
 runs `seed-demo` once and exits; the command is idempotent, so restarting the

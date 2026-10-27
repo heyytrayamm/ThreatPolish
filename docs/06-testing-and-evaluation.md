@@ -73,14 +73,11 @@ and the environment they were measured in are in
 
 ## Measured behaviour
 
-Latest full run: **205 passed on SQLite in 108.5 s**, including the eight browser
-cases with the bundle built (197 pass and those eight skip when it is missing). The
-recorded PostgreSQL 16.15 figure is 193 cases in 172.3 s, taken before
-`test_efficiency.py` was added; the three new cases seed the evaluation corpus
-and add about six seconds, and the PostgreSQL job in CI runs the suite as it
-stands. CI runs both engines on every push; the PostgreSQL job starts a service
-database and the fixture resets its schema per test, so isolation matches the
-SQLite path.
+Latest full run: **207 passed on SQLite in 112.8 s**, including the eight browser
+cases with the bundle built (199 pass and those eight skip when it is missing).
+The same 207 pass on PostgreSQL 16.15 in 307.3 s; the fixture drops and recreates
+the schema per test, so isolation matches the SQLite path and the extra time is
+the per-test schema reset. CI runs both engines on every push.
 Static checks: the frontend builds with `tsc -b` and `vite build`; the backend
 passes Ruff and compiles with `compileall`.
 

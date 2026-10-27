@@ -25,10 +25,26 @@ from .db.database import init_db
 log = get_logger("cli")
 
 
+def _resolve_password(given: str | None) -> str:
+    """The password from the flag, or a prompt when there is a terminal.
+
+    Without this check a script or a CI step falls into ``getpass`` with no
+    terminal, which warns about echoing and then fails with an empty message.
+    """
+    if given:
+        return given
+    if not sys.stdin.isatty():
+        raise ValueError(
+            "no password given and stdin is not a terminal; pass --password <value> "
+            "(or set TP_BOOTSTRAP_ADMIN_PASSWORD for the API's bootstrap path)"
+        )
+    return getpass.getpass("Password: ")
+
+
 def _create_admin(args: argparse.Namespace) -> int:
     from .auth.users import create_user
 
-    password = args.password or getpass.getpass("Password: ")
+    password = _resolve_password(args.password)
     user = create_user(
         email=args.email, name=args.name, role="admin", password=password
     )
@@ -39,7 +55,7 @@ def _create_admin(args: argparse.Namespace) -> int:
 def _create_user(args: argparse.Namespace) -> int:
     from .auth.users import create_user
 
-    password = args.password or getpass.getpass("Password: ")
+    password = _resolve_password(args.password)
     user = create_user(email=args.email, name=args.name, role=args.role, password=password)
     print(f"created {user['role']} {user['email']} ({user['id']})")
     return 0
@@ -274,7 +290,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return int(args.func(args))
     except Exception as exc:
-        print(f"error: {exc}", file=sys.stderr)
+        # Some failures (an EOF from a prompt, for instance) carry no message;
+        # the class name is then the only useful thing to print.
+        print(f"error: {exc or exc.__class__.__name__}", file=sys.stderr)
         return 1
 
 

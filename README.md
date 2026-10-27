@@ -292,8 +292,8 @@ reconciled exactly with the stored count in both runs. Source:
 
 | Check | Result |
 | --- | --- |
-| Backend suite · SQLite | **193 passed** in 83.2 s (six of them drive Chrome end to end) |
-| Backend suite · PostgreSQL 16 | **193 passed** in 172.3 s against a real service database |
+| Backend suite · SQLite | **207 passed** in 112.8 s (eight of them drive Chrome end to end) |
+| Backend suite · PostgreSQL 16 | **207 passed** in 307.3 s against a real service database (PostgreSQL 16.15) |
 | Four API workers, six writers, PostgreSQL 16 | No write errors while correlation ran; accepted events reconciled exactly; p95 18.7 → 24.5 ms and the worst request 43 → 555 ms |
 | Campaign evidence plan and observation metrics | Unit-tested against a seeded campaign; the same test runs on SQLite and PostgreSQL |
 | Static analysis | Ruff clean on `app`, `tests` and `scripts`; `compileall` clean |
@@ -339,13 +339,27 @@ the first login, remove `TP_BOOTSTRAP_ADMIN_*` from `.env` and restart.
 python -m venv .venv && source .venv/bin/activate
 pip install -r backend/requirements-dev.txt
 npm --prefix frontend ci --no-audit --no-fund
-cp .env.example .env
+cp .env.example .env             # Docker Compose reads this file; the API does not
 
+npm --prefix frontend run build  # the API serves frontend/dist, so build it first
 cd backend
-python -m app.cli create-admin --email you@example.com
+python -m app.cli create-admin --email you@example.com   # prompts for a password
 python -m app.cli seed-demo      # demo login, telemetry, campaigns and retention history
 uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
+
+Open `http://127.0.0.1:8000/` and sign in. For front-end work,
+`npm --prefix frontend run dev` serves the dashboard on `127.0.0.1:5173` and
+proxies `/api` to `127.0.0.1:8000`, so keep the API on that port. Build the
+bundle before starting the API: the mount is decided at startup, and until it is
+built the root answers with a `dashboard_not_built` note explaining what to run
+rather than a bare 404.
+
+The API reads environment variables directly — the local process does not parse
+`.env`, only Compose does — so export anything you change for a local run
+(`set -a; . ./.env; set +a`). `create-admin` and `create-user` prompt for a
+password; pass `--password` where there is no terminal, and use a generated one
+rather than shipping a literal in a script.
 
 For a one-command review after `make install`, run `make demo`. It seeds the demo
 data, builds the dashboard and serves it on `http://127.0.0.1:8000`; the generated
