@@ -20,8 +20,23 @@ function isTheme(value: string | null): value is Theme {
   return value === "console" || value === "daylight";
 }
 
+/** The host preference, or null where the browser cannot answer the question.
+ *
+ * `matchMedia` is missing in environments that are not browsers and in very
+ * old engines; it is absent there, not an error, so the caller falls back to
+ * the console rather than failing to render at all.
+ */
+function hostQuery(): MediaQueryList | null {
+  try {
+    return typeof window.matchMedia === "function" ? window.matchMedia(LIGHT_QUERY) : null;
+  } catch {
+    // Some embedders expose `matchMedia` but refuse to run it.
+    return null;
+  }
+}
+
 function hostTheme(): Theme {
-  return window.matchMedia(LIGHT_QUERY).matches ? "daylight" : "console";
+  return hostQuery()?.matches ? "daylight" : "console";
 }
 
 /** The stored choice, else whatever the host reports it prefers. */
@@ -66,10 +81,18 @@ export function rememberTheme(theme: Theme): void {
  * (a switch has been stored) is filtered here rather than by the caller.
  */
 export function watchHostTheme(listener: (theme: Theme) => void): () => void {
-  const query = window.matchMedia(LIGHT_QUERY);
+  const query = hostQuery();
+  if (!query) return () => {};
   const onChange = () => {
-    if (!hasStoredTheme()) listener(hostTheme());
+    if (!hasStoredTheme()) listener(query.matches ? "daylight" : "console");
   };
-  query.addEventListener("change", onChange);
-  return () => query.removeEventListener("change", onChange);
+  // WebKit shipped `addEventListener` on MediaQueryList after the deprecated
+  // `addListener`, and the older form is still what some embedded browsers
+  // expose.  A missing listener must not take the workspace down with it.
+  if (typeof query.addEventListener === "function") {
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }
+  query.addListener(onChange);
+  return () => query.removeListener(onChange);
 }

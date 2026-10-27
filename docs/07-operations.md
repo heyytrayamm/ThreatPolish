@@ -101,6 +101,15 @@ TP_ENV=production python -m app.cli decoy --host 0.0.0.0 --port 8022
 Expose only the decoy ports (2222, 8022) to the internet. Keep 8000 behind the
 reverse proxy on the management network and never publish 5432.
 
+The decoy bounds what a hostile client can cost it: sessions per source address
+per hour (`TP_DECOY_MAX_SESSIONS_PER_HOUR`), request bodies at 8 KiB, and any
+single read at 15 seconds. A client that connects and sends nothing, declares a
+body it never sends, or hangs up mid-response is answered once — `408` for the
+stalled body — and dropped. That path is deliberately silent in the log: on an
+internet-facing listener those clients are ordinary traffic, and a scanner can
+otherwise fill the log with tracebacks. The telemetry event for a request is
+emitted before the response, so a disconnect still records the interaction.
+
 ## First run
 
 1. Set a strong `TP_BOOTSTRAP_ADMIN_PASSWORD` (and email) before the first

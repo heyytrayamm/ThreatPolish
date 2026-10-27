@@ -89,6 +89,23 @@ draws with the dashboard's tokens, and `capture_screenshots.py` now pins
 `prefers-color-scheme` per pass so the artwork does not depend on the host, and
 captures the daylight overview alongside the console set. It no longer writes
 `login-filled.png` and `campaigns-list.png`, which nothing referenced.
+- The HTTP decoy bounds what a hostile client can do to it, which it did not
+  before. Reads now time out (15 s, `REQUEST_TIMEOUT_SECONDS`), so a client that
+  opens a socket and never finishes its request cannot pin a worker thread, and
+  a declared body that never arrives is answered once with `408` and closed
+  instead of blocking. A client that hangs up mid-response no longer raises out
+  of the handler — a scanner could otherwise fill the log with tracebacks for
+  free; the write is guarded and disconnects are logged at debug by an
+  overridden `handle_error`. Measured against a real decoy process: 200
+  concurrent requests all answered, a stalled read closed after exactly 15.0 s,
+  a stalled body answered `408`, and ten reset connections left stderr empty
+  (`test_deception.py`).
+- The dashboard probes the browser for what it actually provides instead of
+  assuming it: `matchMedia` and the change-listener registration are feature
+  detected, so an engine that only exposes the legacy `addListener` form follows
+  the host instead of failing to render, and a browser without `matchMedia`
+  falls back to the console rather than throwing before the first paint
+  (`theme.ts`).
 - The workspace follows the host colour scheme for as long as no switch has been
 made, and keeps following it: `theme.ts` separates applying a theme from
 remembering one, and `watchHostTheme` reports a live `prefers-color-scheme`

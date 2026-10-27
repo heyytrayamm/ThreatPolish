@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import socket
+import struct
+import time
 
 import httpx
 
@@ -346,6 +349,75 @@ def test_a_forged_decoy_session_cookie_is_not_accepted(client, admin_headers):
     ]
     assert request_events
     assert all(item["session_id"] != f"decoy:{claimed}" for item in request_events)
+
+
+def _read_status(sock: socket.socket) -> str:
+    sock.settimeout(5.0)
+    try:
+        head = sock.recv(200)
+    except socket.timeout:
+        return "<timeout>"
+    return head.split(b"\r\n", 1)[0].decode("latin-1", "replace")
+
+
+def test_decoy_abandons_a_body_that_never_arrives(client):
+    """A stalled request must not pin a worker thread.
+
+    The decoy is the internet-facing component, so the cheapest attack against
+    it needs no exploit: declare a body and never send it.  The read now times
+    out and the request is answered once and closed.
+    """
+    from app.deception.http_decoy import start_decoy
+
+    decoy = start_decoy(
+        host="127.0.0.1", port=0, profile_name="http-wordpress", request_timeout=0.5
+    )
+    try:
+        with socket.create_connection(("127.0.0.1", decoy.port), timeout=5.0) as slow:
+            slow.sendall(
+                b"POST /login HTTP/1.1\r\nHost: decoy\r\nContent-Length: 500\r\n\r\npartial"
+            )
+            started = time.monotonic()
+            status = _read_status(slow)
+            elapsed = time.monotonic() - started
+        assert "408" in status, status
+        assert elapsed < 4.0, elapsed
+
+        # The timeout is per connection: the next client is served normally.
+        healthy = httpx.get(f"http://127.0.0.1:{decoy.port}/robots.txt", timeout=5.0)
+        assert healthy.status_code == 200
+        assert "Disallow: /admin" in healthy.text
+    finally:
+        decoy.stop()
+
+
+def test_decoy_survives_clients_that_hang_up_mid_response(client, capsys):
+    """A client that resets the connection must not raise out of the handler.
+
+    The base handler prints a traceback for whatever escapes, so a scanner could
+    fill the log for free by hanging up.  Ten resets are enough to reach the
+    write path reliably on a loopback connection.
+    """
+    from app.deception.http_decoy import start_decoy
+
+    decoy = start_decoy(host="127.0.0.1", port=0, profile_name="http-wordpress")
+    try:
+        for _ in range(10):
+            with socket.create_connection(("127.0.0.1", decoy.port), timeout=5.0) as sock:
+                sock.sendall(b"GET /login HTTP/1.1\r\nHost: decoy\r\n\r\n")
+                # A zero linger closes with RST instead of a FIN, so the pending
+                # response is written to a socket the peer has already abandoned.
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
+        time.sleep(0.3)
+        captured = capsys.readouterr()
+        assert "BrokenPipeError" not in captured.err, captured.err
+        assert "ConnectionResetError" not in captured.err, captured.err
+
+        healthy = httpx.get(f"http://127.0.0.1:{decoy.port}/", timeout=5.0)
+        assert healthy.status_code == 200
+        assert healthy.text
+    finally:
+        decoy.stop()
 
 
 def test_decoy_profile_catalogue_is_served(client, admin_headers):

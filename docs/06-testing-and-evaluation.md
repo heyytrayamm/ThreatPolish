@@ -53,7 +53,7 @@ and the environment they were measured in are in
 | --- | --- |
 | `test_foundation.py` | Health, auth, tokens, RBAC, audit, event contract validation, migration re-keying |
 | `test_correlation.py` | Feature extraction, corpus weighting, containment scoring, thresholds, anchors, contradictions, campaign construction, campaign membership after demotion or expiry, preserved expiry evidence, identity across membership growth, archiving a reviewed campaign, merging campaigns with one or conflicting analyst decisions |
-| `test_deception.py` | Decoy profiles, HTTP decoy responses, Cowrie adaptation, password hashing |
+| `test_deception.py` | Decoy profiles, HTTP decoy responses, Cowrie adaptation, password hashing, and availability under clients that misbehave: a declared body that never arrives is answered `408` after the read timeout instead of pinning a thread, and ten connections reset mid-response raise nothing out of the handler |
 | `test_adaptive.py` | Investigation lifecycle, eligibility limits, before/after recording, no evidence creation, concurrent planning against the one-open-investigation constraint |
 | `test_websec.py` | Scope authorization, SSRF refusal, redirect targets, response bounds, finding persistence |
 | `test_crypto.py` | Provider abstraction, fixture provider, signal scoring, caching |
@@ -73,8 +73,8 @@ and the environment they were measured in are in
 
 ## Measured behaviour
 
-Latest full run: **203 passed on SQLite in 109.7 s**, including the eight browser
-cases with the bundle built (195 pass and those eight skip when it is missing). The
+Latest full run: **205 passed on SQLite in 108.5 s**, including the eight browser
+cases with the bundle built (197 pass and those eight skip when it is missing). The
 recorded PostgreSQL 16.15 figure is 193 cases in 172.3 s, taken before
 `test_efficiency.py` was added; the three new cases seed the evaluation corpus
 and add about six seconds, and the PostgreSQL job in CI runs the suite as it

@@ -18,6 +18,7 @@ import hmac
 import html
 import json
 import secrets
+import sys
 import threading
 from datetime import datetime, timezone
 from http import HTTPStatus
@@ -43,6 +44,11 @@ SESSION_COOKIE = "tp_sid"
 SESSION_ID_CHARS = 32
 SESSION_SIGNATURE_CHARS = 24
 SAFE_METHODS = {"GET", "HEAD", "POST"}
+# A decoy is scanned by anything and everything.  A client that opens a socket,
+# declares a body and then stalls must not hold its worker thread, so reads time
+# out: long enough for a slow legitimate client, short enough that a handful of
+# cheap connections cannot pin every thread the process can create.
+REQUEST_TIMEOUT_SECONDS = 15.0
 
 
 def _session_key(secret: str) -> bytes:
@@ -74,15 +80,44 @@ class DecoyHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
 
-    def __init__(self, address: tuple[str, int], decoy: "DecoyService") -> None:
+    def __init__(
+        self,
+        address: tuple[str, int],
+        decoy: "DecoyService",
+        *,
+        request_timeout: float = REQUEST_TIMEOUT_SECONDS,
+    ) -> None:
         self.decoy = decoy
+        self.request_timeout = request_timeout
         super().__init__(address, DecoyHandler)
+
+    def handle_error(self, request: Any, client_address: Any) -> None:
+        """A scan that disconnects mid-request is ordinary traffic here.
+
+        The base class prints a traceback for whatever a handler raises, which
+        any client can trigger for free by stalling or hanging up.  Those two
+        are logged at debug level; a genuine defect still gets its traceback.
+        """
+        exc = sys.exc_info()[1]
+        if isinstance(exc, (TimeoutError, ConnectionError)):
+            log.debug(
+                "decoy client went away",
+                extra={"detail": f"{client_address[0]}: {exc.__class__.__name__}"},
+            )
+            return
+        super().handle_error(request, client_address)
 
 
 class DecoyHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     server_version = "nginx"
     sys_version = ""
+
+    def setup(self) -> None:
+        # The socket read timeout comes from the server so a test can exercise
+        # the stalled-client behaviour without waiting for the production value.
+        self.timeout = self.server.request_timeout  # type: ignore[attr-defined]
+        super().setup()
 
     @property
     def decoy(self) -> "DecoyService":
@@ -146,11 +181,14 @@ class DecoyHandler(BaseHTTPRequestHandler):
             # Any unread request body would be parsed as the next request on
             # this keep-alive socket, so close instead of reusing it.
             self.close_connection = True
-            self.send_response(HTTPStatus.TOO_MANY_REQUESTS)
-            self.send_header("Retry-After", str(int(retry_after) + 1))
-            self.send_header("Content-Length", "0")
-            self.send_header("Connection", "close")
-            self.end_headers()
+            self._write(
+                HTTPStatus.TOO_MANY_REQUESTS,
+                [
+                    ("Retry-After", str(int(retry_after) + 1)),
+                    ("Content-Length", "0"),
+                    ("Connection", "close"),
+                ],
+            )
             return
 
         override = active_override(client_ip)
@@ -200,7 +238,15 @@ class DecoyHandler(BaseHTTPRequestHandler):
                     close=True,
                 )
                 return
-            body = self.rfile.read(length) if length > 0 else b""
+            try:
+                body = self.rfile.read(length) if length > 0 else b""
+            except (TimeoutError, ConnectionError):
+                # The declared body never arrived.  Answer once and close rather
+                # than holding the worker thread for as long as the client likes.
+                self._respond(
+                    HTTPStatus.REQUEST_TIMEOUT, "Request Timeout", "text/plain", close=True
+                )
+                return
 
         status, content, content_type, severity, extra = self._route(
             method, raw_path, body, session_id
@@ -290,6 +336,27 @@ class DecoyHandler(BaseHTTPRequestHandler):
             )
         return (HTTPStatus.NOT_FOUND, _not_found(config), "text/html; charset=utf-8", "info", {})
 
+    def _write(self, status: int, headers: list[tuple[str, str]], body: bytes = b"") -> bool:
+        """Send a response, tolerating a client that has already gone away.
+
+        A scanner that hangs up mid-response is routine on a decoy and must not
+        raise out of the handler: the base class would print a traceback, and a
+        client could fill the log for free.  The telemetry event for the request
+        is emitted before this runs, so nothing is lost either way.
+        """
+        try:
+            self.send_response(status)
+            for name, value in headers:
+                self.send_header(name, value)
+            self.end_headers()
+            if body and self.command != "HEAD":
+                self.wfile.write(body)
+        except (ConnectionError, TimeoutError) as exc:
+            self.close_connection = True
+            log.debug("decoy response aborted", extra={"detail": exc.__class__.__name__})
+            return False
+        return True
+
     def _respond(
         self,
         status: int,
@@ -303,23 +370,22 @@ class DecoyHandler(BaseHTTPRequestHandler):
         encoded = content.encode("utf-8", "replace")
         if close:
             self.close_connection = True
-        self.send_response(status)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(encoded)))
-        self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("Cache-Control", "no-store")
+        headers = [
+            ("Content-Type", content_type),
+            ("Content-Length", str(len(encoded))),
+            ("X-Content-Type-Options", "nosniff"),
+            ("Cache-Control", "no-store"),
+        ]
         if close:
-            self.send_header("Connection", "close")
+            headers.append(("Connection", "close"))
         if cookie_needed and session_id:
             value = _session_cookie_value(
                 session_id, self.client_address[0], self.decoy.settings.jwt_secret
             )
-            self.send_header(
-                "Set-Cookie", f"{SESSION_COOKIE}={value}; Path=/; HttpOnly; SameSite=Lax"
+            headers.append(
+                ("Set-Cookie", f"{SESSION_COOKIE}={value}; Path=/; HttpOnly; SameSite=Lax")
             )
-        self.end_headers()
-        if self.command != "HEAD":
-            self.wfile.write(encoded)
+        self._write(status, headers, encoded)
 
     def _emit(
         self,
@@ -512,8 +578,18 @@ class DecoyService:
                 self._throttled.clear()
             return True
 
-    def start(self, host: str = "127.0.0.1", port: int | None = None) -> "DecoyService":
-        self.httpd = DecoyHTTPServer((host, port if port is not None else self.settings.decoy_port), self)
+    def start(
+        self,
+        host: str = "127.0.0.1",
+        port: int | None = None,
+        *,
+        request_timeout: float = REQUEST_TIMEOUT_SECONDS,
+    ) -> "DecoyService":
+        self.httpd = DecoyHTTPServer(
+            (host, port if port is not None else self.settings.decoy_port),
+            self,
+            request_timeout=request_timeout,
+        )
         self.thread = threading.Thread(
             target=self.httpd.serve_forever, name="tp-http-decoy", daemon=True
         )
@@ -535,7 +611,11 @@ class DecoyService:
 
 
 def start_decoy(
-    *, host: str = "127.0.0.1", port: int | None = None, profile_name: str | None = None
+    *,
+    host: str = "127.0.0.1",
+    port: int | None = None,
+    profile_name: str | None = None,
+    request_timeout: float = REQUEST_TIMEOUT_SECONDS,
 ) -> DecoyService:
     settings = get_settings()
     if not settings.decoy_enabled:
@@ -545,4 +625,4 @@ def start_decoy(
     if profile is None:
         profile = default_http_profile()
     service = DecoyService(profile=profile, settings=settings)
-    return service.start(host=host, port=port)
+    return service.start(host=host, port=port, request_timeout=request_timeout)
