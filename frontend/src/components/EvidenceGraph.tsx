@@ -2,13 +2,10 @@ import { useMemo, useState } from "react";
 import { GraphView } from "../api";
 import { Empty } from "../ui";
 
-const COLORS: Record<string, string> = {
-  session: "#4f8cff",
-  ip: "#8b98a9",
-  campaign: "#f0a23a",
-  asset: "#59c3a8",
-  indicator: "#d267d2",
-};
+// Node and legend colours are CSS classes, not inline values: the graph has to
+// be readable in both themes, and the palette belongs with the rest of the
+// design tokens in styles.css.
+const KINDS = ["session", "ip", "campaign", "asset", "indicator"];
 
 // .node-label is 10px monospace; its advance is stable enough to reserve a box
 // before the SVG has been laid out, which is what makes collision avoidance
@@ -186,9 +183,9 @@ export default function EvidenceGraph({
   return (
     <div className="graph-wrap">
       <div className="legend">
-        {Object.entries(COLORS).map(([kind, color]) => (
+        {KINDS.map((kind) => (
           <span key={kind} className="legend-item">
-            <span className="dot" style={{ background: color }} /> {kind}
+            <span className={`dot kind-${kind}`} /> {kind}
           </span>
         ))}
         <span className="legend-item"><span className="line" /> linked</span>
@@ -223,7 +220,7 @@ export default function EvidenceGraph({
               onClick={() => onSelect?.(id)}
               className="node"
             >
-              <circle r={radiusFor(node.kind)} fill={COLORS[node.kind] ?? "#999"} />
+              <circle r={radiusFor(node.kind)} className={`node-dot kind-${node.kind}`} />
               <title>{`${node.kind}: ${node.label}`}</title>
             </g>
           );

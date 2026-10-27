@@ -49,8 +49,14 @@ python scripts/capture_screenshots.py --email <demo> --password <demo password>
 
 `render_assets.py` reads `research/evaluation-results.json` and
 `research/correlation-runtime.md`; changing a measured number and rerunning it
-updates the README figures. `capture_screenshots.py` drives a seeded demo
-instance and expects the dashboard bundle to be built.
+updates the README figures. It draws with the same palette as
+`frontend/src/styles.css`, so the artwork and the product look like one thing;
+the two files are kept in step by hand. `capture_screenshots.py` drives a seeded
+demo instance and expects the dashboard bundle to be built. It captures the
+console and the daylight themes in separate passes under a pinned
+`prefers-color-scheme`, so the artwork does not depend on the host's setting.
+The console pass writes the full set and the daylight pass writes the overview
+the README shows beside it; `--themes console` captures one theme only.
 
 Project policies:
 

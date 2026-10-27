@@ -104,11 +104,19 @@ Three invariants make the output auditable:
 
 ## The analyst workspace
 
-![Overview](docs/assets/dashboard-overview.png)
-
 Campaign candidates, the live evidence graph and the correlated-session counts.
 Severity and confidence are shown separately; no view presents an IP address as
 an identity.
+
+The console is the default theme. `Daylight` in the ribbon switches to a
+bright-room variant of the same layout — the same panels, rail and gauge strip
+with dark ink on cool paper — and the choice is remembered for the next visit.
+A host that reports a light colour scheme starts there. Both variants are drawn
+from one token set: no component knows which theme is active.
+
+| Console (default) | Daylight |
+| --- | --- |
+| ![Overview in the console theme](docs/assets/dashboard-overview.png) | ![Overview in the daylight theme](docs/assets/dashboard-overview-daylight.png) |
 
 <p align="center">
   <img src="docs/assets/campaigns.png" alt="Campaign candidates and evidence graph" width="760" />
@@ -348,7 +356,10 @@ Reproduce the artwork in this README after a fresh evaluation:
 cd backend
 python scripts/evaluate.py                      # writes docs/research/*
 python scripts/render_assets.py
-python scripts/capture_screenshots.py --email demo@threatpolish.local --password '<demo password>'
+# The console pass writes the names above; the daylight pass adds `-daylight`
+# and captures the overview only.
+python scripts/capture_screenshots.py --email demo@threatpolish.local \
+    --password '<demo password>' --themes console,daylight
 ```
 
 ### Connecting a sensor

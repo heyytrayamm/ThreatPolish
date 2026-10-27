@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import { api, getToken, setToken, User } from "./api";
+import { applyTheme, readTheme, type Theme } from "./theme";
 import { ErrorBox, Loading } from "./ui";
 import Overview from "./pages/Overview";
 import Events from "./pages/Events";
@@ -78,11 +79,16 @@ export default function App() {
   // The console ribbon runs a live clock so the workspace reads as a station
   // rather than a report.
   const [clock, setClock] = useState(utcClock);
+  const [theme, setTheme] = useState<Theme>(readTheme);
 
   useEffect(() => {
     const timer = window.setInterval(() => setClock(utcClock()), 1000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    applyTheme(theme);
+  }, [theme]);
 
   useEffect(() => {
     if (!getToken()) return;
@@ -275,6 +281,17 @@ export default function App() {
             <b>{NAV.find((item) => item.key === activeView)?.label}</b>
           </span>
           <span className="ribbon-meta">{user.role} clearance</span>
+          <button
+            type="button"
+            className="secondary theme-toggle"
+            // A fixed label keeps the control's name stable whatever the
+            // pressed state says.
+            aria-label="Daylight theme"
+            aria-pressed={theme === "daylight"}
+            onClick={() => setTheme(theme === "daylight" ? "console" : "daylight")}
+          >
+            Daylight
+          </button>
           <span className="ribbon-clock">{clock}</span>
         </div>
         {activeView === "overview" && (

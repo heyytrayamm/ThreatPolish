@@ -11,6 +11,12 @@ Each view is framed from the top of the card it documents, so a screenshot never
 starts mid-sentence.  Captures are taken at twice the display resolution and
 downscaled to a fixed width, which keeps the artwork sharp at the size the
 README renders it.
+
+The theme is pinned per pass instead of being left to the host: a browser that
+reports a light colour scheme would otherwise render the daylight variant, and
+the artwork would depend on who ran the script.  The console pass keeps the
+plain names the README references; the daylight pass adds a `-daylight` suffix
+and captures only the overview the README shows beside the console one.
 """
 
 from __future__ import annotations
@@ -21,6 +27,8 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 VIEWPORT = {"width": 1560, "height": 1000}
+# The dashboard reads `prefers-color-scheme` when no choice is stored.
+SCHEMES = {"console": "dark", "daylight": "light"}
 
 
 def _launch(browser_type):
@@ -52,57 +60,65 @@ def _shrink(path: Path, width: int) -> None:
         image.convert("RGB").resize((width, height), Image.LANCZOS).save(path, optimize=True)
 
 
-def capture(base: str, email: str, password: str, out: Path, width: int = 1400) -> None:
+def capture(base: str, email: str, password: str, out: Path, width: int = 1400,
+            theme: str = "console") -> None:
     out.mkdir(parents=True, exist_ok=True)
     written: list[Path] = []
+    suffix = "" if theme == "console" else f"-{theme}"
 
     def shot(name: str) -> None:
-        path = out / name
+        stem, _, extension = name.partition(".")
+        path = out / f"{stem}{suffix}.{extension}"
         page.screenshot(path=str(path))
         written.append(path)
 
     with sync_playwright() as play:
         browser = _launch(play.chromium)
-        page = browser.new_page(viewport=VIEWPORT, device_scale_factor=2)
+        page = browser.new_page(
+            viewport=VIEWPORT, device_scale_factor=2, color_scheme=SCHEMES[theme]
+        )
         page.goto(base, wait_until="networkidle")
-        shot("login.png")
+        if theme == "console":
+            shot("login.png")
 
         page.fill("input[type=email]", email)
         page.fill("input[type=password]", password)
-        shot("login-filled.png")
+        if theme == "console":
+            shot("login-filled.png")
         page.click("button[type=submit]")
         page.wait_for_selector(".app-shell, main.app, nav", timeout=15000)
         page.wait_for_timeout(1200)
         shot("dashboard-overview.png")
 
-        page.goto(f"{base}/?view=campaigns", wait_until="networkidle")
-        page.wait_for_timeout(1200)
-        shot("campaigns-list.png")
+        if theme == "console":
+            page.goto(f"{base}/?view=campaigns", wait_until="networkidle")
+            page.wait_for_timeout(1200)
+            shot("campaigns-list.png")
 
-        candidates = page.locator(".list .list-item")
-        if candidates.count():
-            candidates.first.click()
-            page.wait_for_timeout(1500)
-            shot("campaigns.png")
-            # These cards are captured whole: a viewport capture of a short
-            # card cannot be framed without repeating the same region twice.
-            for title, name in (
-                ("Evidence matrix", "evidence-matrix.png"),
-                ("Kill-chain coverage", "kill-chain.png"),
-                ("Evidence acquisition plan", "evidence-plan.png"),
-            ):
-                if page.get_by_role("heading", name=title, exact=True).count():
-                    path = out / name
-                    _card(page, title).screenshot(path=str(path))
-                    written.append(path)
+            candidates = page.locator(".list .list-item")
+            if candidates.count():
+                candidates.first.click()
+                page.wait_for_timeout(1500)
+                shot("campaigns.png")
+                # These cards are captured whole: a viewport capture of a short
+                # card cannot be framed without repeating the same region twice.
+                for title, name in (
+                    ("Evidence matrix", "evidence-matrix.png"),
+                    ("Kill-chain coverage", "kill-chain.png"),
+                    ("Evidence acquisition plan", "evidence-plan.png"),
+                ):
+                    if page.get_by_role("heading", name=title, exact=True).count():
+                        path = out / name
+                        _card(page, title).screenshot(path=str(path))
+                        written.append(path)
 
-        page.goto(f"{base}/?view=deception", wait_until="networkidle")
-        page.wait_for_timeout(1000)
-        shot("deception.png")
+            page.goto(f"{base}/?view=deception", wait_until="networkidle")
+            page.wait_for_timeout(1000)
+            shot("deception.png")
 
-        page.goto(f"{base}/?view=events", wait_until="networkidle")
-        page.wait_for_timeout(1000)
-        shot("events.png")
+            page.goto(f"{base}/?view=events", wait_until="networkidle")
+            page.wait_for_timeout(1000)
+            shot("events.png")
         browser.close()
 
     for path in written:
@@ -117,8 +133,17 @@ def main() -> None:
     parser.add_argument("--password", required=True)
     parser.add_argument("--out", type=Path, default=Path("../docs/assets"))
     parser.add_argument("--width", type=int, default=1400)
+    parser.add_argument(
+        "--themes",
+        default="console,daylight",
+        help="comma-separated themes to capture (console, daylight)",
+    )
     args = parser.parse_args()
-    capture(args.base, args.email, args.password, args.out, args.width)
+    for theme in args.themes.split(","):
+        theme = theme.strip()
+        if theme not in SCHEMES:
+            raise SystemExit(f"unknown theme {theme!r}; expected one of {', '.join(SCHEMES)}")
+        capture(args.base, args.email, args.password, args.out, args.width, theme)
 
 
 if __name__ == "__main__":

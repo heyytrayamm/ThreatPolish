@@ -70,6 +70,24 @@ All notable changes to this project are recorded here. Dates use ISO 8601.
   `now` for both.
 - The evaluation and correlation-runtime reports were regenerated from the
   anchored dataset; headline precision and recall are unchanged.
+- The dashboard has a second theme. Every colour, line and glow moved from
+the rules into one token set in `frontend/src/styles.css`, and
+`[data-theme="daylight"]` restates that set as a bright-room console: cool
+paper, dark ink and deepened accents. Components do not know which theme is
+active, so the graph, evidence matrix, charts and badges are all readable in
+both. `Daylight` in the workspace ribbon toggles it, `frontend/src/theme.ts`
+remembers the choice, a host that reports a light colour scheme starts there
+and `main.tsx` applies it before the first paint. The graph node colours and
+the matrix ramp moved out of the components for the same reason; the matrix
+mixes its cell colour from the theme tokens (`--cell-mix` bounds the range and
+a flat `--cell-base` is the fallback where `color-mix` is unsupported). The
+stylesheet also honours `prefers-reduced-transparency` (opaque panels, no
+frosted blur), `prefers-reduced-data` (the field, scan band and aurora are
+dropped) and printing, alongside the existing `prefers-reduced-motion`.
+- The README artwork was regenerated in the new palette: `render_assets.py`
+draws with the dashboard's tokens, and `capture_screenshots.py` now pins
+`prefers-color-scheme` per pass so the artwork does not depend on the host, and
+captures the daylight overview alongside the console set.
 - The dashboard was redesigned as a holographic analyst console: a receding
   floor grid and scanning band behind hairline instrument panels with
   calibration ticks, numbered rail navigation, a sticky workspace ribbon with a

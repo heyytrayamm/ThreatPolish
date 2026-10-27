@@ -1051,3 +1051,50 @@ def test_campaign_graph_labels_stay_apart_and_inside_the_frame(live_server: str)
                 assert label["bottom"] <= measured["svg"]["bottom"] + 1, label
         finally:
             browser.close()
+
+
+def test_theme_choice_follows_the_host_and_is_remembered(live_server: str):
+    """The console ships two themes and the choice has to stick.
+
+    A host that reports a light colour scheme must start on the daylight
+    variant, and a switch made in the ribbon must survive a reload instead of
+    snapping back to what the host prefers.  The toggle is a real control, so
+    its pressed state has to agree with the theme it applied.
+    """
+    with playwright_api.sync_playwright() as p:
+        browser = _launch(p.chromium)
+        try:
+            for scheme, expected in (("dark", "console"), ("light", "daylight")):
+                # Each page gets its own context, so the stored choice from the
+                # first pass cannot be what decides the second.
+                page = browser.new_page(
+                    color_scheme=scheme, viewport={"width": 1400, "height": 900}
+                )
+                page.goto(live_server, wait_until="domcontentloaded")
+                assert (
+                    page.evaluate("document.documentElement.dataset.theme") == expected
+                ), f"a {scheme} host should start on {expected}"
+
+                page.get_by_label("Email").fill(ADMIN_EMAIL)
+                page.get_by_label("Password", exact=True).fill(ADMIN_PASSWORD)
+                page.get_by_role("button", name="Sign in").click()
+                page.wait_for_selector(".sidebar")
+
+                toggle = page.get_by_role("button", name="Daylight theme")
+                assert toggle.get_attribute("aria-pressed") == str(
+                    expected == "daylight"
+                ).lower()
+
+                flipped = "console" if expected == "daylight" else "daylight"
+                toggle.click()
+                page.wait_for_function(
+                    f"document.documentElement.dataset.theme === '{flipped}'"
+                )
+                page.reload(wait_until="domcontentloaded")
+                page.wait_for_selector(".sidebar")
+                assert (
+                    page.evaluate("document.documentElement.dataset.theme") == flipped
+                ), "the stored choice must outrank the host preference"
+                page.close()
+        finally:
+            browser.close()

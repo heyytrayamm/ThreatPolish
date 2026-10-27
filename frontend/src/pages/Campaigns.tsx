@@ -302,7 +302,13 @@ function EvidenceMatrix({ detail }: { detail: CampaignDetail }) {
                     <td
                       key={column.id}
                       className="matrix-cell active"
-                      style={{ background: `rgba(95, 245, 224, ${strength})` }}
+                      // The ramp is mixed from the theme tokens, so the same
+                      // confidence reads as teal on the dark field and as a
+                      // pale wash on paper. `--cell-mix` bounds each theme's
+                      // range; the cell's own number carries the value.
+                      style={{
+                        background: `color-mix(in srgb, var(--cyan) calc(${strength} * var(--cell-mix)), var(--surface-solid))`,
+                      }}
                       title={`${row.id} × ${column.id} · ${edge.status} · confidence ${edge.confidence.toFixed(3)} · score ${edge.score.toFixed(3)}`}
                     >
                       {edge.confidence.toFixed(2)}

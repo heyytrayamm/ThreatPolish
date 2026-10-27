@@ -21,17 +21,21 @@ from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 WIDE = (1600, 720)
 FONT_DIR = Path("/usr/share/fonts/truetype/dejavu")
 
-BG_TOP = (4, 6, 14)
-BG_BOTTOM = (8, 17, 30)
-INK = (232, 244, 255)
-MUTED = (139, 157, 179)
-FAINT = (86, 104, 126)
-TEAL = (94, 234, 212)
-BLUE = (56, 189, 248)
-VIOLET = (167, 139, 250)
-AMBER = (251, 191, 36)
-ROSE = (251, 113, 133)
-GRID = (120, 160, 200, 16)
+# These mirror the dashboard's design tokens in `frontend/src/styles.css`, so
+# the README artwork and the product look like one thing. Keep them in step:
+# BG_TOP/BG_BOTTOM are --field/--field-mid, INK/MUTED/FAINT are the ink scale,
+# TEAL/BLUE/VIOLET/AMBER/ROSE are --cyan/--azure/--violet/--warn/--bad.
+BG_TOP = (3, 6, 13)
+BG_BOTTOM = (4, 8, 15)
+INK = (232, 245, 255)
+MUTED = (139, 163, 189)
+FAINT = (112, 136, 163)
+TEAL = (95, 245, 224)
+BLUE = (76, 201, 255)
+VIOLET = (157, 139, 255)
+AMBER = (255, 198, 92)
+ROSE = (255, 125, 146)
+GRID = (122, 186, 224, 18)
 
 
 def font(size: int, *, bold: bool = False, mono: bool = False) -> ImageFont.FreeTypeFont:
@@ -101,11 +105,11 @@ def add_radial(image: Image.Image, center, radius: int, color: tuple[int, int, i
     image.paste(ImageChops.add(image, layer.filter(ImageFilter.GaussianBlur(30))))
 
 
-def panel(image: Image.Image, box, *, alpha: int = 16, border: tuple[int, int, int, int] = (120, 220, 220, 46),
+def panel(image: Image.Image, box, *, alpha: int = 16, border: tuple[int, int, int, int] = (95, 245, 224, 60),
           radius: int = 18) -> None:
     overlay = Image.new("RGBA", image.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
-    draw.rounded_rectangle(box, radius=radius, fill=(10, 26, 40, alpha), outline=border, width=1)
+    draw.rounded_rectangle(box, radius=radius, fill=(12, 26, 45, alpha), outline=border, width=1)
     image.paste(Image.alpha_composite(image.convert("RGBA"), overlay).convert("RGB"))
 
 
