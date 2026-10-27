@@ -87,7 +87,25 @@ dropped) and printing, alongside the existing `prefers-reduced-motion`.
 - The README artwork was regenerated in the new palette: `render_assets.py`
 draws with the dashboard's tokens, and `capture_screenshots.py` now pins
 `prefers-color-scheme` per pass so the artwork does not depend on the host, and
-captures the daylight overview alongside the console set.
+captures the daylight overview alongside the console set. It no longer writes
+`login-filled.png` and `campaigns-list.png`, which nothing referenced.
+- The workspace follows the host colour scheme for as long as no switch has been
+made, and keeps following it: `theme.ts` separates applying a theme from
+remembering one, and `watchHostTheme` reports a live `prefers-color-scheme`
+change, so a console left open overnight follows the room as the operating
+system flips between light and dark. The first `applyTheme` no longer stores a
+choice — which is what had quietly pinned whatever the host said on the first
+load and made the preference a one-off decision. A switch made in the ribbon is
+still stored and still outranks the host from then on (`test_browser.py`).
+- Text and chart contrast are now measured rather than assumed. Both token sets
+are audited against the surfaces they are drawn on, compositing the translucent
+panels and tinted badges the way the browser does, and the failures were fixed
+at the token level: `--faint`, the graph's solid and hypothesis edges, the
+legend key (now the same stroke the graph uses), the matrix ramp and three
+rule-level opacities that faded text below the floor. Worst text pair is now
+4.60:1 against a floor of 4.5:1 (was 4.15:1) and the worst graphical mark is
+3.03:1 against 3:1 (was 1.88:1); the console's brightest matrix cell keeps
+5.32:1 (was 2.28:1).
 - The dashboard was redesigned as a holographic analyst console: a receding
   floor grid and scanning band behind hairline instrument panels with
   calibration ticks, numbered rail navigation, a sticky workspace ribbon with a
@@ -100,6 +118,11 @@ captures the daylight overview alongside the console set.
 
 ### Fixed
 
+- The browser tests waited on a JavaScript expression through
+  `page.wait_for_function`, which the dashboard's `script-src 'self'` policy
+  forbids, because Playwright evaluates a string predicate with `eval`. The theme
+  cases now poll the applied theme through `page.evaluate`, which the policy
+  permits.
 - A four-worker API could not start against a fresh database. `ensure_bootstrap_admin`
   and `seed_default_profiles` counted rows and then inserted, so two workers
   starting together raced and the loser's lifespan aborted with a unique

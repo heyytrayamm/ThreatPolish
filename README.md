@@ -111,8 +111,9 @@ an identity.
 The console is the default theme. `Daylight` in the ribbon switches to a
 bright-room variant of the same layout — the same panels, rail and gauge strip
 with dark ink on cool paper — and the choice is remembered for the next visit.
-A host that reports a light colour scheme starts there. Both variants are drawn
-from one token set: no component knows which theme is active.
+Until that switch is made the host decides, and goes on deciding: a console left
+open follows the operating system between light and dark as it changes. Both
+variants are drawn from one token set: no component knows which theme is active.
 
 | Console (default) | Daylight |
 | --- | --- |

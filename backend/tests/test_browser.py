@@ -116,6 +116,26 @@ def live_server(tmp_path: Path) -> Iterator[str]:
             process.wait(timeout=10)
 
 
+def _applied_theme(page) -> str:
+    return page.evaluate("document.documentElement.dataset.theme")
+
+
+def _wait_for_theme(page, expected: str, timeout: float = 5.0) -> None:
+    """Poll for the applied theme.
+
+    `page.wait_for_function` cannot be used here: it evaluates the expression
+    with `eval`, which the dashboard's `script-src 'self'` forbids.
+    """
+    deadline = time.monotonic() + timeout
+    seen = None
+    while time.monotonic() < deadline:
+        seen = _applied_theme(page)
+        if seen == expected:
+            return
+        page.wait_for_timeout(50)
+    raise AssertionError(f"the theme stayed on {seen!r}, expected {expected!r}")
+
+
 def _launch(browser_type):
     """Prefer the installed Google Chrome, fall back to Playwright's build."""
     failures: list[str] = []
@@ -1072,7 +1092,7 @@ def test_theme_choice_follows_the_host_and_is_remembered(live_server: str):
                 )
                 page.goto(live_server, wait_until="domcontentloaded")
                 assert (
-                    page.evaluate("document.documentElement.dataset.theme") == expected
+                    _applied_theme(page) == expected
                 ), f"a {scheme} host should start on {expected}"
 
                 page.get_by_label("Email").fill(ADMIN_EMAIL)
@@ -1087,14 +1107,56 @@ def test_theme_choice_follows_the_host_and_is_remembered(live_server: str):
 
                 flipped = "console" if expected == "daylight" else "daylight"
                 toggle.click()
-                page.wait_for_function(
-                    f"document.documentElement.dataset.theme === '{flipped}'"
-                )
+                _wait_for_theme(page, flipped)
                 page.reload(wait_until="domcontentloaded")
                 page.wait_for_selector(".sidebar")
                 assert (
-                    page.evaluate("document.documentElement.dataset.theme") == flipped
+                    _applied_theme(page) == flipped
                 ), "the stored choice must outrank the host preference"
                 page.close()
+        finally:
+            browser.close()
+
+
+def test_theme_follows_the_host_until_a_switch_is_stored(live_server: str):
+    """A console left open must follow the room, not the state it loaded in.
+
+    With nothing stored, a host that flips between light and dark has to move
+    the theme without a reload.  Once a switch is made in the ribbon the host
+    loses that control, because the analyst's choice outranks it.
+    """
+    with playwright_api.sync_playwright() as p:
+        browser = _launch(p.chromium)
+        try:
+            page = browser.new_page(
+                color_scheme="dark", viewport={"width": 1400, "height": 900}
+            )
+            page.goto(live_server, wait_until="domcontentloaded")
+            assert _applied_theme(page) == "console"
+
+            page.emulate_media(color_scheme="light")
+            _wait_for_theme(page, "daylight")
+            page.emulate_media(color_scheme="dark")
+            _wait_for_theme(page, "console")
+
+            page.get_by_label("Email").fill(ADMIN_EMAIL)
+            page.get_by_label("Password", exact=True).fill(ADMIN_PASSWORD)
+            page.get_by_role("button", name="Sign in").click()
+            page.wait_for_selector(".sidebar")
+
+            # The host is dark, so the ribbon switch stores the daylight theme.
+            page.get_by_role("button", name="Daylight theme").click()
+            _wait_for_theme(page, "daylight")
+            assert page.evaluate("window.localStorage.getItem('tp-theme')") == "daylight"
+
+            # A host that now reports a light scheme agrees, so flip it back to
+            # dark: the stored choice has to hold either way.
+            page.emulate_media(color_scheme="light")
+            page.emulate_media(color_scheme="dark")
+            page.wait_for_timeout(250)
+            assert (
+                _applied_theme(page) == "daylight"
+            ), "a stored switch must outrank a later host change"
+            page.close()
         finally:
             browser.close()

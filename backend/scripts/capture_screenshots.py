@@ -27,7 +27,8 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 VIEWPORT = {"width": 1560, "height": 1000}
-# The dashboard reads `prefers-color-scheme` when no choice is stored.
+# The dashboard reads `prefers-color-scheme` when no choice is stored.  The
+# capture pass leaves no choice stored, so each pass gets the theme it pins.
 SCHEMES = {"console": "dark", "daylight": "light"}
 
 
@@ -83,8 +84,6 @@ def capture(base: str, email: str, password: str, out: Path, width: int = 1400,
 
         page.fill("input[type=email]", email)
         page.fill("input[type=password]", password)
-        if theme == "console":
-            shot("login-filled.png")
         page.click("button[type=submit]")
         page.wait_for_selector(".app-shell, main.app, nav", timeout=15000)
         page.wait_for_timeout(1200)
@@ -93,7 +92,6 @@ def capture(base: str, email: str, password: str, out: Path, width: int = 1400,
         if theme == "console":
             page.goto(f"{base}/?view=campaigns", wait_until="networkidle")
             page.wait_for_timeout(1200)
-            shot("campaigns-list.png")
 
             candidates = page.locator(".list .list-item")
             if candidates.count():

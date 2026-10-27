@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import { api, getToken, setToken, User } from "./api";
-import { applyTheme, readTheme, type Theme } from "./theme";
+import { applyTheme, readTheme, rememberTheme, watchHostTheme, type Theme } from "./theme";
 import { ErrorBox, Loading } from "./ui";
 import Overview from "./pages/Overview";
 import Events from "./pages/Events";
@@ -90,6 +90,10 @@ export default function App() {
     applyTheme(theme);
   }, [theme]);
 
+  // With no stored switch the workspace tracks the host, including a change
+  // made while the page is open.
+  useEffect(() => watchHostTheme(setTheme), []);
+
   useEffect(() => {
     if (!getToken()) return;
     api
@@ -135,6 +139,11 @@ export default function App() {
   function selectView(next: View) {
     setView(next);
     rememberView(next);
+  }
+
+  function selectTheme(next: Theme) {
+    rememberTheme(next);
+    setTheme(next);
   }
 
   if (checking) return <div className="center"><Loading label="Restoring session" /></div>;
@@ -288,7 +297,7 @@ export default function App() {
             // pressed state says.
             aria-label="Daylight theme"
             aria-pressed={theme === "daylight"}
-            onClick={() => setTheme(theme === "daylight" ? "console" : "daylight")}
+            onClick={() => selectTheme(theme === "daylight" ? "console" : "daylight")}
           >
             Daylight
           </button>
