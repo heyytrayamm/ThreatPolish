@@ -17,7 +17,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from app.evaluation.runner import run
+from app.evaluation.runner import run  # noqa: E402
 
 REPORT_DIR = ROOT.parent / "docs" / "research"
 METHOD_LABELS = {
@@ -28,6 +28,8 @@ METHOD_LABELS = {
     "ablation_no_intel": "Ablation: no threat-intel family",
     "ablation_no_timing": "Ablation: no timing family",
     "ablation_no_toolchain": "Ablation: no toolchain family",
+    "ablation_uniform_weights": "Ablation: uniform family weights",
+    "ablation_jaccard_only": "Ablation: Jaccard sequence comparison only",
 }
 
 
@@ -62,6 +64,10 @@ def main() -> int:
     return 0
 
 
+def _seconds(value: float | None) -> str:
+    return "not reached" if value is None else f"{value:.1f}s"
+
+
 def _markdown(runs: list[dict], volume: dict) -> str:
     lines: list[str] = [
         "# Correlation evaluation",
@@ -75,7 +81,11 @@ def _markdown(runs: list[dict], volume: dict) -> str:
         "  coordinated scenario (campaign), not necessarily the same person.",
         "- Positive pair: both sessions belong to the same true scenario.",
         "- `linked` decisions are counted as positive; hypotheses are not.",
-        "- Thresholds were fixed before running the benchmark and were not tuned on it.",
+        "- Link thresholds are unchanged from the previous revision and were not tuned",
+        "  on this benchmark. The overlap-based sequence comparison and",
+        "  corpus-relative family weighting added in `corr-1.3.0` were evaluated on",
+        "  the same benchmark they are reported on; there is no separate validation",
+        "  set, so their gains are reported as preliminary.",
         "- Every run is deterministic from its seed. The generator is synthetic;",
         "  absolute performance on production traffic will differ.",
         "",
@@ -99,6 +109,7 @@ def _markdown(runs: list[dict], volume: dict) -> str:
                 f"{metrics['tp']} | {metrics['fp']} | {metrics['fn']} |"
             )
         campaign = result["campaign_analysis"]
+        detection = result["time_to_detection"]
         adaptive = result["adaptive"]
         resources = result["resources"]
         lines += [
@@ -135,16 +146,27 @@ def _markdown(runs: list[dict], volume: dict) -> str:
             f"{campaign['predicted_clusters']} predicted clusters, purity "
             f"{campaign['cluster_purity']:.3f}. {campaign['note']}",
             "",
+            f"Time to detection: {detection['groups_with_a_link']} of "
+            f"{detection['groups_measured']} multi-session groups produced a link, "
+            f"median {_seconds(detection['median_seconds'])}, "
+            f"mean {_seconds(detection['mean_seconds'])}, "
+            f"worst {_seconds(detection['max_seconds'])}. {detection['note']}",
+            "",
             f"Adaptive experiment: {adaptive['ambiguous_pairs']} ambiguous pairs in "
             f"{adaptive['candidate_components']} candidate clusters; "
             f"{adaptive['components_investigated']} clusters investigated, "
-            f"{adaptive['pairs_recomputed']} pairs recomputed, "
-            f"{adaptive['resolved_correctly']} correctly resolved, "
-            f"{adaptive['resolved_incorrectly']} incorrectly resolved, "
+            f"{adaptive['pairs_recomputed']} pairs recomputed; of the evaluable pairs, "
+            f"{adaptive['resolved_correctly']} links gained correctly, "
+            f"{adaptive['resolved_incorrectly']} gained incorrectly, "
+            f"{adaptive['lost_correctly']} lost correctly and "
+            f"{adaptive['lost_incorrectly']} lost incorrectly; "
             f"{adaptive['unchanged']} unchanged. {adaptive['note']}",
             "",
-            f"Resources: total {resources['total_seconds']:.3f}s, peak memory "
-            f"{resources['peak_memory_mb']:.2f} MB, {resources['sessions_per_second']} sessions/s.",
+            f"Resources: total {resources['total_seconds']:.3f}s wall, "
+            f"{resources['cpu_seconds']:.3f}s CPU, peak memory "
+            f"{resources['peak_memory_mb']:.2f} MB, "
+            f"{resources['sessions_per_second']} sessions/s, "
+            f"{resources['milliseconds_per_pair']} ms/pair.",
             "",
         ]
 
@@ -152,8 +174,25 @@ def _markdown(runs: list[dict], volume: dict) -> str:
         f"## Volume run (seed {volume['seed']})",
         "",
         f"{volume['sessions']} sessions and {volume['pairs']} pairs: "
-        f"total {volume['resources']['total_seconds']:.3f}s, peak memory "
-        f"{volume['resources']['peak_memory_mb']:.2f} MB.",
+        f"total {volume['resources']['total_seconds']:.3f}s wall, "
+        f"{volume['resources']['cpu_seconds']:.3f}s CPU, peak memory "
+        f"{volume['resources']['peak_memory_mb']:.2f} MB, "
+        f"{volume['resources']['milliseconds_per_pair']} ms/pair.",
+        "",
+        f"Time to detection: {volume['time_to_detection']['groups_with_a_link']} of "
+        f"{volume['time_to_detection']['groups_measured']} multi-session groups produced "
+        f"a link, median {_seconds(volume['time_to_detection']['median_seconds'])}, "
+        f"mean {_seconds(volume['time_to_detection']['mean_seconds'])}, "
+        f"worst {_seconds(volume['time_to_detection']['max_seconds'])}.",
+        "",
+        f"Campaign-level: {volume['campaign_analysis']['groups_recovered_exactly']} of "
+        f"{volume['campaign_analysis']['true_multi_session_groups']} true groups recovered "
+        f"exactly; {volume['campaign_analysis']['predicted_clusters']} predicted clusters, "
+        f"purity {volume['campaign_analysis']['cluster_purity']:.3f}. Adaptive experiment: "
+        f"{volume['adaptive']['resolved_correctly']} links gained correctly, "
+        f"{volume['adaptive']['resolved_incorrectly']} gained incorrectly, "
+        f"{volume['adaptive']['lost_correctly']} lost correctly, "
+        f"{volume['adaptive']['lost_incorrectly']} lost incorrectly.",
         "",
         "| Method | Precision | Recall | F1 | FPR |",
         "| --- | --- | --- | --- | --- |",

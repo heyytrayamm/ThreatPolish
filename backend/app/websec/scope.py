@@ -14,6 +14,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from ..core.config import get_settings
 from ..core.errors import AuthorizationFailure, Conflict, NotFound, ValidationFailure
@@ -25,16 +26,29 @@ from ..db.schema import watch_scopes
 def normalize_domain(value: str) -> str:
     raw = value.strip().lower()
     if "://" in raw:
-        parts = urlsplit(raw)
-        raw = parts.hostname or ""
-    raw = raw.split("/", 1)[0].split(":", 1)[0].strip(".")
-    if not raw or len(raw) > 253:
-        raise ValidationFailure("invalid domain")
+        try:
+            raw = urlsplit(raw).hostname or ""
+        except ValueError as exc:
+            raise ValidationFailure("invalid domain") from exc
+    raw = raw.split("/", 1)[0].strip(".")
+    if raw.startswith("["):
+        close = raw.find("]")
+        if close == -1:
+            raise ValidationFailure("invalid IPv6 host")
+        raw = raw[1:close]
     try:
-        ipaddress.ip_address(raw)
-        return raw
+        return str(ipaddress.ip_address(raw))
     except ValueError:
         pass
+    # Only a hostname may still carry a port here; a bare IPv6 address above
+    # has already been parsed and would otherwise be truncated at its first
+    # colon.
+    if raw.count(":") == 1:
+        host, _, port = raw.partition(":")
+        if port.isdigit():
+            raw = host
+    if not raw or len(raw) > 253:
+        raise ValidationFailure("invalid domain")
     allowed = set("abcdefghijklmnopqrstuvwxyz0123456789-.")
     if not set(raw) <= allowed or ".." in raw or raw.startswith("-") or raw.endswith("-"):
         raise ValidationFailure("invalid domain")
@@ -70,10 +84,8 @@ def create_scope(
                     notes=notes[:2000],
                 )
             )
-    except Exception as exc:
-        if "UNIQUE" in str(exc).upper() or "unique" in str(exc):
-            raise Conflict("an authorization already exists for this domain") from exc
-        raise
+    except IntegrityError as exc:
+        raise Conflict("an authorization already exists for this domain") from exc
     return get_scope_by_domain(normalized)
 
 
@@ -102,18 +114,30 @@ def list_scopes() -> list[dict[str, Any]]:
 
 
 def find_active_scope(host: str) -> dict[str, Any]:
+    """Return the authorization that governs this host.
+
+    Several scopes can cover one host (``example.com`` and
+    ``api.example.com``).  The narrowest live one governs, because otherwise a
+    broad authorization would silently relax the tighter limits an owner set
+    for a specific host — including whether active checks are allowed at all.
+    Ties and row order cannot decide it: the match is sorted by specificity.
+    """
     normalized = normalize_domain(host)
     now = iso(utcnow())
     with connection() as conn:
         rows = conn.execute(select(watch_scopes)).fetchall()
-    for row in rows:
-        domain = row.domain
-        if normalized == domain or normalized.endswith("." + domain):
-            if row.expires_at <= now:
-                continue
-            data = dict(row._mapping)
-            data["allow_active"] = bool(data["allow_active"])
-            return data
+    matches = [
+        row
+        for row in rows
+        if normalized == row.domain or normalized.endswith("." + row.domain)
+    ]
+    matches.sort(key=lambda row: (-len(row.domain), row.domain))
+    for row in matches:
+        if row.expires_at <= now:
+            continue
+        data = dict(row._mapping)
+        data["allow_active"] = bool(data["allow_active"])
+        return data
     raise AuthorizationFailure(
         "no active assessment authorization covers this host",
         details={"host": normalized, "hint": "create a scope with an explicit authorizer first"},
@@ -125,7 +149,10 @@ def validate_target(target: str, *, allow_active: bool) -> tuple[str, str, str]:
     raw = target.strip()
     if "://" not in raw:
         raw = "https://" + raw
-    parsed = urlsplit(raw)
+    try:
+        parsed = urlsplit(raw)
+    except ValueError as exc:
+        raise ValidationFailure("target URL is not valid") from exc
     if parsed.scheme not in {"http", "https"}:
         raise ValidationFailure("only http and https targets are supported")
     if parsed.username or parsed.password:
@@ -147,7 +174,12 @@ def validate_target(target: str, *, allow_active: bool) -> tuple[str, str, str]:
             details={"scope_id": scope["id"]},
         )
     _assert_public_host(host)
-    url = f"{parsed.scheme}://{host}" + (f":{port}" if port else "") + (parsed.path or "/")
+    netloc = f"[{host}]" if ":" in host else host
+    url = f"{parsed.scheme}://{netloc}" + (f":{port}" if port else "") + (parsed.path or "/")
+    # The query is part of the target an operator authorized. Dropping it made
+    # an assessment of /search?q=1 silently fetch /search instead.
+    if parsed.query:
+        url += f"?{parsed.query}"
     return host, url, parsed.scheme
 
 
@@ -155,7 +187,7 @@ def _assert_public_host(host: str) -> None:
     settings = get_settings()
     try:
         infos = socket.getaddrinfo(host, None)
-    except socket.gaierror as exc:
+    except (socket.gaierror, OSError, UnicodeError) as exc:
         raise ValidationFailure(f"target hostname did not resolve: {host}") from exc
     addresses = {info[4][0] for info in infos}
     if not addresses:

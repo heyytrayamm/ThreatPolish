@@ -116,6 +116,35 @@ def test_retention_purges_only_expired_events(client, sensor_headers, admin_head
     assert events["items"][0]["session_id"] == "retention-fresh"
 
 
+def test_event_window_cap_keeps_the_newest_events(client, sensor_headers):
+    """Crossing the load cap must not silently correlate a stale prefix."""
+    now = datetime.now(timezone.utc)
+    batch = [
+        make_event(
+            session_id=f"cap-{index}",
+            occurred_at=(now - timedelta(minutes=3 - index)).isoformat(),
+        )
+        for index in range(3)
+    ]
+    response = client.post("/api/v1/ingest/events", json=batch, headers=sensor_headers)
+    assert response.status_code == 202, response.text
+    assert response.json()["accepted"] == 3
+
+    from app.telemetry.repository import events_in_window
+
+    events, truncated = events_in_window(
+        (now - timedelta(hours=1)).isoformat(), now.isoformat(), limit=2
+    )
+    assert truncated is True
+    assert [event["session_id"] for event in events] == ["cap-1", "cap-2"]
+
+    complete, complete_truncated = events_in_window(
+        (now - timedelta(hours=1)).isoformat(), now.isoformat(), limit=10
+    )
+    assert complete_truncated is False
+    assert [event["session_id"] for event in complete] == ["cap-0", "cap-1", "cap-2"]
+
+
 def test_sliding_window_limiter_enforces_bounds():
     from app.core.limits import SlidingWindowLimiter
 
@@ -123,6 +152,37 @@ def test_sliding_window_limiter_enforces_bounds():
     outcomes = [limiter.allow("key")[0] for _ in range(4)]
     assert outcomes == [True, True, True, False]
     assert limiter.allow("other-key")[0] is True
+
+
+def test_limiter_caps_distinct_keys_without_evicting_active_buckets():
+    from app.core.limits import SlidingWindowLimiter
+
+    limiter = SlidingWindowLimiter(10, 60, max_keys=2)
+    assert limiter.allow("a")[0] is True
+    assert limiter.allow("b")[0] is True
+    assert limiter.allow("c")[0] is False
+    assert limiter.allow("a")[0] is True
+
+
+def test_ingestion_rate_limit_counts_batch_records(client, sensor_headers, monkeypatch):
+    from app.api import deps
+    from app.core.config import reset_settings_cache
+
+    monkeypatch.setenv("TP_INGEST_RATE_LIMIT_PER_MINUTE", "2")
+    reset_settings_cache()
+    deps.ingest_limiter.cache_clear()
+
+    batch = [make_event(session_id=f"rate-batch-{index}") for index in range(3)]
+    response = client.post("/api/v1/ingest/events", json=batch, headers=sensor_headers)
+    assert response.status_code == 429
+    assert response.json()["error"]["code"] == "rate_limited"
+
+    single = client.post(
+        "/api/v1/ingest/events",
+        json=[make_event(session_id="rate-single-1")],
+        headers=sensor_headers,
+    )
+    assert single.status_code == 202
 
 
 def test_normalization_is_deterministic_and_bounded():
@@ -137,3 +197,25 @@ def test_normalization_is_deterministic_and_bounded():
     assert first == second
     assert first["category"] == "download"
     assert normalize_path_template("/users/12345/profile?x=1") == "/users/{n}/profile"
+
+
+def test_event_summary_breaks_the_window_down_by_module_and_severity(
+    client, sensor_headers, admin_headers
+):
+    """The summary is what the dashboard renders; its buckets must match the rows."""
+    events = [
+        make_event(session_id="sess-summary-1", severity="medium"),
+        make_event(session_id="sess-summary-2", severity="low"),
+        make_event(session_id="sess-summary-3", severity="low"),
+    ]
+    ingested = client.post("/api/v1/ingest/events", json=events, headers=sensor_headers)
+    assert ingested.status_code == 202, ingested.text
+
+    summary = client.get("/api/v1/events/summary?hours=24", headers=admin_headers)
+    assert summary.status_code == 200, summary.text
+    body = summary.json()
+    assert body["since"]
+    assert body["total"] == 3
+    assert body["by_module"] == {"honeypot": 3}
+    assert body["by_severity"] == {"medium": 1, "low": 2}
+    assert body["hourly"] and sum(item["count"] for item in body["hourly"]) == 3

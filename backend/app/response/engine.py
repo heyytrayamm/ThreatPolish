@@ -108,7 +108,9 @@ def create_response(
         raise ValidationFailure("a target is required")
     if action in APPLICABLE_ACTIONS:
         try:
-            ipaddress.ip_address(target)
+            # Event ingestion stores the canonical text form, so compare the
+            # same form here; an expanded IPv6 address is the same observer.
+            target = str(ipaddress.ip_address(target))
         except ValueError as exc:
             raise ValidationFailure("only IP addresses can be rate limited") from exc
         if not _observed_target(target):
@@ -152,19 +154,46 @@ def approve_response(response_id: str, *, actor: str) -> dict[str, Any]:
     record = get_response(response_id)
     if record["status"] != "pending_approval":
         raise Conflict(f"response is {record['status']} and cannot be approved")
-    if not record.get("expires_at") or record["expires_at"] <= iso(utcnow()):
+    now = utcnow()
+    if not record.get("expires_at") or record["expires_at"] <= iso(now):
         raise PolicyDenied("this response request has expired")
 
-    result = ADAPTER.apply(target=record["target"], params=loads(record["params"], {}))
-    now = utcnow()
+    # Claim the approval atomically. Two analysts clicking approve at the same
+    # time must not both invoke the execution adapter.
+    with connection() as conn:
+        claimed = conn.execute(
+            responses.update()
+            .where(
+                responses.c.id == response_id,
+                responses.c.status == "pending_approval",
+                responses.c.expires_at > iso(now),
+            )
+            .values(
+                status="applying",
+                approved_by=actor[:64],
+                approved_at=iso(now),
+            )
+        )
+    if claimed.rowcount != 1:
+        raise Conflict("response is no longer pending approval")
+
+    try:
+        result = ADAPTER.apply(target=record["target"], params=loads(record["params"], {}))
+    except Exception:
+        with connection() as conn:
+            conn.execute(
+                responses.update()
+                .where(responses.c.id == response_id, responses.c.status == "applying")
+                .values(status="pending_approval", approved_by=None, approved_at=None)
+            )
+        raise
+
     with connection() as conn:
         conn.execute(
             responses.update()
-            .where(responses.c.id == response_id)
+            .where(responses.c.id == response_id, responses.c.status == "applying")
             .values(
                 status="applied",
-                approved_by=actor[:64],
-                approved_at=iso(now),
                 applied_at=iso(now),
                 rollback_detail=dumps({"apply": result}),
             )
@@ -180,12 +209,31 @@ def rollback_response(response_id: str, *, actor: str) -> dict[str, Any]:
     record = get_response(response_id)
     if record["status"] != "applied":
         raise Conflict(f"response is {record['status']} and cannot be rolled back")
-    result = ADAPTER.remove(target=record["target"], params=loads(record["params"], {}))
+    with connection() as conn:
+        claimed = conn.execute(
+            responses.update()
+            .where(responses.c.id == response_id, responses.c.status == "applied")
+            .values(status="rolling_back")
+        )
+    if claimed.rowcount != 1:
+        raise Conflict("response is no longer in an applied state")
+
+    try:
+        result = ADAPTER.remove(target=record["target"], params=loads(record["params"], {}))
+    except Exception:
+        with connection() as conn:
+            conn.execute(
+                responses.update()
+                .where(responses.c.id == response_id, responses.c.status == "rolling_back")
+                .values(status="applied")
+            )
+        raise
+
     now = utcnow()
     with connection() as conn:
         conn.execute(
             responses.update()
-            .where(responses.c.id == response_id)
+            .where(responses.c.id == response_id, responses.c.status == "rolling_back")
             .values(
                 status="rolled_back",
                 rolled_back_at=iso(now),

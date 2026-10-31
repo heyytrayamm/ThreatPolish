@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 
 def _analyst_headers(client, admin_headers):
     from app.auth.users import create_user
@@ -106,6 +108,17 @@ def test_full_response_lifecycle(client, admin_headers, viewer_headers, sensor_h
     assert rolled_back.json()["status"] == "rolled_back"
 
 
+def test_ipv6_target_is_matched_in_its_canonical_form(client, admin_headers, sensor_headers):
+    _ingest_source(client, sensor_headers, ip="2001:db8::99")
+    response = _request(
+        client,
+        admin_headers,
+        target="2001:0db8:0000:0000:0000:0000:0000:0099",
+    )
+    assert response.status_code == 201, response.text
+    assert response.json()["target"] == "2001:db8::99"
+
+
 def test_unobserved_target_is_refused(client, admin_headers, sensor_headers):
     response = _request(client, admin_headers, target="198.51.100.250")
     assert response.status_code == 403
@@ -153,6 +166,83 @@ def test_emergency_disable_rolls_back_everything(client, admin_headers, sensor_h
     stored = client.get(f"/api/v1/responses/{record['id']}", headers=admin_headers).json()
     assert stored["status"] == "rolled_back"
     assert "emergency disable" in stored["rollback_detail"]["reason"]
+
+
+def test_concurrent_approval_runs_the_adapter_once(client, admin_headers, sensor_headers, monkeypatch):
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    from app.core.errors import Conflict
+    from app.response import engine
+
+    _ingest_source(client, sensor_headers)
+    record = _request(client, admin_headers).json()
+
+    original_get = engine.get_response
+    barrier = threading.Barrier(2, timeout=5)
+    lock = threading.Lock()
+    reads = 0
+
+    def coordinated_get(response_id):
+        nonlocal reads
+        result = original_get(response_id)
+        with lock:
+            reads += 1
+            sequence = reads
+        if sequence <= 2:
+            barrier.wait()
+        return result
+
+    calls = []
+
+    class CountingAdapter:
+        name = "counting-test"
+
+        def apply(self, *, target, params):
+            calls.append(target)
+            return {"adapter": self.name, "enforced": False, "target": target}
+
+        def remove(self, *, target, params):
+            return {"adapter": self.name, "reverted": True}
+
+    monkeypatch.setattr(engine, "get_response", coordinated_get)
+    monkeypatch.setattr(engine, "ADAPTER", CountingAdapter())
+
+    def approve():
+        try:
+            return engine.approve_response(record["id"], actor="usr_concurrent")
+        except Conflict as exc:
+            return exc
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = [future.result(timeout=10) for future in [pool.submit(approve), pool.submit(approve)]]
+
+    assert len(calls) == 1
+    assert sum(isinstance(item, dict) for item in outcomes) == 1
+    assert sum(isinstance(item, Conflict) for item in outcomes) == 1
+
+
+def test_unknown_campaign_is_not_silently_ignored(client, admin_headers):
+    response = _request(
+        client, admin_headers, action="alert", target="203.0.113.99", campaign_id="cmp_missing"
+    )
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "not_found"
+
+
+def test_auto_apply_cannot_be_enabled_without_an_enforcement_adapter(monkeypatch):
+    """The flag must fail loudly instead of implying automatic containment.
+
+    Policy never recommends ``apply_rate_limit`` on its own and nothing calls
+    the adapter outside an approval, so accepting the flag left an operator
+    believing that containment happened while the queue simply waited.
+    """
+    from app.core.config import build_settings
+    from app.core.errors import ConfigurationError
+
+    monkeypatch.setenv("TP_RESPONSE_AUTO_APPLY", "true")
+    with pytest.raises(ConfigurationError, match="TP_RESPONSE_AUTO_APPLY"):
+        build_settings()
 
 
 def test_policy_document_is_transparent(client, admin_headers):

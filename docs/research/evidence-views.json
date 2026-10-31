@@ -1,0 +1,53 @@
+{
+  "generated_at": "2026-10-26T17:57:41Z",
+  "rows": [
+    {
+      "absent_families_median": 0,
+      "campaigns": 41,
+      "campaigns_without_plan": 0,
+      "correlation_seconds": 1.914,
+      "detail_ms_max": 1.913,
+      "detail_ms_mean": 0.711,
+      "detail_ms_p50": 0.624,
+      "detail_ms_p95": 1.073,
+      "edges": 124,
+      "events": 1284,
+      "label": "volume",
+      "load_seconds": 0.37,
+      "observations_per_link_median": 9.0,
+      "observations_per_session_median": 9.0,
+      "pairs": 13530,
+      "payload_kib_mean": 28.2,
+      "plan_families_median": 2,
+      "plan_weight_median": 0.54,
+      "risk_weighted_coverage_median": 0.528,
+      "seed": 99,
+      "sessions": 165,
+      "tactics_observed_median": 6
+    },
+    {
+      "absent_families_median": 0,
+      "campaigns": 81,
+      "campaigns_without_plan": 0,
+      "correlation_seconds": 9.813,
+      "detail_ms_max": 42.853,
+      "detail_ms_mean": 2.864,
+      "detail_ms_p50": 2.207,
+      "detail_ms_p95": 3.594,
+      "edges": 911,
+      "events": 2891,
+      "label": "400 sessions",
+      "load_seconds": 0.648,
+      "observations_per_link_median": 9.0,
+      "observations_per_session_median": 9.0,
+      "pairs": 77421,
+      "payload_kib_mean": 81.3,
+      "plan_families_median": 2,
+      "plan_weight_median": 0.72,
+      "risk_weighted_coverage_median": 0.528,
+      "seed": 99,
+      "sessions": 394,
+      "tactics_observed_median": 6
+    }
+  ]
+}

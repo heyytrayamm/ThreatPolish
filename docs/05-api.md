@@ -26,9 +26,15 @@ recorded in the audit log.
 | GET | `/health/ready` | public | Readiness, including database check |
 | POST | `/auth/login` | public | Obtain a bearer token |
 | GET | `/auth/me` | any | Current identity and role |
-| POST | `/auth/password` | any | Rotate own password |
+| POST | `/auth/password` | any | Rotate own password; revokes every other session and returns a replacement token |
+| GET | `/auth/sessions` | any | Recent sign-ins and credential events for the caller, with client, address, token id and whether each sign-in is still usable or is this device |
+| DELETE | `/auth/sessions/{jti}` | any | Sign out one device without touching the account's other sessions |
 | GET/POST | `/auth/users` | admin | List and create users |
-| GET/POST/DELETE | `/auth/tokens` | admin | Service token management |
+| POST | `/auth/users/{id}/revoke-sessions` | admin | Invalidate every token issued to an account |
+| GET | `/auth/users/{id}/sessions` | admin | Any account's session history, including flagged sign-ins |
+| DELETE | `/auth/users/{id}/sessions/{jti}` | admin | Sign out one device of any account, leaving its other sessions |
+| GET/POST | `/auth/tokens` | admin | Service token management: list, create (plaintext returned once) |
+| DELETE | `/auth/tokens/{id}` | admin | Revoke one service token |
 | GET | `/auth/roles` | any | Role capability matrix |
 | POST | `/ingest/events` | sensor | Batch ingestion |
 | GET | `/events` | viewer | Filter by module, severity, source, time |
@@ -38,8 +44,8 @@ recorded in the audit log.
 | GET | `/sources` | viewer | Known collectors and freshness |
 | POST | `/correlate` | analyst | Rebuild edges and campaigns for a window |
 | GET | `/correlation/latest` | viewer | Summary of the last run |
-| GET | `/graph` | viewer | Nodes and edges for visualisation |
-| GET | `/campaigns`, `/campaigns/{id}` | viewer | Campaign list and detail |
+| GET | `/graph` | viewer | Nodes and edges for visualisation; `limit` bounds nodes (default 400, max 2000) and `edge_limit` bounds edges (default twice the node limit, max 4000), `limits` echoes both and `truncated` says whether the window was cut. Node properties are not included: `/campaigns/{id}` serves them |
+| GET | `/campaigns`, `/campaigns/{id}` | viewer | Campaign list and detail; archived rows are excluded unless `include_archived=true` |
 | GET | `/edges/{id}` | viewer | Full evidence for one edge |
 | POST/GET | `/feedback` | analyst | Confirm or reject an edge |
 | GET | `/honeypot/profiles` | viewer | Decoy profile catalogue |
@@ -50,14 +56,21 @@ recorded in the audit log.
 | GET | `/crypto/assets`, `/crypto/assets/{symbol}/history`, `/crypto/providers` | viewer | Asset data |
 | POST | `/crypto/refresh` | analyst | Refresh quotes |
 | POST | `/investigations` | analyst | Open an uncertainty-driven investigation |
-| POST | `/investigations/{id}/activate`, `/evaluate` | analyst | Observe, then re-score |
+| POST | `/investigations/{id}/activate` | analyst | Start observation on a chosen decoy profile |
+| POST | `/investigations/{id}/evaluate` | analyst | Close observation and re-score the edge |
 | GET | `/investigations`, `/investigations/{id}` | viewer | History with before/after |
-| GET/POST | `/responses` | viewer/analyst | Propose actions |
-| POST | `/responses/{id}/approve`, `/rollback` | admin/analyst | Approve or reverse |
+| GET/POST | `/responses` | viewer/analyst | List and propose actions |
+| GET | `/responses/{id}` | viewer | One action with its state history |
+| POST | `/responses/{id}/approve` | admin/analyst | Approve a pending action |
+| POST | `/responses/{id}/rollback` | admin/analyst | Reverse an applied action |
 | POST | `/responses/emergency-disable` | admin | Stop all active actions |
 | POST | `/responses/evaluate` | analyst | Dry-run a policy decision |
 | GET | `/responses/policies` | viewer | Policy matrix |
 | GET | `/audit` | admin | Audit trail |
+| GET | `/retention` | analyst/admin | Retention lag, graph size, total run count and recent runs (14 by default); `history_since`/`history_until` filter by UTC date and `history_trigger` by `manual`/`scheduled`; `history_counts` totals both triggers for the same window |
+| GET | `/retention/history.csv` | analyst/admin | Recorded runs as CSV, oldest first; `limit` up to 1000 and the same history filters |
+| POST | `/retention/run` | admin | Run both retention horizons now; recorded and audited |
+| GET | `/metrics` | viewer/analyst | Prometheus text metrics for retention backlog and graph size |
 
 ## Examples
 
@@ -89,7 +102,45 @@ Correlate and read a campaign:
 curl -sX POST localhost:8000/api/v1/correlate -H "Authorization: Bearer $T" \
   -H 'content-type: application/json' -d '{"window_hours":24}'
 curl -s localhost:8000/api/v1/campaigns -H "Authorization: Bearer $T"
+curl -s "localhost:8000/api/v1/campaigns?include_archived=true" \
+  -H "Authorization: Bearer $T"
 ```
+
+A campaign keeps its identifier while at least half of its membership survives,
+so a review remains attached as sessions come and go. Campaign detail includes
+`status_updated_at`, `superseded_by`, `archived_at`, `archived` and the stored
+`evidence` with `membership_history` and `review_history`. When two campaigns
+merge, feedback and response references move to the survivor; a review sent to
+the absorbed identifier is recorded against the survivor and the response says
+`redirected_from`. Archived campaigns stay readable but are not scanned for new
+work; their reviews are preserved rather than deleted.
+
+Campaign detail also answers two analyst questions about evidence quality:
+
+| Field | Meaning |
+| --- | --- |
+| `evidence_plan.items[]` | Evidence families with unavailable components on this campaign, ranked by affected pairs: `family`, `missing_on_edges`, `weight_at_stake` (sum across pairs), `components`, `guidance` |
+| `evidence_plan.family_coverage` | Available weight over total weight per family; `absent_families` names families no edge recorded |
+| `evidence_plan.note` | States that weight at stake is an upper bound, not a confidence forecast |
+| `observation.observations` | Sum of member session event counts |
+| `observation.observations_per_link` | Observations divided by linked pairs; lower means more concentrated evidence |
+| `observation.observations_per_session` | Observations divided by sessions |
+
+`kill_chain` reports ATT&CK-style tactic coverage from the same recorded
+session categories:
+
+| Field | Meaning |
+| --- | --- |
+| `kill_chain.tactics[]` | Every tactic the model can evidence: `key`, `label`, `weight` (1–5 by consequence), `observed`, `session_count`, `sessions` (first 20), `evidence` reasons |
+| `kill_chain.observed` | Observed tactic keys, in model order |
+| `kill_chain.coverage` | Observed tactics over all eleven (breadth) |
+| `kill_chain.risk_weighted_coverage` | Observed consequence weight over total weight |
+| `kill_chain.furthest` | Highest-weight observed tactic, or `null` |
+| `kill_chain.note` | States that collection and exfiltration are not observable from this telemetry |
+
+`edges` contains only relationships that currently support the campaign
+(`status = active`); a demoted relationship leaves the campaign and remains
+visible in the graph as a hypothesis.
 
 Propose a response. The target must already appear in ingested telemetry;
 policy refuses to act on a host the platform has never observed.

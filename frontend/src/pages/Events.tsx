@@ -1,18 +1,74 @@
 import { useEffect, useState } from "react";
 import { api, EventRecord } from "../api";
+import { copyText } from "../clipboard";
 import { Badge, Card, Empty, ErrorBox, Field, formatTime, JsonBlock, Loading, useAsync } from "../ui";
 
 const PAGE_SIZE = 25;
+const MODULES = ["honeypot", "websec", "cryptointel", "app"];
+const SEVERITIES = ["critical", "high", "medium", "low", "info"];
+const WINDOWS = [1, 24, 72, 168];
+
+type EventFilters = {
+  module: string;
+  severity: string;
+  query: string;
+  hours: number;
+};
+
+function readFiltersFromUrl(): EventFilters {
+  const params = new URLSearchParams(window.location.search);
+  const module = params.get("event_module") ?? "";
+  const severity = params.get("event_severity") ?? "";
+  const hours = Number(params.get("event_hours") ?? 24);
+  return {
+    module: MODULES.includes(module) ? module : "",
+    severity: SEVERITIES.includes(severity) ? severity : "",
+    hours: WINDOWS.includes(hours) ? hours : 24,
+    query: params.get("event_q") ?? "",
+  };
+}
+
+function filtersUrl(filters: EventFilters): URL {
+  const url = new URL(window.location.href);
+  const params = url.searchParams;
+  const values: [string, string][] = [
+    ["event_module", filters.module],
+    ["event_severity", filters.severity],
+    ["event_q", filters.query],
+    ["event_hours", filters.hours === 24 ? "" : String(filters.hours)],
+  ];
+  for (const [key, value] of values) {
+    if (value) params.set(key, value);
+    else params.delete(key);
+  }
+  return url;
+}
+
+function rememberFilters(
+  filters: EventFilters,
+  mode: "push" | "replace",
+): void {
+  const url = filtersUrl(filters);
+  const next = `${url.pathname}${url.search}${url.hash}`;
+  const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  if (next === current) return;
+  if (mode === "replace") window.history.replaceState(null, "", url);
+  else window.history.pushState(null, "", url);
+}
 
 export default function Events() {
-  const [module, setModule] = useState("");
-  const [severity, setSeverity] = useState("");
-  const [query, setQuery] = useState("");
-  const [hours, setHours] = useState(24);
+  const [initial] = useState(readFiltersFromUrl);
+  const [module, setModule] = useState(initial.module);
+  const [severity, setSeverity] = useState(initial.severity);
+  const [query, setQuery] = useState(initial.query);
+  const [hours, setHours] = useState(initial.hours);
   const [page, setPage] = useState(0);
   const [live, setLive] = useState(true);
   const [tick, setTick] = useState(0);
   const [selected, setSelected] = useState<EventRecord | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [copyBusy, setCopyBusy] = useState(false);
+  const filters: EventFilters = { module, severity, query, hours };
 
   useEffect(() => {
     if (!live) return;
@@ -21,6 +77,50 @@ export default function Events() {
   }, [live]);
 
   useEffect(() => setPage(0), [module, severity, query, hours]);
+
+  // The committed filter set is shareable and survives a reload, like the
+  // Retention window. Invalid URL values are removed on mount; pagination stays
+  // out of the URL because it moves with new events.
+  useEffect(() => {
+    rememberFilters(initial, "replace");
+  }, [initial]);
+
+  // Filter changes push history entries; back and forward restore the form and
+  // the result window instead of only moving between views.
+  useEffect(() => {
+    function handlePopState() {
+      const next = readFiltersFromUrl();
+      setModule(next.module);
+      setSeverity(next.severity);
+      setQuery(next.query);
+      setHours(next.hours);
+      setPage(0);
+    }
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
+  function commitFilters(next: EventFilters) {
+    setModule(next.module);
+    setSeverity(next.severity);
+    setQuery(next.query);
+    setHours(next.hours);
+    rememberFilters(next, "push");
+  }
+
+  async function copyLink() {
+    setCopyBusy(true);
+    setNotice(null);
+    try {
+      // Include a search term that has been typed but not committed yet.
+      await copyText(filtersUrl(filters).toString());
+      setNotice("Link copied to the clipboard.");
+    } catch (error) {
+      setNotice(`Could not copy the link: ${(error as Error).message}`);
+    } finally {
+      setCopyBusy(false);
+    }
+  }
 
   const since = new Date(Date.now() - hours * 3600 * 1000).toISOString();
   const result = useAsync(
@@ -43,6 +143,7 @@ export default function Events() {
     <div className="page">
       <header className="page-head">
         <div>
+          <span className="eyebrow">Event stream</span>
           <h1>Events</h1>
           <p className="muted">Normalized telemetry from decoys, assessments and application sources.</p>
         </div>
@@ -52,9 +153,15 @@ export default function Events() {
         </label>
       </header>
 
-      <div className="filters">
+      <div className="filters control-strip">
+        <span className="strip-label">Filter bank</span>
         <Field label="Module">
-          <select value={module} onChange={(event) => setModule(event.target.value)}>
+          <select
+            value={module}
+            onChange={(event) =>
+              commitFilters({ ...filters, module: event.target.value })
+            }
+          >
             <option value="">All</option>
             <option value="honeypot">honeypot</option>
             <option value="websec">websec</option>
@@ -63,7 +170,12 @@ export default function Events() {
           </select>
         </Field>
         <Field label="Severity">
-          <select value={severity} onChange={(event) => setSeverity(event.target.value)}>
+          <select
+            value={severity}
+            onChange={(event) =>
+              commitFilters({ ...filters, severity: event.target.value })
+            }
+          >
             <option value="">Any</option>
             <option value="critical">critical</option>
             <option value="high">high</option>
@@ -73,7 +185,12 @@ export default function Events() {
           </select>
         </Field>
         <Field label="Window">
-          <select value={hours} onChange={(event) => setHours(Number(event.target.value))}>
+          <select
+            value={hours}
+            onChange={(event) =>
+              commitFilters({ ...filters, hours: Number(event.target.value) })
+            }
+          >
             <option value={1}>1 hour</option>
             <option value={24}>24 hours</option>
             <option value={72}>72 hours</option>
@@ -81,11 +198,32 @@ export default function Events() {
           </select>
         </Field>
         <Field label="Search">
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="session, IP or target" />
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            onBlur={(event) =>
+              commitFilters({ ...filters, query: event.currentTarget.value })
+            }
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                commitFilters({ ...filters, query: event.currentTarget.value });
+              }
+            }}
+            placeholder="session, IP or target"
+          />
         </Field>
+        <button
+          type="button"
+          className="secondary"
+          disabled={copyBusy}
+          onClick={copyLink}
+        >
+          {copyBusy ? "Copying…" : "Copy link"}
+        </button>
       </div>
 
       <ErrorBox message={result.error} />
+      {notice && <div className="notice">{notice}</div>}
       <Card
         title={`${total} event${total === 1 ? "" : "s"}`}
         actions={

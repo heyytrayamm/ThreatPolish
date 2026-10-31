@@ -38,6 +38,16 @@ export class ApiFailure extends Error {
   }
 }
 
+function toFailure(response: Response, payload: unknown): ApiFailure {
+  const error = (payload as { error?: ApiError } | null)?.error ?? {
+    code: "request_failed",
+    message: `Request failed with status ${response.status}`,
+    details: {},
+  };
+  if (response.status === 401) setToken(null);
+  return new ApiFailure(response.status, error);
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -53,16 +63,42 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   } catch {
     payload = null;
   }
-  if (!response.ok) {
-    const error = (payload as { error?: ApiError } | null)?.error ?? {
-      code: "request_failed",
-      message: `Request failed with status ${response.status}`,
-      details: {},
-    };
-    if (response.status === 401) setToken(null);
-    throw new ApiFailure(response.status, error);
-  }
+  if (!response.ok) throw toFailure(response, payload);
   return payload as T;
+}
+
+export interface RetentionQuery {
+  since?: string;
+  until?: string;
+  trigger?: "manual" | "scheduled";
+  limit?: number;
+}
+
+function retentionQuery(params: RetentionQuery): string {
+  const query = new URLSearchParams();
+  if (params.since) query.set("history_since", params.since);
+  if (params.until) query.set("history_until", params.until);
+  if (params.trigger) query.set("history_trigger", params.trigger);
+  if (params.limit !== undefined) query.set("limit", String(params.limit));
+  const encoded = query.toString();
+  return encoded ? `?${encoded}` : "";
+}
+
+async function requestBlob(path: string): Promise<Blob> {
+  const headers: Record<string, string> = {};
+  const token = getToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const response = await fetch(path, { headers });
+  if (!response.ok) {
+    let payload: unknown = null;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = null;
+    }
+    throw toFailure(response, payload);
+  }
+  return response.blob();
 }
 
 export const api = {
@@ -72,6 +108,46 @@ export const api = {
       body: JSON.stringify({ email, password }),
     }),
   me: () => request<User & { via: string }>("/api/v1/auth/me"),
+  changePassword: (current_password: string, new_password: string) =>
+    request<{
+      status: string;
+      access_token: string;
+      token_type: string;
+      expires_at: string;
+      other_sessions_revoked: boolean;
+    }>("/api/v1/auth/password", {
+      method: "POST",
+      body: JSON.stringify({ current_password, new_password }),
+    }),
+  sessions: (limit = 20) =>
+    request<SessionHistory>(`/api/v1/auth/sessions?limit=${limit}`),
+  userSessions: (userId: string, limit = 20) =>
+    request<SessionHistory>(`/api/v1/auth/users/${userId}/sessions?limit=${limit}`),
+  revokeSession: (jti: string) =>
+    request<{ status: string; jti: string }>(
+      `/api/v1/auth/sessions/${encodeURIComponent(jti)}`,
+      { method: "DELETE" },
+    ),
+  revokeSessions: (userId: string) =>
+    request<{ status: string; user_id: string; session_version: number }>(
+      `/api/v1/auth/users/${userId}/revoke-sessions`,
+      { method: "POST" },
+    ),
+  revokeUserSession: (userId: string, jti: string) =>
+    request<{ status: string; jti: string }>(
+      `/api/v1/auth/users/${userId}/sessions/${encodeURIComponent(jti)}`,
+      { method: "DELETE" },
+    ),
+  agentTokens: () => request<{ tokens: AgentToken[] }>("/api/v1/auth/tokens"),
+  createAgentToken: (name: string, role: "sensor" | "analyst") =>
+    request<{ id: string; name: string; prefix: string; role: string; token: string }>(
+      "/api/v1/auth/tokens",
+      { method: "POST", body: JSON.stringify({ name, role }) },
+    ),
+  revokeAgentToken: (id: string) =>
+    request<{ status: string }>(`/api/v1/auth/tokens/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
   summary: (hours: number) =>
     request<{
       total: number;
@@ -133,7 +209,11 @@ export const api = {
   disableResponses: () =>
     request<{ rolled_back: number }>("/api/v1/responses/emergency-disable", { method: "POST" }),
   sources: () => request<{ sources: SourceHealth[] }>("/api/v1/sources"),
-  profiles: () => request<{ items: DecoyProfile[] }>("/api/v1/honeypot/profiles").catch(() => ({ items: [] })),
+  profiles: () => request<{ items: DecoyProfile[] }>("/api/v1/honeypot/profiles"),
+  decoySessions: (hours = 24, limit = 20) =>
+    request<{ window_hours: number; items: DecoySession[]; note: string }>(
+      `/api/v1/honeypot/sessions?hours=${hours}&limit=${limit}`,
+    ),
   investigations: () => request<{ items: Investigation[] }>("/api/v1/investigations"),
   planInvestigation: (body: Record<string, unknown>) =>
     request<Record<string, unknown>>("/api/v1/investigations", {
@@ -160,6 +240,12 @@ export const api = {
     }),
   quarantine: () => request<{ items: QuarantineRecord[] }>("/api/v1/quarantine"),
   audit: () => request<{ items: AuditEntry[] }>("/api/v1/audit"),
+  retention: (params: RetentionQuery = {}) =>
+    request<RetentionStatus>(`/api/v1/retention${retentionQuery(params)}`),
+  retentionHistoryCsv: (params: RetentionQuery = {}) =>
+    requestBlob(`/api/v1/retention/history.csv${retentionQuery(params)}`),
+  runRetention: () =>
+    request<RetentionRunResult>("/api/v1/retention/run", { method: "POST" }),
   latestRun: () =>
     request<{ run: CorrelationRun | null; algorithm: Record<string, unknown> }>(
       "/api/v1/correlation/latest",
@@ -184,7 +270,13 @@ export interface EventRecord {
 
 export interface GraphView {
   window_hours: number;
-  nodes: { id: string; kind: string; label: string; props: Record<string, unknown>; last_seen: string }[];
+  // Node props are served by the campaign detail endpoint, not copied into
+  // every node of the graph payload.
+  nodes: { id: string; kind: string; label: string; first_seen?: string; last_seen: string }[];
+  node_count?: number;
+  edge_count?: number;
+  limits?: { nodes: number; edges: number };
+  truncated?: { nodes: boolean; edges: boolean };
   edges: {
     id: string;
     kind: string;
@@ -223,12 +315,22 @@ export interface CampaignDetail {
   }[];
   edges: {
     id: string;
+    source: string;
+    target: string;
     confidence: number;
     score: number;
     status: string;
+    updated_at?: string;
     evidence: {
       explanation?: string;
-      components?: { name: string; family: string; available: boolean; score: number; detail: string }[];
+      components?: {
+        name: string;
+        family: string;
+        weight?: number;
+        available: boolean;
+        score: number;
+        detail: string;
+      }[];
       missing_evidence?: string[];
       anchors?: string[];
     };
@@ -250,6 +352,47 @@ export interface CampaignDetail {
       caveat: string;
     };
     timeline: { at: string; session: string; event: string }[];
+  };
+  evidence_plan: {
+    items: {
+      family: string;
+      missing_on_edges: number;
+      weight_at_stake: number;
+      components: string[];
+      guidance: string;
+    }[];
+    family_coverage: Record<string, number>;
+    absent_families: string[];
+    note: string;
+  };
+  observation: {
+    observations: number;
+    sessions: number;
+    source_ips: number;
+    linked_pairs: number;
+    observations_per_link: number | null;
+    observations_per_session: number | null;
+    compression: number | null;
+    note: string;
+  };
+  kill_chain: {
+    tactics: {
+      key: string;
+      label: string;
+      weight: number;
+      observed: boolean;
+      sessions: string[];
+      session_count: number;
+      evidence: string[];
+    }[];
+    observed: string[];
+    coverage: number;
+    risk_weighted_coverage: number;
+    observed_weight: number;
+    total_weight: number;
+    furthest: { key: string; label: string } | null;
+    asset_criticality: string;
+    note: string;
   };
 }
 
@@ -316,6 +459,16 @@ export interface SourceHealth {
   detail: Record<string, unknown>;
 }
 
+export interface DecoySession {
+  session_id: string;
+  first_seen: string;
+  last_seen: string;
+  events: number;
+  source_ips: string[];
+  severity: string;
+  target: string | null;
+}
+
 export interface DecoyProfile {
   id: string;
   name: string;
@@ -327,13 +480,62 @@ export interface DecoyProfile {
 export interface Investigation {
   id: string;
   created_at: string;
+  updated_at?: string;
   campaign_id: string | null;
   edge_id: string | null;
   status: string;
+  source_ip?: string | null;
+  expires_at?: string | null;
   chosen_profile: string | null;
   missing_evidence: string[];
   outcome: string | null;
   notes: string;
+  hypothesis_before?: { confidence?: number; at?: string };
+  hypothesis_after?: { confidence?: number; at?: string } | null;
+}
+
+export interface SignInAnomaly {
+  kind: "new_network" | "distant_signin";
+  previous_ip: string | null;
+  previous_at: string;
+  detected_at: string;
+  network?: string | null;
+  distance_km?: number;
+  threshold_km?: number;
+  window_minutes?: number;
+}
+
+export interface SessionRecord {
+  id: string;
+  occurred_at: string;
+  event: "sign_in" | "password_changed" | "sessions_revoked" | string;
+  ip: string | null;
+  client: string | null;
+  outcome: string;
+  session_version: number | null;
+  state?: "active" | "expired" | "revoked" | "unknown";
+  expires_at?: string | null;
+  anomaly?: SignInAnomaly | null;
+  jti?: string | null;
+  current?: boolean;
+  revoked_jti?: string | null;
+}
+
+export interface SessionHistory {
+  user_id: string;
+  sessions: SessionRecord[];
+  current_session_version: number;
+  note: string;
+}
+
+export interface AgentToken {
+  id: string;
+  name: string;
+  prefix: string;
+  role: string;
+  created_at: string;
+  last_used_at: string | null;
+  revoked_at: string | null;
 }
 
 export interface QuarantineRecord {
@@ -369,4 +571,61 @@ export interface AuditEntry {
   outcome: string;
   detail: Record<string, unknown>;
   request_ip: string | null;
+}
+
+export interface RetentionRun {
+  id: string;
+  ran_at: string;
+  trigger: "manual" | "scheduled";
+  duration_ms: number;
+  events_removed: number;
+  edges_removed: number;
+  observations_removed: number;
+  nodes_removed: number;
+  events_expired: number;
+  retired_edges: number;
+  stale_observations: number;
+  graph_nodes: number;
+  graph_edges: number;
+  overdue: boolean;
+}
+
+export interface RetentionRunResult {
+  run_id: string;
+  trigger: string;
+  duration_ms: number;
+  overdue: boolean;
+  events: { days: number; cutoff: string; events: number };
+  graph: {
+    days: number;
+    cutoff: string;
+    edges: number;
+    observations: number;
+    nodes: number;
+  };
+}
+
+export interface RetentionStatus {
+  generated_at: string;
+  overdue: boolean;
+  grace_days: number;
+  history_total: number;
+  history_counts: { manual: number; scheduled: number };
+  history: RetentionRun[];
+  events: {
+    retention_days: number;
+    total: number;
+    expired: number;
+    oldest_occurred_at: string | null;
+    oldest_retention_until: string | null;
+  };
+  graph: {
+    retention_days: number;
+    cutoff: string;
+    nodes: number;
+    edges: number;
+    retired_edges: number;
+    stale_observations: number;
+    orphan_nodes: number;
+  };
 }

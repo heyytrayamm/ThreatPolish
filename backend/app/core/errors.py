@@ -31,6 +31,11 @@ class ValidationFailure(ThreatPolishError):
     code = "validation_failed"
 
 
+class PayloadTooLarge(ThreatPolishError):
+    status_code = 413
+    code = "payload_too_large"
+
+
 class AuthenticationFailure(ThreatPolishError):
     status_code = 401
     code = "authentication_failed"

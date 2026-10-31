@@ -10,21 +10,27 @@ Limitations are returned with the results, not buried in prose.
 from __future__ import annotations
 
 import itertools
+import statistics
 import time
 import tracemalloc
+from datetime import datetime, timezone
 from typing import Any
 
 from ..correlation.features import CorrelationContext, Session, build_sessions
-from ..correlation.scoring import ALGORITHM_VERSION, compare, pair_key
+from ..correlation.scoring import ALGORITHM_VERSION, PAIR_SEPARATOR, compare, pair_key
 from ..schemas.event import EventIn
 from ..telemetry.normalize import normalize_event
 from .scenarios import adaptive_probe_events, generate_dataset
 
 
-def run(
-    *, seed: int = 7, high_volume: bool = False, include_ablations: bool = True
-) -> dict[str, Any]:
-    dataset = generate_dataset(
+# The benchmark dataset is anchored to a fixed instant so a seed always describes
+# the same telemetry.  Anchored on the wall clock, the hour-of-day features moved
+# between runs and the published counts drifted with them.
+BENCHMARK_START = datetime(2026, 1, 15, 6, 0, tzinfo=timezone.utc)
+
+
+def benchmark_dataset(*, seed: int = 7, high_volume: bool = False) -> dict[str, Any]:
+    return generate_dataset(
         seed=seed,
         campaign_groups=40 if high_volume else 10,
         sessions_per_group=3,
@@ -32,8 +38,16 @@ def run(
         same_ip_pairs=4,
         incomplete_groups=2,
         delayed_sessions=3,
+        now=BENCHMARK_START,
     )
+
+
+def run(
+    *, seed: int = 7, high_volume: bool = False, include_ablations: bool = True
+) -> dict[str, Any]:
+    dataset = benchmark_dataset(seed=seed, high_volume=high_volume)
     started = time.perf_counter()
+    cpu_started = time.process_time()
     tracemalloc.start()
     sessions, order = _build_sessions(dataset["sessions"])
     context = CorrelationContext.from_sessions(sessions.values())
@@ -58,7 +72,13 @@ def run(
 
     methods: list[str] = ["ip_only", "rule_based", "proposed"]
     if include_ablations:
-        methods += ["ablation_no_intel", "ablation_no_timing", "ablation_no_toolchain"]
+        methods += [
+            "ablation_no_intel",
+            "ablation_no_timing",
+            "ablation_no_toolchain",
+            "ablation_uniform_weights",
+            "ablation_jaccard_only",
+        ]
 
     passive_decisions: dict[str, dict[str, Any]] = {}
     for method in methods:
@@ -77,7 +97,14 @@ def run(
                     "ablation_no_timing": {"timing"},
                     "ablation_no_toolchain": {"toolchain"},
                 }.get(method, set())
-                result = compare(left, right, disabled_families=disabled, context=context)
+                result = compare(
+                    left,
+                    right,
+                    disabled_families=disabled,
+                    context=context,
+                    uniform_family_weights=method == "ablation_uniform_weights",
+                    sequence_overlap=method != "ablation_jaccard_only",
+                )
                 if method == "proposed":
                     passive_decisions[key] = result
                 predictions[key] = result["decision"] == "linked"
@@ -104,6 +131,7 @@ def run(
         for session_id in enrich_ids
     }
     resolved_correctly = resolved_incorrectly = evaluated = 0
+    lost_correctly = lost_incorrectly = unchanged = 0
     for left_id, right_id in pairs:
         if left_id not in enrich_ids or right_id not in enrich_ids:
             continue
@@ -113,16 +141,28 @@ def run(
         updated = compare(enriched[left_id], enriched[right_id], context=context)
         now_linked = updated["decision"] == "linked"
         adaptive_decisions[key] = now_linked
+        if key not in evaluable_keys:
+            continue
+        # Additional observation can move a pair either way; both directions are
+        # counted, so a promotion cannot be reported without its demotions.
         if now_linked and not was_linked:
             if labels[key] == 1:
                 resolved_correctly += 1
             else:
                 resolved_incorrectly += 1
+        elif was_linked and not now_linked:
+            if labels[key] == 1:
+                lost_correctly += 1
+            else:
+                lost_incorrectly += 1
+        else:
+            unchanged += 1
     timings["proposed_adaptive"] = round(time.perf_counter() - adaptive_start, 3)
     results["proposed_adaptive"] = _metrics(adaptive_decisions, labels, keys=evaluable_keys)
 
     subsets = _subset_report(passive_decisions, labels, truth, pairs)
     campaign = _campaign_analysis(sessions, passive_decisions, truth, exclude=hard_ids)
+    detection = _time_to_detection(sessions, passive_decisions, truth, exclude=hard_ids)
     peak_memory = tracemalloc.get_traced_memory()[1] / (1024 * 1024)
     tracemalloc.stop()
     elapsed = time.perf_counter() - started
@@ -148,6 +188,7 @@ def run(
         },
         "subsets": subsets,
         "campaign_analysis": campaign,
+        "time_to_detection": detection,
         "adaptive": {
             "ambiguous_pairs": len(hypothesis_pairs),
             "candidate_components": len(components),
@@ -156,18 +197,25 @@ def run(
             "pairs_recomputed": evaluated,
             "resolved_correctly": resolved_correctly,
             "resolved_incorrectly": resolved_incorrectly,
-            "unchanged": evaluated - resolved_correctly - resolved_incorrectly,
+            "lost_correctly": lost_correctly,
+            "lost_incorrectly": lost_incorrectly,
+            "unchanged": unchanged,
             "note": (
-                "Additional observation is simulated by appending one decoy interaction "
-                "to sessions in the largest uncertain clusters only. Production adaptation "
-                "records real decoy traffic and cannot create evidence."
+                "Additional observation is simulated by replaying one command the session "
+                "already used, for sessions in the largest uncertain clusters only. The "
+                "replay adds only behaviour the actor showed; the earlier simulation also "
+                "added a category-derived request path, which manufactured similarity "
+                "between unrelated sessions. Counts cover evaluable pairs."
             ),
         },
         "resources": {
             "total_seconds": round(elapsed, 3),
+            "cpu_seconds": round(time.process_time() - cpu_started, 3),
             "method_seconds": timings,
             "peak_memory_mb": round(peak_memory, 2),
             "sessions_per_second": round(len(sessions) / elapsed, 1) if elapsed else None,
+            "pairs_per_second": round(len(pairs) / elapsed, 1) if elapsed else None,
+            "milliseconds_per_pair": round(1000 * elapsed / len(pairs), 3) if pairs else None,
         },
         "limitations": [
             "Synthetic telemetry; absolute scores will differ on production traffic.",
@@ -214,7 +262,7 @@ def _hypothesis_components(pairs: list[str]) -> list[list[str]]:
         return item
 
     for key in pairs:
-        left, right = key.split("::")
+        left, right = key.split(PAIR_SEPARATOR)
         parent[find(left)] = find(right)
     grouped: dict[str, list[str]] = {}
     for item in list(parent):
@@ -363,7 +411,7 @@ def _campaign_analysis(
         return item
 
     for key in linked:
-        left, right = key.split("::")
+        left, right = key.split(PAIR_SEPARATOR)
         if left in parent and right in parent:
             parent[find(left)] = find(right)
 
@@ -402,5 +450,67 @@ def _campaign_analysis(
         "note": (
             "Recovery requires every member of a true group to appear in exactly one "
             "predicted cluster (no fragmentation, no contamination)."
+        ),
+    }
+
+
+def _time_to_detection(
+    sessions: dict[str, Session],
+    decisions: dict[str, dict[str, Any]],
+    truth: dict[str, str],
+    *,
+    exclude: set[str] | None = None,
+) -> dict[str, Any]:
+    """How long a campaign stays invisible before its evidence supports a link.
+
+    Correlation runs in batches, so this measures when the evidence became
+    sufficient rather than when a run happened: for each true group, the earliest
+    point at which a linked pair of its members had finished emitting.  Groups
+    that never link have no time to detection, and scheduling latency is outside
+    the measurement.
+    """
+    excluded = exclude or set()
+    groups: dict[str, list[str]] = {}
+    for session_id, group in truth.items():
+        if session_id in excluded:
+            continue
+        groups.setdefault(group, []).append(session_id)
+
+    delays: list[float] = []
+    measured = 0
+    for members in groups.values():
+        if len(members) < 2:
+            continue
+        starts = [sessions[item].first_seen for item in members if sessions[item].first_seen]
+        if not starts:
+            continue
+        measured += 1
+        group_start = min(starts)
+        available_at: datetime | None = None
+        for left, right in itertools.combinations(members, 2):
+            result = decisions.get(pair_key(left, right))
+            if not result or result["decision"] != "linked":
+                continue
+            ends = [sessions[item].last_seen for item in (left, right) if sessions[item].last_seen]
+            if not ends:
+                continue
+            moment = max(ends)
+            if available_at is None or moment < available_at:
+                available_at = moment
+        if available_at is None:
+            continue
+        delays.append(max(0.0, (available_at - group_start).total_seconds()))
+
+    return {
+        "groups_with_a_link": len(delays),
+        "groups_measured": measured,
+        "median_seconds": round(statistics.median(delays), 1) if delays else None,
+        "mean_seconds": round(statistics.fmean(delays), 1) if delays else None,
+        "max_seconds": round(max(delays), 1) if delays else None,
+        "note": (
+            "Elapsed campaign time until two members of the same true group had both "
+            "finished emitting events that link them. Correlation is batch, so "
+            "scheduling latency is excluded, and a group that never links has no "
+            "time to detection."
         ),
     }

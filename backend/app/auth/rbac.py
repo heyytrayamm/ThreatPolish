@@ -19,7 +19,6 @@ ROLES: dict[str, frozenset[str]] = {
             "events:read",
             "graph:read",
             "campaigns:read",
-            "campaigns:write",
             "correlate:run",
             "feedback:write",
             "findings:read",
@@ -27,13 +26,12 @@ ROLES: dict[str, frozenset[str]] = {
             "crypto:read",
             "crypto:refresh",
             "honeypot:read",
-            "honeypot:write",
             "investigations:write",
             "responses:read",
             "responses:request",
             "scopes:read",
             "sources:read",
-            "risk:read",
+            "retention:read",
         }
     ),
     "viewer": frozenset(
@@ -47,7 +45,6 @@ ROLES: dict[str, frozenset[str]] = {
             "responses:read",
             "scopes:read",
             "sources:read",
-            "risk:read",
         }
     ),
     "sensor": frozenset({"ingest:write", "honeypot:read", "sources:read"}),
@@ -61,6 +58,7 @@ class Principal:
     name: str
     email: str
     via: str  # "session" or "agent_token"
+    jti: str | None = None
 
     @property
     def is_agent(self) -> bool:

@@ -10,14 +10,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Protocol
 
-import httpx
-
 from ..core.config import Settings, get_settings
 from ..core.errors import UpstreamFailure, ValidationFailure
+from ..core.outbound import OutboundError, get_json
 from ..core.security import utcnow
 
 # Documented CoinGecko identifiers for the symbols ThreatPolish tracks by default.
@@ -92,25 +92,28 @@ class CoinGeckoProvider:
             "include_last_updated_at": "true",
         }
         try:
-            response = httpx.get(
+            payload = get_json(
                 url,
                 params=params,
                 timeout=self.settings.crypto_timeout_seconds,
                 headers={"Accept": "application/json", "User-Agent": "ThreatPolish/1.0"},
             )
-        except httpx.HTTPError as exc:
+        except OutboundError as exc:
+            if exc.kind == "status":
+                raise UpstreamFailure(
+                    "market data provider returned an error",
+                    details={"provider": self.name, "status": exc.status},
+                ) from exc
+            if exc.kind == "json":
+                raise UpstreamFailure("market data provider returned invalid JSON") from exc
+            if exc.kind == "size":
+                raise UpstreamFailure(
+                    "market data provider response exceeded the size limit",
+                    details={"provider": self.name},
+                ) from exc
             raise UpstreamFailure(
                 "market data provider could not be reached", details={"provider": self.name}
             ) from exc
-        if response.status_code != 200:
-            raise UpstreamFailure(
-                "market data provider returned an error",
-                details={"provider": self.name, "status": response.status_code},
-            )
-        try:
-            payload = response.json()
-        except ValueError as exc:
-            raise UpstreamFailure("market data provider returned invalid JSON") from exc
         if not isinstance(payload, dict):
             raise UpstreamFailure("market data provider returned an unexpected shape")
 
@@ -218,6 +221,11 @@ def get_provider(settings: Settings | None = None) -> MarketProvider:
 
 def _number(value: Any) -> float | None:
     try:
-        return float(value)  # type: ignore[arg-type]
+        number = float(value)  # type: ignore[arg-type]
     except (TypeError, ValueError):
         return None
+    # A provider (or a proxy in front of it) can return ``NaN``/``Infinity``,
+    # which Python's JSON parser accepts.  They cannot be stored or served as
+    # valid JSON, and comparing against them silently distorts the risk score,
+    # so an unusable value is treated as missing data.
+    return number if math.isfinite(number) else None

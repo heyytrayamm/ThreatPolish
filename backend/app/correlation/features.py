@@ -11,7 +11,10 @@ so this module never interprets raw attacker input directly.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import math
+import re
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -22,6 +25,12 @@ from ..core.security import parse_iso
 MAX_INTERARRIVALS = 200
 MAX_SEQUENCE = 500
 CORPUS_MIN_SESSIONS = 10
+
+# Session identifiers become part of relationship keys.  Ingestion rejects
+# control characters outright; this is the second line of defence for rows that
+# were stored before that check existed, and it degrades to a one-event session
+# instead of rewriting the identifier into a value that could collide.
+_UNSAFE_ID_RE = re.compile(r"[\x00-\x1f\x7f]")
 
 
 @dataclass
@@ -40,7 +49,10 @@ class CorrelationContext:
     n_sessions: int
     document_frequency: dict[str, dict[str, int]]
     informative_threshold: int
-    version: str = "corr-context-1.0.0"
+    version: str = "corr-context-1.1.0"
+    # Memoised per field: the ratio is a property of the window, and scoring
+    # asks for it once per compared pair.
+    specificity_cache: dict[str, float] = field(default_factory=dict)
 
     @classmethod
     def from_sessions(cls, sessions: Iterable["Session"]) -> "CorrelationContext":
@@ -81,6 +93,30 @@ class CorrelationContext:
             informative_threshold=threshold,
         )
 
+    def specificity(self, fields: Iterable[str]) -> float:
+        """Share of this window's tokens that survive the ubiquity filter.
+
+        A field whose tokens are almost all ubiquitous (``uname``, ``root``, a
+        stock client) cannot distinguish sessions in this window, however well
+        two sessions agree on it.  The ratio says how much a family is worth
+        here, so the family weight can follow the corpus instead of assuming
+        every deployment has equally informative telemetry.
+        """
+        ratios = []
+        for name in fields:
+            if name not in self.specificity_cache:
+                tokens = self.document_frequency.get(name) or {}
+                if not tokens:
+                    continue
+                informative = sum(
+                    1 for count in tokens.values() if count <= self.informative_threshold
+                )
+                self.specificity_cache[name] = informative / len(tokens)
+            ratios.append(self.specificity_cache[name])
+        if not ratios:
+            return 1.0
+        return sum(ratios) / len(ratios)
+
     def df(self, field: str, token: str) -> int:
         return self.document_frequency.get(field, {}).get(token, 0)
 
@@ -100,7 +136,30 @@ class CorrelationContext:
             "token_counts": {
                 field: len(values) for field, values in self.document_frequency.items()
             },
+            "specificity": {
+                field: round(self.specificity([field]), 4)
+                for field in self.document_frequency
+            },
         }
+
+    def fingerprint(self) -> str:
+        """Stable hash of everything a pair score depends on outside the pair.
+
+        Document frequencies, the ubiquity threshold and the number of sessions
+        all move every pair's corpus-relative weights, so a change in any of
+        them invalidates cached decisions.  The summary only records token
+        cardinalities and would not detect a frequency shift, hence the full
+        table here.
+        """
+        payload = {
+            "version": self.version,
+            "n_sessions": self.n_sessions,
+            "informative_threshold": self.informative_threshold,
+            "document_frequency": self.document_frequency,
+        }
+        return hashlib.sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
 
 
 @dataclass
@@ -142,6 +201,34 @@ class Session:
             return [0.0] * 24
         return [self.hours.get(hour, 0) / total for hour in range(24)]
 
+    def fingerprint(self) -> str:
+        """Hash of every field ``compare`` reads from this session.
+
+        Two sessions with the same fingerprint would score identically against
+        any third session, which is what makes it safe to reuse a stored pair
+        decision.  Fields no scoring component reads (targets, auth counters)
+        are omitted so a redundant event does not invalidate the cache.
+        """
+        payload = {
+            "actions": self.actions,
+            "commands": self.commands,
+            "categories": dict(sorted(self.categories.items())),
+            "endpoints": dict(sorted(self.endpoints.items())),
+            "usernames": sorted(self.usernames),
+            "clients": sorted(self.clients),
+            "indicators": sorted(self.indicators),
+            "source_ips": sorted(self.source_ips),
+            "event_count": len(self.event_ids),
+            "first_seen": self.first_seen.isoformat() if self.first_seen else None,
+            "last_seen": self.last_seen.isoformat() if self.last_seen else None,
+            "hours": dict(sorted(self.hours.items())),
+            "interarrivals": self.interarrivals,
+            "severity_max": self.severity_max,
+        }
+        return hashlib.sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+
     def to_summary(self) -> dict[str, Any]:
         return {
             "id": self.id,
@@ -174,7 +261,9 @@ def build_sessions(events: Iterable[dict[str, Any]]) -> dict[str, Session]:
         events, key=lambda item: (item.get("occurred_at", ""), item.get("id", ""))
     )
     for event in ordered:
-        session_id = event.get("session_id") or f"evt:{event['id']}"
+        session_id = event.get("session_id")
+        if not session_id or _UNSAFE_ID_RE.search(str(session_id)):
+            session_id = f"evt:{event['id']}"
         session = sessions.setdefault(session_id, Session(id=session_id))
         session.modules.add(event.get("source_module", "unknown"))
         if event.get("source_ip"):
@@ -335,7 +424,7 @@ def histogram_similarity(left: list[float], right: list[float]) -> float:
     """1 - total variation distance between two normalized histograms."""
     if len(left) != len(right) or not left:
         return 0.0
-    distance = 0.5 * sum(abs(a - b) for a, b in zip(left, right))
+    distance = 0.5 * sum(abs(a - b) for a, b in zip(left, right, strict=True))
     return max(0.0, min(1.0, 1.0 - distance))
 
 

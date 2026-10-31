@@ -11,10 +11,14 @@ from __future__ import annotations
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
+from ..core.logging import get_logger
 from ..core.security import iso, new_id, utcnow
 from ..db.database import connection, dumps, loads
 from ..db.schema import decoy_profiles
+
+log = get_logger(__name__)
 
 DEFAULT_PROFILES: list[dict[str, Any]] = [
     {
@@ -73,28 +77,43 @@ DEFAULT_PROFILES: list[dict[str, Any]] = [
 
 
 def seed_default_profiles() -> int:
+    """Insert the shipped decoy profiles that are not present yet.
+
+    Every API worker runs this at startup.  The existence check and the insert
+    are separate statements, so two workers can select the same missing profile
+    and the loser hits the unique name constraint.  That is a concurrent start,
+    not a startup failure: the row exists, so the job of this call is done.
+    """
     created = 0
     now = iso(utcnow())
     with connection() as conn:
         existing = {
             row[0] for row in conn.execute(select(decoy_profiles.c.name)).fetchall()
         }
-        for profile in DEFAULT_PROFILES:
-            if profile["name"] in existing:
-                continue
-            conn.execute(
-                decoy_profiles.insert().values(
-                    id=new_id("dpr"),
-                    name=profile["name"],
-                    kind=profile["kind"],
-                    description=profile["description"],
-                    config=dumps(profile["config"]),
-                    enabled=1,
-                    is_default=1 if profile["is_default"] else 0,
-                    created_at=now,
+    for profile in DEFAULT_PROFILES:
+        if profile["name"] in existing:
+            continue
+        try:
+            with connection() as conn:
+                conn.execute(
+                    decoy_profiles.insert().values(
+                        id=new_id("dpr"),
+                        name=profile["name"],
+                        kind=profile["kind"],
+                        description=profile["description"],
+                        config=dumps(profile["config"]),
+                        enabled=1,
+                        is_default=1 if profile["is_default"] else 0,
+                        created_at=now,
+                    )
                 )
+        except IntegrityError:
+            log.info(
+                "decoy profile was created by another worker",
+                extra={"profile": profile["name"]},
             )
-            created += 1
+            continue
+        created += 1
     return created
 
 

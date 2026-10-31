@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import json
+from datetime import timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query, Request
 
 from ..auth.rbac import Principal
-from ..core.errors import RateLimited, ValidationFailure
-from ..core.security import iso, utcnow
+from ..core.config import get_settings
+from ..core.errors import PayloadTooLarge, RateLimited, ValidationFailure
+from ..core.security import iso, parse_iso, utcnow
 from ..telemetry.ingest import Ingestor, source_health
+from ..schemas.event import Severity
 from ..telemetry.repository import event_summary, get_event, list_events, quarantine_list
 from .deps import client_ip, ingest_limiter, require
 
@@ -17,19 +21,40 @@ router = APIRouter(tags=["events"])
 MAX_BATCH = 500
 
 
+async def _read_json_body(request: Request) -> Any:
+    """Read the request body with a hard size bound.
+
+    The event contract already bounds a single event, but a batch is multiplied
+    by ``MAX_BATCH``.  Enforcing the product here stops an authenticated sensor
+    from making the API buffer an arbitrarily large request before validation
+    ever runs.
+    """
+    limit = MAX_BATCH * get_settings().max_event_bytes
+    declared = request.headers.get("content-length", "").strip()
+    if declared.isdigit() and int(declared) > limit:
+        raise PayloadTooLarge(
+            f"request body exceeds the {limit}-byte ingestion limit",
+            details={"max_bytes": limit},
+        )
+    buffer = bytearray()
+    async for chunk in request.stream():
+        buffer.extend(chunk)
+        if len(buffer) > limit:
+            raise PayloadTooLarge(
+                f"request body exceeds the {limit}-byte ingestion limit",
+                details={"max_bytes": limit},
+            )
+    try:
+        return json.loads(bytes(buffer))
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise ValidationFailure("request body must be valid JSON") from exc
+
+
 @router.post("/ingest/events", status_code=202)
 async def ingest_events(
     request: Request, principal: Principal = Depends(require("ingest:write"))
 ) -> dict[str, Any]:
-    allowed, retry_after = ingest_limiter().allow(principal.user_id, cost=1)
-    if not allowed:
-        raise RateLimited(
-            "ingestion rate limit exceeded", details={"retry_after_seconds": retry_after}
-        )
-    try:
-        body = await request.json()
-    except Exception as exc:
-        raise ValidationFailure("request body must be valid JSON") from exc
+    body = await _read_json_body(request)
 
     if isinstance(body, dict) and "events" in body:
         payloads = body["events"]
@@ -46,6 +71,14 @@ async def ingest_events(
         raise ValidationFailure(
             f"batch size {len(payloads)} exceeds the maximum of {MAX_BATCH}",
             details={"max_batch": MAX_BATCH},
+        )
+
+    # Charge one token per record, not per HTTP request: a single 500-record
+    # batch must not consume the same budget as a single event.
+    allowed, retry_after = ingest_limiter().allow(principal.user_id, cost=len(payloads))
+    if not allowed:
+        raise RateLimited(
+            "ingestion rate limit exceeded", details={"retry_after_seconds": retry_after}
         )
 
     report = Ingestor().ingest(payloads, actor=f"{principal.via}:{principal.name}")
@@ -72,8 +105,8 @@ def events(
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     module: str | None = Query(default=None, max_length=32),
-    severity: str | None = Query(default=None, max_length=16),
-    min_severity: str | None = Query(default=None, max_length=16),
+    severity: Severity | None = Query(default=None),
+    min_severity: Severity | None = Query(default=None),
     source_ip: str | None = Query(default=None, max_length=64),
     session_id: str | None = Query(default=None, max_length=120),
     event_type: str | None = Query(default=None, max_length=64),
@@ -82,6 +115,10 @@ def events(
     q: str | None = Query(default=None, max_length=120),
     principal: Principal = Depends(require("events:read")),
 ) -> dict[str, Any]:
+    since_value = _timestamp_filter("since", since)
+    until_value = _timestamp_filter("until", until)
+    if since_value and until_value and since_value > until_value:
+        raise ValidationFailure("since must not be later than until")
     items, total = list_events(
         limit=limit,
         offset=offset,
@@ -91,11 +128,20 @@ def events(
         source_ip=source_ip,
         session_id=session_id,
         event_type=event_type,
-        since=since,
-        until=until,
+        since=since_value,
+        until=until_value,
         q=q,
     )
     return {"items": items, "total": total, "limit": limit, "offset": offset}
+
+
+def _timestamp_filter(name: str, value: str | None) -> str | None:
+    if not value:
+        return None
+    try:
+        return iso(parse_iso(value))
+    except (TypeError, ValueError) as exc:
+        raise ValidationFailure(f"{name} must be an ISO-8601 timestamp") from exc
 
 
 @router.get("/events/summary")
@@ -104,8 +150,6 @@ def summary(
     principal: Principal = Depends(require("events:read")),
 ) -> dict[str, Any]:
     start = utcnow()
-    from datetime import timedelta
-
     return event_summary(since=iso(start - timedelta(hours=hours)))
 
 

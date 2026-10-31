@@ -1,4 +1,4 @@
-.PHONY: install test evaluate build serve decoy clean
+.PHONY: install test audit benchmark evaluate deepscan build serve decoy demo demo-docker clean
 
 install:
 	cd backend && pip install -r requirements-dev.txt
@@ -7,8 +7,18 @@ install:
 test:
 	cd backend && python -m pytest -q
 
+audit:
+	cd backend && pip-audit --skip-editable
+	cd frontend && npm audit --audit-level=high
+
+benchmark:
+	cd backend && python scripts/benchmark_correlation.py
+
 evaluate:
 	cd backend && python scripts/evaluate.py
+
+deepscan:
+	cd backend && python scripts/deepscan.py
 
 build:
 	cd frontend && npm run build
@@ -18,6 +28,14 @@ serve:
 
 decoy:
 	cd backend && python -m app.cli decoy --host 127.0.0.1 --port 8022
+
+demo:
+	cd backend && python -m app.cli seed-demo
+	cd frontend && npm run build
+	cd backend && uvicorn app.main:app --host 127.0.0.1 --port 8000
+
+demo-docker:
+	docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d --build
 
 clean:
 	rm -rf backend/.pytest_cache backend/__pycache__ backend/app/__pycache__ frontend/dist

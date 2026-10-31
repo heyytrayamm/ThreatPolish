@@ -7,9 +7,11 @@ import re
 from typing import Any
 
 from sqlalchemy import func, select
+from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError
 
-from ..core.errors import AuthenticationFailure, Conflict, NotFound
+from ..core.errors import AuthenticationFailure, Conflict, NotFound, ValidationFailure
+from ..core.logging import get_logger
 from ..core.security import (
     hash_agent_token,
     hash_password,
@@ -23,6 +25,7 @@ from ..db.database import connection, query_one
 from ..db.schema import agent_tokens, users
 from .rbac import validate_role
 
+log = get_logger(__name__)
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
@@ -41,9 +44,9 @@ def _public_user(row: dict[str, Any]) -> dict[str, Any]:
 def create_user(*, email: str, name: str, role: str, password: str) -> dict[str, Any]:
     email = email.strip().lower()
     if not _EMAIL_RE.match(email):
-        raise AuthenticationFailure("a valid email address is required")
+        raise ValidationFailure("a valid email address is required")
     if len(password) < 10:
-        raise AuthenticationFailure("password must be at least 10 characters")
+        raise ValidationFailure("password must be at least 10 characters")
     validate_role(role)
     user_id = new_id("usr")
     created = iso(utcnow())
@@ -66,11 +69,20 @@ def create_user(*, email: str, name: str, role: str, password: str) -> dict[str,
 
 
 def get_user(user_id: str) -> dict[str, Any]:
+    return get_user_with_session(user_id)[0]
+
+
+def get_user_with_session(user_id: str) -> tuple[dict[str, Any], int]:
+    """Return the public record and its session version in one query.
+
+    The session version increments whenever the account's credentials change,
+    which is what makes previously issued tokens stop working.
+    """
     with connection() as conn:
         row = query_one(conn, "SELECT * FROM users WHERE id = :id", {"id": user_id})
     if not row:
         raise NotFound("user not found")
-    return _public_user(row)
+    return _public_user(row), int(row.get("token_version") or 0)
 
 
 def list_users() -> list[dict[str, Any]]:
@@ -84,25 +96,64 @@ def count_users() -> int:
         return int(conn.execute(select(func.count()).select_from(users)).scalar() or 0)
 
 
-def authenticate(email: str, password: str) -> dict[str, Any]:
+def _check_credentials(email: str, password: str) -> dict[str, Any]:
+    """Return the stored row for a valid password; raise otherwise.
+
+    The dummy verification keeps the work constant whether or not the account
+    exists, so response time does not disclose which emails are registered.
+    """
     normalized = email.strip().lower()
     with connection() as conn:
         row = query_one(conn, "SELECT * FROM users WHERE email = :email", {"email": normalized})
-        if not row or not row["is_active"]:
-            # Constant work regardless of account existence.
-            verify_password(password, "pbkdf2_sha256$210000$AAAA$AAAA")
-            raise AuthenticationFailure("invalid credentials")
-        if not verify_password(password, row["password_hash"]):
-            raise AuthenticationFailure("invalid credentials")
+    if not row or not row["is_active"]:
+        verify_password(password, "pbkdf2_sha256$210000$AAAA$AAAA")
+        raise AuthenticationFailure("invalid credentials")
+    if not verify_password(password, row["password_hash"]):
+        raise AuthenticationFailure("invalid credentials")
+    return row
+
+
+def verify_credentials(email: str, password: str) -> dict[str, Any]:
+    """Check a password without recording a sign-in.
+
+    Re-authentication before a credential change is not a sign-in; writing
+    ``last_login_at`` here made the account's last-seen time claim the operator
+    had just logged in, and no session-history entry existed to match it.
+    """
+    return _public_user(_check_credentials(email, password))
+
+
+def authenticate(email: str, password: str) -> dict[str, Any]:
+    row = _check_credentials(email, password)
+    now = iso(utcnow())
+    with connection() as conn:
         conn.execute(
-            users.update().where(users.c.id == row["id"]).values(last_login_at=iso(utcnow()))
+            users.update().where(users.c.id == row["id"]).values(last_login_at=now)
         )
-    return _public_user({**row, "last_login_at": iso(utcnow())})
+    return _public_user({**row, "last_login_at": now})
 
 
-def change_password(user_id: str, new_password: str) -> None:
+def _increment_session_version(conn: Connection, user_id: str) -> int:
+    """Bump the account's session version inside the caller's transaction."""
+    result = conn.execute(
+        users.update()
+        .where(users.c.id == user_id)
+        .values(token_version=users.c.token_version + 1)
+    )
+    if result.rowcount == 0:
+        raise NotFound("user not found")
+    row = conn.execute(select(users.c.token_version).where(users.c.id == user_id)).fetchone()
+    return int(row[0]) if row else 0
+
+
+def change_password(user_id: str, new_password: str) -> int:
+    """Store a new password and revoke every token issued before it.
+
+    Returns the new session version.  Tokens carrying an older version are
+    rejected on use, so a session stolen before the change cannot outlive it.
+    """
     if len(new_password) < 10:
-        raise AuthenticationFailure("password must be at least 10 characters")
+        raise ValidationFailure("password must be at least 10 characters")
     with connection() as conn:
         result = conn.execute(
             users.update()
@@ -111,6 +162,17 @@ def change_password(user_id: str, new_password: str) -> None:
         )
         if result.rowcount == 0:
             raise NotFound("user not found")
+        return _increment_session_version(conn, user_id)
+
+
+def revoke_sessions(user_id: str) -> int:
+    """Invalidate every token issued to an account so far, without a password change.
+
+    Used when a token is suspected stolen: the account keeps its password and
+    the next sign-in issues a token carrying the new session version.
+    """
+    with connection() as conn:
+        return _increment_session_version(conn, user_id)
 
 
 # --------------------------------------------------------------------------- #
@@ -118,20 +180,23 @@ def change_password(user_id: str, new_password: str) -> None:
 # --------------------------------------------------------------------------- #
 def create_agent_token(*, name: str, role: str = "sensor") -> dict[str, Any]:
     validate_role(role)
+    clean_name = name.strip()[:120]
+    if not clean_name:
+        raise ValidationFailure("a token name is required")
     plaintext, token_hash, prefix = new_agent_token()
     token_id = new_id("agt")
     with connection() as conn:
         conn.execute(
             agent_tokens.insert().values(
                 id=token_id,
-                name=name.strip()[:120],
+                name=clean_name,
                 token_hash=token_hash,
                 prefix=prefix,
                 role=role,
                 created_at=iso(utcnow()),
             )
         )
-    return {"id": token_id, "name": name, "prefix": prefix, "role": role, "token": plaintext}
+    return {"id": token_id, "name": clean_name, "prefix": prefix, "role": role, "token": plaintext}
 
 
 def resolve_agent_token(plaintext: str) -> dict[str, Any] | None:
@@ -183,6 +248,12 @@ def revoke_agent_token(token_id: str) -> None:
 def ensure_bootstrap_admin() -> str | None:
     """Create the first administrator from environment variables if the user
     table is empty.  Returns the email when a user was created.
+
+    Every API worker runs this at startup.  The count check and the insert are
+    not atomic, so on a fresh database two workers can both decide to create the
+    account; the loser gets a unique-constraint Conflict.  That is the expected
+    outcome of a concurrent start, not a startup failure, and returning ``None``
+    is truthful: this process did not create the account.
     """
     if count_users() > 0:
         return None
@@ -190,5 +261,9 @@ def ensure_bootstrap_admin() -> str | None:
     password = os.environ.get("TP_BOOTSTRAP_ADMIN_PASSWORD", "")
     if not email or not password:
         return None
-    create_user(email=email, name="Administrator", role="admin", password=password)
+    try:
+        create_user(email=email, name="Administrator", role="admin", password=password)
+    except Conflict:
+        log.info("bootstrap administrator was created by another worker", extra={"email": email})
+        return None
     return email

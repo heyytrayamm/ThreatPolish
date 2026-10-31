@@ -1,23 +1,25 @@
 {
-  "generated_at": "2026-10-23T09:51:36.116699+00:00",
+  "generated_at": "2026-10-26T20:31:47.969789+00:00",
   "runs": [
     {
       "adaptive": {
-        "ambiguous_pairs": 199,
+        "ambiguous_pairs": 213,
         "candidate_components": 7,
         "components_investigated": 7,
-        "note": "Additional observation is simulated by appending one decoy interaction to sessions in the largest uncertain clusters only. Production adaptation records real decoy traffic and cannot create evidence.",
-        "pairs_recomputed": 1953,
-        "resolved_correctly": 5,
-        "resolved_incorrectly": 17,
-        "sessions_enriched": 63,
-        "unchanged": 1931
+        "lost_correctly": 0,
+        "lost_incorrectly": 0,
+        "note": "Additional observation is simulated by replaying one command the session already used, for sessions in the largest uncertain clusters only. The replay adds only behaviour the actor showed; the earlier simulation also added a category-derived request path, which manufactured similarity between unrelated sessions. Counts cover evaluable pairs.",
+        "pairs_recomputed": 1891,
+        "resolved_correctly": 1,
+        "resolved_incorrectly": 0,
+        "sessions_enriched": 62,
+        "unchanged": 1539
       },
-      "algorithm_version": "corr-1.1.0",
+      "algorithm_version": "corr-1.3.0",
       "campaign_analysis": {
-        "campaign_recall": 0.6667,
+        "campaign_recall": 0.8333,
         "cluster_purity": 1.0,
-        "groups_recovered_exactly": 8,
+        "groups_recovered_exactly": 10,
         "note": "Recovery requires every member of a true group to appear in exactly one predicted cluster (no fragmentation, no contamination).",
         "predicted_clusters": 10,
         "pure_clusters": 10,
@@ -40,6 +42,18 @@
         "note": "Generic scanner groups with no distinguishing artefact. Labels are not recoverable from the available telemetry; reported separately so they do not inflate or deflate the headline numbers.",
         "pairs": 15,
         "results": {
+          "ablation_jaccard_only": {
+            "accuracy": 0.4,
+            "f1": 0.5714,
+            "false_negative_rate": 0.0,
+            "false_positive_rate": 1.0,
+            "fn": 0,
+            "fp": 9,
+            "precision": 0.4,
+            "recall": 1.0,
+            "tn": 0,
+            "tp": 6
+          },
           "ablation_no_intel": {
             "accuracy": 0.4,
             "f1": 0.5714,
@@ -65,6 +79,18 @@
             "tp": 6
           },
           "ablation_no_toolchain": {
+            "accuracy": 0.4,
+            "f1": 0.5714,
+            "false_negative_rate": 0.0,
+            "false_positive_rate": 1.0,
+            "fn": 0,
+            "fp": 9,
+            "precision": 0.4,
+            "recall": 1.0,
+            "tn": 0,
+            "tp": 6
+          },
+          "ablation_uniform_weights": {
             "accuracy": 0.4,
             "f1": 0.5714,
             "false_negative_rate": 0.0,
@@ -128,21 +154,50 @@
       "pairs": 1953,
       "positives": 38,
       "resources": {
+        "cpu_seconds": 60.985,
         "method_seconds": {
-          "ablation_no_intel": 1.208,
-          "ablation_no_timing": 1.09,
-          "ablation_no_toolchain": 1.072,
-          "ip_only": 0.003,
-          "proposed": 1.432,
-          "proposed_adaptive": 1.365,
-          "rule_based": 0.004
+          "ablation_jaccard_only": 8.099,
+          "ablation_no_intel": 8.117,
+          "ablation_no_timing": 7.979,
+          "ablation_no_toolchain": 7.976,
+          "ablation_uniform_weights": 7.958,
+          "ip_only": 0.07,
+          "proposed": 9.716,
+          "proposed_adaptive": 9.071,
+          "rule_based": 0.123
         },
-        "peak_memory_mb": 16.39,
-        "sessions_per_second": 10.0,
-        "total_seconds": 6.288
+        "milliseconds_per_pair": 31.248,
+        "pairs_per_second": 32.0,
+        "peak_memory_mb": 18.87,
+        "sessions_per_second": 1.0,
+        "total_seconds": 61.026
       },
       "results": {
+        "ablation_jaccard_only": {
+          "accuracy": 0.9962,
+          "f1": 0.8966,
+          "false_negative_rate": 0.1875,
+          "false_positive_rate": 0.0,
+          "fn": 6,
+          "fp": 0,
+          "precision": 1.0,
+          "recall": 0.8125,
+          "tn": 1564,
+          "tp": 26
+        },
         "ablation_no_intel": {
+          "accuracy": 0.9987,
+          "f1": 0.9677,
+          "false_negative_rate": 0.0625,
+          "false_positive_rate": 0.0,
+          "fn": 2,
+          "fp": 0,
+          "precision": 1.0,
+          "recall": 0.9375,
+          "tn": 1564,
+          "tp": 30
+        },
+        "ablation_no_timing": {
           "accuracy": 0.9969,
           "f1": 0.9153,
           "false_negative_rate": 0.1562,
@@ -154,29 +209,29 @@
           "tn": 1564,
           "tp": 27
         },
-        "ablation_no_timing": {
-          "accuracy": 0.9956,
-          "f1": 0.8772,
-          "false_negative_rate": 0.2188,
+        "ablation_no_toolchain": {
+          "accuracy": 0.9962,
+          "f1": 0.8966,
+          "false_negative_rate": 0.1875,
           "false_positive_rate": 0.0,
-          "fn": 7,
+          "fn": 6,
           "fp": 0,
           "precision": 1.0,
-          "recall": 0.7812,
+          "recall": 0.8125,
           "tn": 1564,
-          "tp": 25
+          "tp": 26
         },
-        "ablation_no_toolchain": {
-          "accuracy": 0.99,
-          "f1": 0.7576,
-          "false_negative_rate": 0.2188,
-          "false_positive_rate": 0.0058,
-          "fn": 7,
-          "fp": 9,
-          "precision": 0.7353,
-          "recall": 0.7812,
-          "tn": 1555,
-          "tp": 25
+        "ablation_uniform_weights": {
+          "accuracy": 0.9975,
+          "f1": 0.9333,
+          "false_negative_rate": 0.125,
+          "false_positive_rate": 0.0,
+          "fn": 4,
+          "fp": 0,
+          "precision": 1.0,
+          "recall": 0.875,
+          "tn": 1564,
+          "tp": 28
         },
         "ip_only": {
           "accuracy": 0.9774,
@@ -191,27 +246,27 @@
           "tp": 0
         },
         "proposed": {
-          "accuracy": 0.9956,
-          "f1": 0.8772,
-          "false_negative_rate": 0.2188,
+          "accuracy": 0.9981,
+          "f1": 0.9508,
+          "false_negative_rate": 0.0938,
           "false_positive_rate": 0.0,
-          "fn": 7,
+          "fn": 3,
           "fp": 0,
           "precision": 1.0,
-          "recall": 0.7812,
+          "recall": 0.9062,
           "tn": 1564,
-          "tp": 25
+          "tp": 29
         },
         "proposed_adaptive": {
-          "accuracy": 0.9881,
-          "f1": 0.7595,
+          "accuracy": 0.9987,
+          "f1": 0.9677,
           "false_negative_rate": 0.0625,
-          "false_positive_rate": 0.0109,
+          "false_positive_rate": 0.0,
           "fn": 2,
-          "fp": 17,
-          "precision": 0.6383,
+          "fp": 0,
+          "precision": 1.0,
           "recall": 0.9375,
-          "tn": 1547,
+          "tn": 1564,
           "tp": 30
         },
         "rule_based": {
@@ -273,18 +328,18 @@
           "tp": 0
         },
         "same_campaign": {
-          "accuracy": 0.8333,
-          "f1": 0.9091,
-          "false_negative_rate": 0.1667,
+          "accuracy": 0.9667,
+          "f1": 0.9831,
+          "false_negative_rate": 0.0333,
           "false_positive_rate": 0.0,
-          "fn": 5,
+          "fn": 1,
           "fp": 0,
           "pairs": 30,
           "positives": 30,
           "precision": 1.0,
-          "recall": 0.8333,
+          "recall": 0.9667,
           "tn": 0,
-          "tp": 25
+          "tp": 29
         },
         "same_ip": {
           "accuracy": 1.0,
@@ -300,25 +355,35 @@
           "tn": 28,
           "tp": 0
         }
+      },
+      "time_to_detection": {
+        "groups_measured": 12,
+        "groups_with_a_link": 10,
+        "max_seconds": 924.0,
+        "mean_seconds": 561.9,
+        "median_seconds": 541.5,
+        "note": "Elapsed campaign time until two members of the same true group had both finished emitting events that link them. Correlation is batch, so scheduling latency is excluded, and a group that never links has no time to detection."
       }
     },
     {
       "adaptive": {
-        "ambiguous_pairs": 188,
+        "ambiguous_pairs": 208,
         "candidate_components": 6,
         "components_investigated": 6,
-        "note": "Additional observation is simulated by appending one decoy interaction to sessions in the largest uncertain clusters only. Production adaptation records real decoy traffic and cannot create evidence.",
-        "pairs_recomputed": 1711,
-        "resolved_correctly": 10,
-        "resolved_incorrectly": 16,
-        "sessions_enriched": 59,
-        "unchanged": 1685
+        "lost_correctly": 0,
+        "lost_incorrectly": 0,
+        "note": "Additional observation is simulated by replaying one command the session already used, for sessions in the largest uncertain clusters only. The replay adds only behaviour the actor showed; the earlier simulation also added a category-derived request path, which manufactured similarity between unrelated sessions. Counts cover evaluable pairs.",
+        "pairs_recomputed": 1770,
+        "resolved_correctly": 2,
+        "resolved_incorrectly": 0,
+        "sessions_enriched": 60,
+        "unchanged": 1429
       },
-      "algorithm_version": "corr-1.1.0",
+      "algorithm_version": "corr-1.3.0",
       "campaign_analysis": {
-        "campaign_recall": 0.3333,
+        "campaign_recall": 0.6667,
         "cluster_purity": 1.0,
-        "groups_recovered_exactly": 4,
+        "groups_recovered_exactly": 8,
         "note": "Recovery requires every member of a true group to appear in exactly one predicted cluster (no fragmentation, no contamination).",
         "predicted_clusters": 10,
         "pure_clusters": 10,
@@ -341,6 +406,18 @@
         "note": "Generic scanner groups with no distinguishing artefact. Labels are not recoverable from the available telemetry; reported separately so they do not inflate or deflate the headline numbers.",
         "pairs": 15,
         "results": {
+          "ablation_jaccard_only": {
+            "accuracy": 0.4,
+            "f1": 0.5714,
+            "false_negative_rate": 0.0,
+            "false_positive_rate": 1.0,
+            "fn": 0,
+            "fp": 9,
+            "precision": 0.4,
+            "recall": 1.0,
+            "tn": 0,
+            "tp": 6
+          },
           "ablation_no_intel": {
             "accuracy": 0.4,
             "f1": 0.5714,
@@ -366,6 +443,18 @@
             "tp": 6
           },
           "ablation_no_toolchain": {
+            "accuracy": 0.4,
+            "f1": 0.5714,
+            "false_negative_rate": 0.0,
+            "false_positive_rate": 1.0,
+            "fn": 0,
+            "fp": 9,
+            "precision": 0.4,
+            "recall": 1.0,
+            "tn": 0,
+            "tp": 6
+          },
+          "ablation_uniform_weights": {
             "accuracy": 0.4,
             "f1": 0.5714,
             "false_negative_rate": 0.0,
@@ -429,33 +518,26 @@
       "pairs": 1953,
       "positives": 38,
       "resources": {
+        "cpu_seconds": 57.574,
         "method_seconds": {
-          "ablation_no_intel": 1.129,
-          "ablation_no_timing": 1.084,
-          "ablation_no_toolchain": 1.122,
-          "ip_only": 0.003,
-          "proposed": 1.288,
-          "proposed_adaptive": 1.222,
-          "rule_based": 0.004
+          "ablation_jaccard_only": 8.038,
+          "ablation_no_intel": 8.054,
+          "ablation_no_timing": 7.917,
+          "ablation_no_toolchain": 7.89,
+          "ablation_uniform_weights": 7.86,
+          "ip_only": 0.037,
+          "proposed": 8.344,
+          "proposed_adaptive": 8.375,
+          "rule_based": 0.067
         },
-        "peak_memory_mb": 16.28,
-        "sessions_per_second": 10.6,
-        "total_seconds": 5.965
+        "milliseconds_per_pair": 29.499,
+        "pairs_per_second": 33.9,
+        "peak_memory_mb": 18.76,
+        "sessions_per_second": 1.1,
+        "total_seconds": 57.612
       },
       "results": {
-        "ablation_no_intel": {
-          "accuracy": 0.9931,
-          "f1": 0.7925,
-          "false_negative_rate": 0.3438,
-          "false_positive_rate": 0.0,
-          "fn": 11,
-          "fp": 0,
-          "precision": 1.0,
-          "recall": 0.6562,
-          "tn": 1564,
-          "tp": 21
-        },
-        "ablation_no_timing": {
+        "ablation_jaccard_only": {
           "accuracy": 0.9912,
           "f1": 0.72,
           "false_negative_rate": 0.4375,
@@ -467,17 +549,53 @@
           "tn": 1564,
           "tp": 18
         },
+        "ablation_no_intel": {
+          "accuracy": 0.9975,
+          "f1": 0.9333,
+          "false_negative_rate": 0.125,
+          "false_positive_rate": 0.0,
+          "fn": 4,
+          "fp": 0,
+          "precision": 1.0,
+          "recall": 0.875,
+          "tn": 1564,
+          "tp": 28
+        },
+        "ablation_no_timing": {
+          "accuracy": 0.9962,
+          "f1": 0.8966,
+          "false_negative_rate": 0.1875,
+          "false_positive_rate": 0.0,
+          "fn": 6,
+          "fp": 0,
+          "precision": 1.0,
+          "recall": 0.8125,
+          "tn": 1564,
+          "tp": 26
+        },
         "ablation_no_toolchain": {
-          "accuracy": 0.985,
-          "f1": 0.5714,
-          "false_negative_rate": 0.5,
-          "false_positive_rate": 0.0051,
-          "fn": 16,
-          "fp": 8,
-          "precision": 0.6667,
-          "recall": 0.5,
-          "tn": 1556,
-          "tp": 16
+          "accuracy": 0.9937,
+          "f1": 0.8148,
+          "false_negative_rate": 0.3125,
+          "false_positive_rate": 0.0,
+          "fn": 10,
+          "fp": 0,
+          "precision": 1.0,
+          "recall": 0.6875,
+          "tn": 1564,
+          "tp": 22
+        },
+        "ablation_uniform_weights": {
+          "accuracy": 0.9962,
+          "f1": 0.8966,
+          "false_negative_rate": 0.1875,
+          "false_positive_rate": 0.0,
+          "fn": 6,
+          "fp": 0,
+          "precision": 1.0,
+          "recall": 0.8125,
+          "tn": 1564,
+          "tp": 26
         },
         "ip_only": {
           "accuracy": 0.9774,
@@ -492,27 +610,27 @@
           "tp": 0
         },
         "proposed": {
-          "accuracy": 0.9912,
-          "f1": 0.72,
-          "false_negative_rate": 0.4375,
+          "accuracy": 0.9962,
+          "f1": 0.8966,
+          "false_negative_rate": 0.1875,
           "false_positive_rate": 0.0,
-          "fn": 14,
+          "fn": 6,
           "fp": 0,
           "precision": 1.0,
-          "recall": 0.5625,
+          "recall": 0.8125,
           "tn": 1564,
-          "tp": 18
+          "tp": 26
         },
         "proposed_adaptive": {
-          "accuracy": 0.9875,
-          "f1": 0.7368,
+          "accuracy": 0.9975,
+          "f1": 0.9333,
           "false_negative_rate": 0.125,
-          "false_positive_rate": 0.0102,
+          "false_positive_rate": 0.0,
           "fn": 4,
-          "fp": 16,
-          "precision": 0.6364,
+          "fp": 0,
+          "precision": 1.0,
           "recall": 0.875,
-          "tn": 1548,
+          "tn": 1564,
           "tp": 28
         },
         "rule_based": {
@@ -574,18 +692,18 @@
           "tp": 0
         },
         "same_campaign": {
-          "accuracy": 0.6,
-          "f1": 0.75,
-          "false_negative_rate": 0.4,
+          "accuracy": 0.8667,
+          "f1": 0.9286,
+          "false_negative_rate": 0.1333,
           "false_positive_rate": 0.0,
-          "fn": 12,
+          "fn": 4,
           "fp": 0,
           "pairs": 30,
           "positives": 30,
           "precision": 1.0,
-          "recall": 0.6,
+          "recall": 0.8667,
           "tn": 0,
-          "tp": 18
+          "tp": 26
         },
         "same_ip": {
           "accuracy": 1.0,
@@ -601,29 +719,39 @@
           "tn": 28,
           "tp": 0
         }
+      },
+      "time_to_detection": {
+        "groups_measured": 12,
+        "groups_with_a_link": 10,
+        "max_seconds": 1145.0,
+        "mean_seconds": 653.5,
+        "median_seconds": 614.0,
+        "note": "Elapsed campaign time until two members of the same true group had both finished emitting events that link them. Correlation is batch, so scheduling latency is excluded, and a group that never links has no time to detection."
       }
     }
   ],
   "volume_run": {
     "adaptive": {
-      "ambiguous_pairs": 1423,
-      "candidate_components": 8,
-      "components_investigated": 8,
-      "note": "Additional observation is simulated by appending one decoy interaction to sessions in the largest uncertain clusters only. Production adaptation records real decoy traffic and cannot create evidence.",
-      "pairs_recomputed": 12246,
-      "resolved_correctly": 9,
-      "resolved_incorrectly": 28,
-      "sessions_enriched": 157,
-      "unchanged": 12209
+      "ambiguous_pairs": 1612,
+      "candidate_components": 7,
+      "components_investigated": 7,
+      "lost_correctly": 0,
+      "lost_incorrectly": 0,
+      "note": "Additional observation is simulated by replaying one command the session already used, for sessions in the largest uncertain clusters only. The replay adds only behaviour the actor showed; the earlier simulation also added a category-derived request path, which manufactured similarity between unrelated sessions. Counts cover evaluable pairs.",
+      "pairs_recomputed": 13366,
+      "resolved_correctly": 2,
+      "resolved_incorrectly": 0,
+      "sessions_enriched": 164,
+      "unchanged": 12401
     },
-    "algorithm_version": "corr-1.1.0",
+    "algorithm_version": "corr-1.3.0",
     "campaign_analysis": {
-      "campaign_recall": 0.7619,
+      "campaign_recall": 0.881,
       "cluster_purity": 1.0,
-      "groups_recovered_exactly": 32,
+      "groups_recovered_exactly": 37,
       "note": "Recovery requires every member of a true group to appear in exactly one predicted cluster (no fragmentation, no contamination).",
-      "predicted_clusters": 39,
-      "pure_clusters": 39,
+      "predicted_clusters": 40,
+      "pure_clusters": 40,
       "true_multi_session_groups": 42
     },
     "dataset": {
@@ -656,15 +784,15 @@
           "tp": 0
         },
         "proposed": {
-          "accuracy": 0.4,
-          "f1": 0.5714,
+          "accuracy": 0.6,
+          "f1": 0.6667,
           "false_negative_rate": 0.0,
-          "false_positive_rate": 1.0,
+          "false_positive_rate": 0.6667,
           "fn": 0,
-          "fp": 9,
-          "precision": 0.4,
+          "fp": 6,
+          "precision": 0.5,
           "recall": 1.0,
-          "tn": 0,
+          "tn": 3,
           "tp": 6
         },
         "rule_based": {
@@ -695,15 +823,18 @@
     "pairs": 13530,
     "positives": 128,
     "resources": {
+      "cpu_seconds": 130.147,
       "method_seconds": {
-        "ip_only": 0.024,
-        "proposed": 9.679,
-        "proposed_adaptive": 8.531,
-        "rule_based": 0.038
+        "ip_only": 0.262,
+        "proposed": 62.471,
+        "proposed_adaptive": 63.266,
+        "rule_based": 0.569
       },
-      "peak_memory_mb": 111.83,
-      "sessions_per_second": 8.8,
-      "total_seconds": 18.68
+      "milliseconds_per_pair": 9.626,
+      "pairs_per_second": 103.9,
+      "peak_memory_mb": 129.12,
+      "sessions_per_second": 1.3,
+      "total_seconds": 130.238
     },
     "results": {
       "ip_only": {
@@ -719,28 +850,28 @@
         "tp": 0
       },
       "proposed": {
-        "accuracy": 0.9984,
-        "f1": 0.9107,
-        "false_negative_rate": 0.1639,
+        "accuracy": 0.9992,
+        "f1": 0.9573,
+        "false_negative_rate": 0.082,
         "false_positive_rate": 0.0,
-        "fn": 20,
+        "fn": 10,
         "fp": 0,
         "precision": 1.0,
-        "recall": 0.8361,
+        "recall": 0.918,
         "tn": 12439,
-        "tp": 102
+        "tp": 112
       },
       "proposed_adaptive": {
-        "accuracy": 0.9969,
-        "f1": 0.8506,
-        "false_negative_rate": 0.0902,
-        "false_positive_rate": 0.0023,
-        "fn": 11,
-        "fp": 28,
-        "precision": 0.7986,
-        "recall": 0.9098,
-        "tn": 12411,
-        "tp": 111
+        "accuracy": 0.9994,
+        "f1": 0.9661,
+        "false_negative_rate": 0.0656,
+        "false_positive_rate": 0.0,
+        "fn": 8,
+        "fp": 0,
+        "precision": 1.0,
+        "recall": 0.9344,
+        "tn": 12439,
+        "tp": 114
       },
       "rule_based": {
         "accuracy": 0.4356,
@@ -801,18 +932,18 @@
         "tp": 0
       },
       "same_campaign": {
-        "accuracy": 0.85,
-        "f1": 0.9189,
-        "false_negative_rate": 0.15,
+        "accuracy": 0.9333,
+        "f1": 0.9655,
+        "false_negative_rate": 0.0667,
         "false_positive_rate": 0.0,
-        "fn": 18,
+        "fn": 8,
         "fp": 0,
         "pairs": 120,
         "positives": 120,
         "precision": 1.0,
-        "recall": 0.85,
+        "recall": 0.9333,
         "tn": 0,
-        "tp": 102
+        "tp": 112
       },
       "same_ip": {
         "accuracy": 1.0,
@@ -828,6 +959,14 @@
         "tn": 28,
         "tp": 0
       }
+    },
+    "time_to_detection": {
+      "groups_measured": 42,
+      "groups_with_a_link": 40,
+      "max_seconds": 1052.0,
+      "mean_seconds": 589.0,
+      "median_seconds": 584.0,
+      "note": "Elapsed campaign time until two members of the same true group had both finished emitting events that link them. Correlation is batch, so scheduling latency is excluded, and a group that never links has no time to detection."
     }
   }
 }

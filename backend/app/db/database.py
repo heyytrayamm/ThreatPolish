@@ -112,15 +112,243 @@ def _migration_002_events_retention_index(conn: Connection) -> None:
     conn.execute(text("CREATE INDEX IF NOT EXISTS ix_events_retention ON events (retention_until)"))
 
 
+def _migration_003_investigation_activation(conn: Connection) -> None:
+    """Persist the decoy override so the separate decoy process can see it."""
+    from sqlalchemy import inspect
+
+    existing = {column["name"] for column in inspect(conn).get_columns("investigations")}
+    if "source_ip" not in existing:
+        conn.execute(text("ALTER TABLE investigations ADD COLUMN source_ip VARCHAR(64)"))
+    if "expires_at" not in existing:
+        conn.execute(text("ALTER TABLE investigations ADD COLUMN expires_at VARCHAR(40)"))
+    conn.execute(
+        text(
+            "CREATE INDEX IF NOT EXISTS ix_investigations_active "
+            "ON investigations (status, source_ip)"
+        )
+    )
+
+
+def _migration_004_widen_graph_identifiers(conn: Connection) -> None:
+    """Graph IDs carry prefixes, so they need more room than the raw fields.
+
+    SQLite does not enforce declared VARCHAR lengths, so this only needs to run
+    on PostgreSQL where a value longer than the column would raise.
+    """
+    if conn.dialect.name != "postgresql":
+        return
+    conn.execute(text("ALTER TABLE events ALTER COLUMN id TYPE VARCHAR(120)"))
+    conn.execute(text("ALTER TABLE graph_nodes ALTER COLUMN id TYPE VARCHAR(255)"))
+    conn.execute(text("ALTER TABLE graph_edges ALTER COLUMN src_id TYPE VARCHAR(255)"))
+    conn.execute(text("ALTER TABLE graph_edges ALTER COLUMN dst_id TYPE VARCHAR(255)"))
+
+
+def _migration_005_rekey_session_pairs(conn: Connection) -> None:
+    """Rebuild legacy pair identifiers after the separator changed.
+
+    Pair keys used to join session IDs with ``::``; a session ID may contain
+    that sequence, which made two different pairs hash to the same edge. The
+    current key uses a unit separator. Existing rows are re-keyed from their
+    endpoint columns so an upgraded graph does not keep orphaned edges or
+    duplicate campaigns.
+    """
+    import hashlib
+
+    from ..correlation.scoring import pair_key
+
+    rows = conn.execute(
+        text(
+            "SELECT id, src_id, dst_id FROM graph_edges "
+            "WHERE kind = 'session_similarity'"
+        )
+    ).fetchall()
+    for edge_id, src, dst in rows:
+        left = str(src).removeprefix("session:")
+        right = str(dst).removeprefix("session:")
+        digest = hashlib.sha256(pair_key(left, right).encode("utf-8")).hexdigest()[:24]
+        expected = f"edg_{digest}"
+        if expected == edge_id:
+            continue
+        exists = conn.execute(
+            text("SELECT 1 FROM graph_edges WHERE id = :id"), {"id": expected}
+        ).fetchone()
+        if exists:
+            conn.execute(text("DELETE FROM graph_edges WHERE id = :id"), {"id": edge_id})
+        else:
+            conn.execute(
+                text("UPDATE graph_edges SET id = :new WHERE id = :old"),
+                {"new": expected, "old": edge_id},
+            )
+
+
+def _migration_006_session_versions(conn: Connection) -> None:
+    """Track a per-account session version so credentials can revoke tokens.
+
+    Existing accounts start at version 0.  Tokens issued before this column
+    existed carry no version and are refused, so each session signs in once
+    after the upgrade and revocation works from then on.
+    """
+    from sqlalchemy import inspect
+
+    existing = {column["name"] for column in inspect(conn).get_columns("users")}
+    if "token_version" not in existing:
+        conn.execute(
+            text("ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0")
+        )
+
+
+def _migration_007_unique_open_investigations(conn: Connection) -> None:
+    """Enforce one open investigation per subject in the database.
+
+    The planner used to SELECT for an existing row and then INSERT.  Two
+    requests could both see an empty result and both insert, so the campaign
+    ended up with duplicate investigations and two decoy activations.  A
+    partial unique index moves the decision into the database, where it is
+    atomic.  Any duplicates already present are closed first so the index can
+    be built.
+    """
+    rows = conn.execute(
+        text(
+            "SELECT id, edge_id, campaign_id FROM investigations "
+            "WHERE status IN ('planned', 'active') "
+            "ORDER BY updated_at DESC, id"
+        )
+    ).fetchall()
+    seen_edges: set[str] = set()
+    seen_campaigns: set[str] = set()
+    for investigation_id, edge_id, campaign_id in rows:
+        conflicted = (edge_id is not None and edge_id in seen_edges) or (
+            campaign_id is not None and campaign_id in seen_campaigns
+        )
+        if conflicted:
+            conn.execute(
+                text("UPDATE investigations SET status = 'superseded' WHERE id = :id"),
+                {"id": investigation_id},
+            )
+            continue
+        if edge_id is not None:
+            seen_edges.add(edge_id)
+        if campaign_id is not None:
+            seen_campaigns.add(campaign_id)
+
+    conn.execute(
+        text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_investigations_active_edge "
+            "ON investigations (edge_id) "
+            "WHERE status IN ('planned', 'active') AND edge_id IS NOT NULL"
+        )
+    )
+    conn.execute(
+        text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_investigations_active_campaign "
+            "ON investigations (campaign_id) "
+            "WHERE status IN ('planned', 'active') AND campaign_id IS NOT NULL"
+        )
+    )
+
+
+def _migration_008_revoked_sessions(conn: Connection) -> None:
+    """Track individually revoked token identifiers.
+
+    A stateless token can be invalidated one device at a time by naming its
+    identifier here; entries are dropped once the token would have expired.
+    """
+    from .schema import revoked_sessions
+
+    revoked_sessions.create(bind=conn, checkfirst=True)
+
+
+def _migration_009_campaign_lifecycle(conn: Connection) -> None:
+    """Keep campaign identity stable while membership changes.
+
+    Feedback and investigations referenced a campaign by an identifier derived
+    from its member list, so one added session produced a new identifier and
+    the review was orphaned when the old row was cleaned up.  These columns
+    let a campaign be archived and superseded instead of deleted, and record
+    when an analyst last changed its status.
+    """
+    from sqlalchemy import inspect
+
+    existing = {column["name"] for column in inspect(conn).get_columns("campaigns")}
+    if "status_updated_at" not in existing:
+        conn.execute(text("ALTER TABLE campaigns ADD COLUMN status_updated_at VARCHAR(40)"))
+    if "superseded_by" not in existing:
+        conn.execute(text("ALTER TABLE campaigns ADD COLUMN superseded_by VARCHAR(40)"))
+    if "archived_at" not in existing:
+        conn.execute(text("ALTER TABLE campaigns ADD COLUMN archived_at VARCHAR(40)"))
+    conn.execute(
+        text("CREATE INDEX IF NOT EXISTS ix_campaigns_archived ON campaigns (archived_at)")
+    )
+    # Existing reviews were recorded only as a status.  Use the last update as
+    # the best available timestamp for when that decision was made.
+    conn.execute(
+        text(
+            "UPDATE campaigns SET status_updated_at = updated_at "
+            "WHERE status_updated_at IS NULL AND status <> 'candidate'"
+        )
+    )
+
+
+def _migration_010_graph_retention(conn: Connection) -> None:
+    """Indexes backing graph retention.
+
+    Retention deletes expired edges by age and then drops session nodes that
+    no longer touch any edge; both queries need indexes the uniqueness
+    constraint does not provide.
+    """
+    conn.execute(text("CREATE INDEX IF NOT EXISTS ix_edges_dst ON graph_edges (dst_id)"))
+    conn.execute(
+        text(
+            "CREATE INDEX IF NOT EXISTS ix_edges_status_updated "
+            "ON graph_edges (status, updated_at)"
+        )
+    )
+    conn.execute(
+        text("CREATE INDEX IF NOT EXISTS ix_nodes_last_seen ON graph_nodes (last_seen)")
+    )
+
+
+def _migration_011_retention_runs(conn: Connection) -> None:
+    """Record each retention run and the backlog it cleared.
+
+    Without history the dashboard can only show the current backlog, which is
+    zero immediately after a run.  The stored pre-run counts give operators a
+    trend and leave an audit trail of scheduled maintenance.
+    """
+    from .schema import retention_runs
+
+    retention_runs.create(bind=conn, checkfirst=True)
+
+
 MIGRATIONS: list[tuple[int, str, Any]] = [
     (1, "initial schema", _migration_001_initial),
     (2, "event retention index", _migration_002_events_retention_index),
+    (3, "persisted investigation activation", _migration_003_investigation_activation),
+    (4, "graph identifier widths", _migration_004_widen_graph_identifiers),
+    (5, "session pair identifier rekey", _migration_005_rekey_session_pairs),
+    (6, "account session versions", _migration_006_session_versions),
+    (7, "unique open investigations", _migration_007_unique_open_investigations),
+    (8, "per-session revocation", _migration_008_revoked_sessions),
+    (9, "campaign lifecycle", _migration_009_campaign_lifecycle),
+    (10, "graph retention indexes", _migration_010_graph_retention),
+    (11, "retention run history", _migration_011_retention_runs),
 ]
+
+
+MIGRATION_LOCK_KEY = 0x54504D494752  # "TPMIGR"
 
 
 def init_db(url: str | None = None) -> Engine:
     engine = get_engine(url)
     with engine.begin() as conn:
+        if conn.dialect.name == "postgresql":
+            # Every API worker runs this at startup.  Without a lock, workers
+            # starting against an empty database apply (and record) the same
+            # migrations concurrently and one of them crashes on a duplicate
+            # DDL statement.  The transaction-scoped lock serialises them.
+            conn.execute(
+                text("SELECT pg_advisory_xact_lock(:key)"), {"key": MIGRATION_LOCK_KEY}
+            )
         schema_migrations.create(bind=conn, checkfirst=True)
         applied = {
             row[0]

@@ -1,10 +1,26 @@
-
-import { FormEvent, useState } from "react";
-import { api, Role } from "../api";
-import { Card, Empty, ErrorBox, formatTime, Loading, useAsync } from "../ui";
+import { FormEvent, useRef, useState } from "react";
+import { api, Role, SessionHistory, User } from "../api";
+import { RetentionPanel } from "../components/RetentionPanel";
+import { SessionTable } from "../components/SessionTable";
+import { Badge, Card, Empty, ErrorBox, Field, formatTime, Loading, useAsync } from "../ui";
 
 export default function Administration() {
-  const [refreshKey, setRefreshKey] = useState(0);
+  const [tick, setTick] = useState(0);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [busyUser, setBusyUser] = useState<string | null>(null);
+  const [audited, setAudited] = useState<User | null>(null);
+  const [auditedHistory, setAuditedHistory] = useState<SessionHistory | null>(null);
+  const [auditError, setAuditError] = useState<string | null>(null);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [tokenName, setTokenName] = useState("");
+  const [tokenRole, setTokenRole] = useState<"sensor" | "analyst">("sensor");
+  const [issued, setIssued] = useState<{ name: string; token: string } | null>(null);
+  const [tokenBusy, setTokenBusy] = useState(false);
+  // Session lookups are per-account. A slow response for the previously
+  // inspected account must not overwrite the one now open.
+  const inspection = useRef(0);
+
+  // Create-user form state
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
@@ -15,8 +31,89 @@ export default function Administration() {
 
   const sources = useAsync(() => api.sources(), []);
   const quarantine = useAsync(() => api.quarantine(), []);
-  const users = useAsync(() => api.users(), [refreshKey]);
-  const audit = useAsync(() => api.audit(), []);
+  const users = useAsync(() => api.users(), [tick]);
+  const audit = useAsync(() => api.audit(), [tick]);
+  const tokens = useAsync(() => api.agentTokens(), [tick]);
+
+  async function inspect(user: User) {
+    const request = ++inspection.current;
+    setAudited(user);
+    setAuditedHistory(null);
+    setAuditError(null);
+    setLoadingHistory(true);
+    try {
+      const history = await api.userSessions(user.id);
+      if (request === inspection.current) setAuditedHistory(history);
+    } catch (error) {
+      if (request === inspection.current) setAuditError((error as Error).message);
+    } finally {
+      if (request === inspection.current) setLoadingHistory(false);
+    }
+  }
+
+  function closeInspection() {
+    inspection.current += 1;
+    setAudited(null);
+    setAuditedHistory(null);
+    setAuditError(null);
+    setLoadingHistory(false);
+  }
+
+  async function signOutDevice(user: User, jti: string) {
+    setNotice(null);
+    try {
+      await api.revokeUserSession(user.id, jti);
+      setNotice(`That device was signed out of ${user.email}. Their other sessions keep working.`);
+      setTick((value) => value + 1);
+      await inspect(user);
+    } catch (error) {
+      setNotice((error as Error).message);
+    }
+  }
+
+  async function createToken(event: FormEvent) {
+    event.preventDefault();
+    setTokenBusy(true);
+    setNotice(null);
+    setIssued(null);
+    try {
+      const created = await api.createAgentToken(tokenName.trim(), tokenRole);
+      setIssued({ name: created.name, token: created.token });
+      setTokenName("");
+      setTick((value) => value + 1);
+    } catch (error) {
+      setNotice((error as Error).message);
+    } finally {
+      setTokenBusy(false);
+    }
+  }
+
+  async function revokeToken(id: string, name: string) {
+    setNotice(null);
+    try {
+      await api.revokeAgentToken(id);
+      setNotice(`${name} was revoked. Any sensor still using it is refused from now on.`);
+      if (issued?.name === name) setIssued(null);
+      setTick((value) => value + 1);
+    } catch (error) {
+      setNotice((error as Error).message);
+    }
+  }
+
+  async function revoke(userId: string, email: string) {
+    setBusyUser(userId);
+    setNotice(null);
+    try {
+      await api.revokeSessions(userId);
+      setNotice(`Every session for ${email} was revoked. The account keeps its password.`);
+      setTick((value) => value + 1);
+      if (audited?.id === userId) await inspect(audited);
+    } catch (error) {
+      setNotice((error as Error).message);
+    } finally {
+      setBusyUser(null);
+    }
+  }
 
   async function handleCreateUser(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -37,7 +134,7 @@ export default function Administration() {
       setName("");
       setPassword("");
       setRole("analyst");
-      setRefreshKey((previous) => previous + 1);
+      setTick((previous) => previous + 1);
     } catch (failure) {
       setError((failure as Error).message);
     } finally {
@@ -50,13 +147,16 @@ export default function Administration() {
       <header className="page-head">
         <div>
           <h1>Administration</h1>
-          <p className="muted">
-            Source health, account management, rejected payloads and audit trail.
-          </p>
+          <p className="muted">Source health, account inventory, sensor credentials and rejected payloads.</p>
         </div>
       </header>
 
-      <ErrorBox message={sources.error ?? quarantine.error ?? users.error ?? audit.error} />
+      <ErrorBox
+        message={
+          sources.error ?? quarantine.error ?? users.error ?? audit.error ?? tokens.error
+        }
+      />
+      {notice && <div className="notice">{notice}</div>}
 
       <Card title="Create user account">
         <form onSubmit={handleCreateUser} className="stack">
@@ -153,15 +253,32 @@ export default function Administration() {
           )}
           {users.data && users.data.users.length > 0 && (
             <table>
-              <thead>
-                <tr><th>Name</th><th>Email</th><th>Role</th></tr>
-              </thead>
+              <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Sessions</th></tr></thead>
               <tbody>
                 {users.data.users.map((user) => (
                   <tr key={user.id}>
                     <td>{user.name}</td>
                     <td>{user.email}</td>
                     <td>{user.role}</td>
+                    <td>
+                      <div className="row">
+                        <button
+                          type="button"
+                          className="secondary small"
+                          onClick={() => inspect(user)}
+                        >
+                          Sessions
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary small"
+                          disabled={busyUser === user.id}
+                          onClick={() => revoke(user.id, user.email)}
+                        >
+                          {busyUser === user.id ? "Revoking\u2026" : "Revoke sessions"}
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -169,6 +286,102 @@ export default function Administration() {
           )}
         </Card>
       </div>
+
+      {audited && (
+        <Card
+          title={`Sessions \u2014 ${audited.name}`}
+          actions={
+            <button type="button" className="link" onClick={closeInspection}>
+              Close
+            </button>
+          }
+        >
+          {loadingHistory && <Loading />}
+          <ErrorBox message={auditError} />
+          {auditedHistory && (
+            <SessionTable
+              history={auditedHistory}
+              onRevoke={(jti) => signOutDevice(audited, jti)}
+            />
+          )}
+        </Card>
+      )}
+
+      <RetentionPanel canRun onChange={() => setTick((value) => value + 1)} />
+
+      <Card title="Agent tokens">
+        {issued && (
+          <div className="notice">
+            <strong>{issued.name}</strong> was created. Copy the token now: it is shown once and
+            only its hash is stored.
+            <pre className="json mono">{issued.token}</pre>
+          </div>
+        )}
+        {tokens.loading && <Loading />}
+        {tokens.data && tokens.data.tokens.length === 0 && <Empty>No sensor tokens yet.</Empty>}
+        {tokens.data && tokens.data.tokens.length > 0 && (
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th><th>Prefix</th><th>Role</th><th>Created</th><th>Last used</th>
+                <th>State</th><th>Token</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tokens.data.tokens.map((token) => (
+                <tr key={token.id}>
+                  <td>{token.name}</td>
+                  <td className="mono small">{token.prefix}{"\u2026"}</td>
+                  <td>{token.role}</td>
+                  <td>{formatTime(token.created_at)}</td>
+                  <td>{formatTime(token.last_used_at)}</td>
+                  <td>
+                    <Badge value={token.revoked_at ? "revoked" : "active"} kind="status" />
+                  </td>
+                  <td>
+                    {!token.revoked_at && (
+                      <button
+                        type="button"
+                        className="secondary small"
+                        onClick={() => revokeToken(token.id, token.name)}
+                      >
+                        Revoke
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        <form onSubmit={createToken} className="row token-form">
+          <Field label="Token name">
+            <input
+              value={tokenName}
+              onChange={(event) => setTokenName(event.target.value)}
+              placeholder="decoy-http-2"
+              maxLength={120}
+              required
+            />
+          </Field>
+          <Field label="Role">
+            <select
+              value={tokenRole}
+              onChange={(event) => setTokenRole(event.target.value as "sensor" | "analyst")}
+            >
+              <option value="sensor">sensor</option>
+              <option value="analyst">analyst</option>
+            </select>
+          </Field>
+          <button type="submit" disabled={tokenBusy || tokenName.trim() === ""}>
+            {tokenBusy ? "Creating\u2026" : "Create token"}
+          </button>
+        </form>
+        <p className="muted small">
+          Sensor tokens are hashed at rest and cannot be read back. Revoking one takes effect on the
+          next request; rotate a token by creating a replacement and revoking the old one.
+        </p>
+      </Card>
 
       <Card title="Audit trail">
         {audit.loading && <Loading />}
@@ -184,11 +397,11 @@ export default function Administration() {
               {audit.data.items.map((entry) => (
                 <tr key={entry.id}>
                   <td>{formatTime(entry.ts)}</td>
-                  <td className="mono small">{entry.actor_id ?? "—"}</td>
+                  <td className="mono small">{entry.actor_id ?? "\u2014"}</td>
                   <td>{entry.action}</td>
-                  <td className="mono small">{entry.object_type}:{entry.object_id ?? "—"}</td>
+                  <td className="mono small">{entry.object_type}:{entry.object_id ?? "\u2014"}</td>
                   <td>{entry.outcome}</td>
-                  <td className="mono small">{entry.request_ip ?? "—"}</td>
+                  <td className="mono small">{entry.request_ip ?? "\u2014"}</td>
                 </tr>
               ))}
             </tbody>
@@ -210,7 +423,7 @@ export default function Administration() {
               {quarantine.data.items.map((item) => (
                 <tr key={item.id}>
                   <td>{formatTime(item.received_at)}</td>
-                  <td>{item.source_module ?? "—"}</td>
+                  <td>{item.source_module ?? "\u2014"}</td>
                   <td className="mono">{item.reason_code}</td>
                   <td className="small">{item.reason}</td>
                 </tr>

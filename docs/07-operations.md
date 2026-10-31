@@ -27,13 +27,19 @@ normally change.
 | `TP_DECOY_ENABLED`, `TP_DECOY_PORT` | `true`, `8022` | HTTP decoy listener |
 | `TP_DECOY_MAX_SESSIONS_PER_HOUR` | `120` | Decoy admission limit |
 | `TP_RETENTION_DAYS` | `90` | Event retention horizon |
+| `TP_GRAPH_RETENTION_DAYS` | `30` | Age at which retired graph evidence is deleted |
+| `TP_RETENTION_GRACE_DAYS` | `2` | How long backlog may wait before `/retention` reports `overdue` |
 | `TP_MAX_EVENT_BYTES` | `65536` | Per-event payload cap |
 | `TP_INGEST_RATE_LIMIT_PER_MINUTE` | `6000` | Per-principal ingestion limit |
 | `TP_CORRELATION_WINDOW_HOURS` | `72` | Default correlation window |
-| `TP_RESPONSE_AUTO_APPLY` | `false` | Keep disabled: no reviewed execution adapter exists |
+| `TP_RESPONSE_AUTO_APPLY` | `false` | Must stay `false`: no reviewed execution adapter exists and enabling it fails configuration |
 | `TP_WEB_SEC_ALLOW_LOOPBACK` | `false` | Must stay `false` in production |
 | `TP_WEB_SEC_TIMEOUT_SECONDS`, `TP_WEB_SEC_MAX_REQUESTS_PER_HOST` | `10`, `10` | Assessment bounds |
 | `TP_CRYPTO_PROVIDER`, `TP_CRYPTO_API_BASE` | `coingecko`, public API | Market-data source; `fixture` is available for offline use |
+| `TP_SIGNIN_ALERT_WINDOW_MINUTES` | `30` | Two live sign-ins from different networks inside this window are reported |
+| `TP_SIGNIN_ALERT_DISTANCE_KM` | `500` | Minimum measured distance for a `distant_signin` alert |
+| `TP_GEO_API_URL` | empty | Optional geolocation endpoint; `{ip}` is replaced with the address. Empty means alerts report a network change only and no address leaves the deployment |
+| `TP_GEO_API_TOKEN`, `TP_GEO_TIMEOUT_SECONDS` | empty, `3` | Credential and timeout for that endpoint |
 | `TP_LOG_LEVEL` | `INFO` | Log verbosity |
 
 Generate secrets with `python3 -c "import secrets;print(secrets.token_urlsafe(48))"`.
@@ -64,6 +70,31 @@ The stack contains:
 docker compose --profile honeypot up -d cowrie
 ```
 
+### Demo overlay
+
+For a development host that should show a populated dashboard, set the
+environment to development in `.env` and add the demo overlay:
+
+```bash
+sed -i 's/^TP_ENV=.*/TP_ENV=development/' .env   # seed-demo refuses in production
+make demo-docker
+# equivalent to:
+docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d --build
+```
+
+`.env.example` ships `TP_ENV=production`, so a fresh `cp .env.example .env` must
+be edited first; without that the seed service exits 1 with
+`seed-demo is disabled when TP_ENV=production` and the dashboard stays empty.
+
+The overlay adds a one-shot `seed` service. It waits for the API to be healthy,
+runs `seed-demo` once and exits; the command is idempotent, so restarting the
+stack does not duplicate telemetry or retention history. Because the API starts
+before the seed, the overlay blanks the bootstrap administrator for the `app`
+service so the seed can create the demo login; read its one-time password from
+`docker compose logs seed`. Demo seeding refuses to run when `TP_ENV=production`,
+so the overlay must not be deployed there. Remove the generated demo account and
+its data before using the host for real work.
+
 The HTTP decoy is **not** a Compose service. Run it as a separate process (or
 your own unit/container) so it can be placed on an isolated network segment:
 
@@ -75,6 +106,15 @@ TP_ENV=production python -m app.cli decoy --host 0.0.0.0 --port 8022
 Expose only the decoy ports (2222, 8022) to the internet. Keep 8000 behind the
 reverse proxy on the management network and never publish 5432.
 
+The decoy bounds what a hostile client can cost it: sessions per source address
+per hour (`TP_DECOY_MAX_SESSIONS_PER_HOUR`), request bodies at 8 KiB, and any
+single read at 15 seconds. A client that connects and sends nothing, declares a
+body it never sends, or hangs up mid-response is answered once — `408` for the
+stalled body — and dropped. That path is deliberately silent in the log: on an
+internet-facing listener those clients are ordinary traffic, and a scanner can
+otherwise fill the log with tracebacks. The telemetry event for a request is
+emitted before the response, so a disconnect still records the interaction.
+
 ## First run
 
 1. Set a strong `TP_BOOTSTRAP_ADMIN_PASSWORD` (and email) before the first
@@ -85,7 +125,7 @@ reverse proxy on the management network and never publish 5432.
    `python -m app.cli create-user --email ... --name ... --role analyst`).
 4. Remove the bootstrap variables and restart.
 5. Add authorised web-assessment scopes with an authorization reference.
-6. Confirm `GET /health/ready` and `GET /events/summary` return data.
+6. Confirm `GET /api/v1/health/ready` and `GET /api/v1/events/summary` return data.
 
 ## Sensors
 
@@ -134,13 +174,16 @@ telemetry and must be encrypted at rest.
 
 1. Take a backup.
 2. Pull the new image, `docker compose up -d app`.
-3. Verify `/health/ready` and one authenticated read.
+3. Verify `/api/v1/health/ready` and one authenticated read.
 4. Keep the previous image tag for 7 days.
 
-Schema changes are applied at startup. The container runs a single API worker
-because concurrent workers would race on the migration table; apply migrations
-before adding replicas. There is no automatic downgrade: roll back the image
-**and** restore the pre-upgrade backup. Treat a change to the
+Schema changes are applied at startup. Several workers may start against the
+same database: PostgreSQL migrations take a transaction-scoped advisory lock, and
+the bootstrap-administrator and decoy-profile seeds accept losing their insert
+race to another worker. The Compose file starts one worker; running more is
+supported and was exercised with four workers against PostgreSQL 16
+(`docs/research/write-contention.md`). There is no automatic downgrade: roll back
+the image **and** restore the pre-upgrade backup. Treat a change to the
 correlation `algorithm_version` as a behavioural change and re-run
 `python scripts/evaluate.py` before promoting.
 
@@ -171,26 +214,244 @@ reversion in the audit log, then review who approved it and why.
 service before retrying ingestion; replay is safe because ingestion is
 idempotent.
 
-**Suspected token compromise.** Rotate `TP_JWT_SECRET` (invalidates all
-sessions), revoke agent tokens, rotate the affected user's password, and review
-`/audit`.
+**Suspected token compromise.** If one device is suspect, sign that session out
+(`DELETE /auth/sessions/{jti}`, or the Sign out button beside it on the Account
+page); the account's other sessions keep working. To end every session at once,
+revoke the account's sessions (`POST /auth/users/{id}/revoke-sessions`) or have
+the user rotate their password; both act on the account session version and take
+effect on the next request. Rotate `TP_JWT_SECRET` to invalidate every session in the deployment,
+revoke agent tokens, and review `/audit` and the account's session history.
+
+### Session compromise: from a sign-in alert to a revoked device
+
+Every step below has a dashboard path and an API call, so the same runbook
+works for an analyst at the console and for scripted response.
+
+1. **Read the alert.** The Overview page carries a *Sign-in attention* card for
+the signed-in account; administrators also see how many
+`auth.signin.anomaly` entries the recent audit trail holds. Pull the entries:
+
+   ```bash
+   curl -s "$API/audit?limit=200" -H "Authorization: Bearer $T" \
+     | jq '.items[] | select(.action == "auth.signin.anomaly")'
+   ```
+
+   `kind` is `distant_signin` with a measured distance when
+   `TP_GEO_API_URL` is configured, otherwise `new_network`. `previous_ip`,
+   `previous_at` and `window_minutes` say what the alert compared against.
+2. **Decide whether it is expected.** Ask the account holder whether they
+signed in from that network, and open the account's session history — the
+Administration page's *Sessions* button, or:
+
+   ```bash
+   curl -s "$API/auth/users/usr_.../sessions" -H "Authorization: Bearer $T" \
+     | jq '.sessions[] | {occurred_at, client, ip, state, jti}'
+   ```
+
+   Each usable sign-in lists its `jti`. Note the one you suspect; the
+   identifier, not the address, is what you revoke.
+3. **Contain one device.** Administration → *Sessions* for the account →
+**Sign out** beside the suspicious row. From the API:
+
+   ```bash
+   curl -sX DELETE "$API/auth/users/usr_.../sessions/jti_..." \
+     -H "Authorization: Bearer $T"
+   ```
+
+   The account keeps its password and every other device keeps working. Verify
+   both halves: the suspect token's next call returns 401, and another of that
+   account's tokens still returns 200. Repeating the call is harmless.
+4. **Contain the whole account when the scope is unclear.** If more than one
+   device is suspect, revoke the account's sessions
+   (`POST /auth/users/{id}/revoke-sessions`) or have the user change the
+   password. Both act on the account session version, so every token issued
+   before the action is refused on its next request; the user signs in again
+   normally.
+5. **Contain the sensor side.** If the exposed credential was an agent token,
+   revoke it under Administration → *Agent tokens* → **Revoke**, or
+   `DELETE /auth/tokens/{id}`. Revocation is immediate and the token hash stays
+   in place for the audit trail. Create the replacement first if the sensor must
+   keep reporting; the plaintext is shown once at creation.
+6. **Only then consider the signing key.** Rotating `TP_JWT_SECRET` invalidates
+   every session in the deployment, so treat it as the last step, not the first:
+   it is required only when the key itself, not a token, may be exposed.
+7. **Preserve evidence.** The audit trail is append-only in normal operation.
+   Export it (`GET /audit`, or a database backup) before cleaning up, and do not
+   delete sign-in rows: the session history is derived from them, so deleting
+   them erases the incident record too. Revoked-identifier rows prune
+   themselves once the token would have expired anyway.
+8. **Close out.** Confirm no further `auth.signin.anomaly` entries appear for
+   the account. Record which `jti` was revoked, by whom, and the alert that
+   triggered it. If the alert fired for a legitimate user arriving through a
+   new route, note the network in the ticket rather than disabling the check.
+
+A sign-in from a different network while an earlier session is still live is
+recorded as `auth.signin.anomaly` and shown on the account page and in the
+admin session view. With `TP_GEO_API_URL` set, the alert also reports the
+measured distance and only fires beyond `TP_SIGNIN_ALERT_DISTANCE_KM`; without
+it the alert says "new network", which is what the platform can observe. Any
+geolocation endpoint you configure receives analyst addresses — choose it with
+that in mind. Lookups are cached per process and bounded by
+`TP_GEO_TIMEOUT_SECONDS`, so a slow provider adds latency to sign-in but cannot
+block it. The platform does not trust `X-Forwarded-For`, so behind a reverse
+proxy every sign-in appears to come from the proxy address and no alert fires;
+this detection suits deployments where clients reach the API directly.
+
+## Dependency audit
+
+CI audits both dependency sets on every push and pull request: `pip-audit`
+against the installed backend environment and `npm audit --audit-level=high`
+against the dashboard lockfile. Run the same checks locally after changing a
+lockfile or a requirements file:
+
+```bash
+make audit
+```
+
+A finding fails the job. Read the advisory before acting: upgrade the affected
+package inside its compatibility range, or pin the release that fixes it, then
+rerun the suite. Do not suppress a finding to get a green build. If no fixed
+release exists, record the exposure and the compensating control in the
+security notes, and add a dated ignore for that advisory identifier with the
+reason it cannot affect this deployment; review it at each upgrade.
+
+## Dashboard links
+
+The dashboard keeps its view and filters in the URL. `view` names the open
+page; the Events filters use `event_module`, `event_severity`, `event_hours`
+and `event_q`; the retention run window uses the `history_*` parameters
+described below. A shared link opens the same view and filters, and a reload
+keeps them. View changes and committed filter changes push history, so the
+browser's back and forward buttons restore both. The Events page and the
+Retention card each have a **Copy link** action that copies the current URL with
+the applied window already in it; it uses the Clipboard API and falls back to a
+selected temporary field when that API is unavailable or denied. Retention
+filter values from a link are validated before use: malformed or inverted dates
+and unknown triggers are explained on the page and removed from the address bar
+rather than sent to the API.
 
 ## Retention
 
-Events carry `retention_until` (`TP_RETENTION_DAYS`, default 90). Enforce it:
+Events carry `retention_until` (`TP_RETENTION_DAYS`, default 90). The evidence
+graph outlives the events that produced it, so it has its own horizon
+(`TP_GRAPH_RETENTION_DAYS`, default 30). `retention` enforces both:
 
 ```bash
-docker compose exec app python -m app.cli purge
+docker compose up -d retention
+docker compose logs -f retention
 ```
 
-Run it on a schedule and confirm deletions against the database size trend.
-`python -m app.cli status` shows configuration and schema state.
+The Compose `retention` service waits for the API to become healthy, runs once
+at start and then every `TP_RETENTION_INTERVAL_SECONDS` (default 86400). Change
+that value in `.env` and recreate the service after changing it
+(`docker compose up -d retention`). Without Compose, run the same command from
+cron, for example daily at 03:15:
+
+```cron
+15 3 * * * cd /opt/threatpolish && docker compose exec -T app python -m app.cli retention --scheduled
+```
+
+`purge` and `purge-graph` remain available for one horizon at a time. Graph
+retention deletes only edges already retired and older than the horizon, plus
+observation records (`observed_from`, `targeted_asset`, `matched_indicator`)
+for sessions past the horizon that no live similarity or campaign edge still
+uses. Nodes are then removed when their last activity is older than the horizon
+and nothing references them. Hypotheses, active edges, campaign membership and
+archived reviews are kept — an archived campaign is the record of an analyst's
+decision, not evidence.
+
+Confirm deletions against the database size trend. `GET /retention` (admin)
+reports the number of expired events, retired edges, stale observations and the
+current graph size. `overdue: true` means work has waited longer than
+`TP_RETENTION_GRACE_DAYS` (default 2), which points at a missed schedule rather
+than the normal backlog between daily runs; alert on that field. Administration
+shows the same backlog, and the Overview raises an alert to administrators and
+analysts once it is overdue; the alert links straight to the Retention page. Each `retention` run records the pre-run backlog in
+`retention_runs` and writes a `retention.run` audit entry with actor role
+`system`; Administration charts the last 14 runs and `GET /retention` returns
+them as `history`, with `history_total` reporting how many runs exist in the
+selected window. Analysts get the same status, filters and CSV export on the
+read-only Retention page, without the manual-run control or the account and
+credential panels. The Overview raises the overdue alert for analysts as well
+and points them at that page instead of Administration.
+
+When the view is truncated, the page says so. A run-history filter takes an
+inclusive UTC date or timestamp through `history_since` and `history_until`, and
+a `history_trigger` of `manual` or `scheduled`; the dashboard applies both before
+charting and exporting, with 24-hour, 7-day and 30-day quick ranges available,
+and the backlog counts above remain deployment-wide. The selected window and
+trigger are kept in the dashboard URL, so a shared link opens the same view and
+a reload keeps it. The card's **Copy link** action copies that URL, and it
+reports the manual and scheduled run totals for that window from
+`history_counts`, even when the table is narrowed to one trigger. See
+[Dashboard links](#dashboard-links) for the full URL contract.
+`GET /retention/history.csv` (analyst/admin) accepts the same filters and
+exports up to 1,000 recorded runs oldest first for spreadsheet or capacity
+review; the Administration card has a matching **Export CSV** action. An
+administrator can run retention immediately from Administration; the run is
+confirmed, recorded and audited like a scheduled one.
+
+`GET /metrics` exports the same backlog and graph counts in Prometheus text
+format. It requires `graph:read` and never returns event content. Create a
+revocable analyst token for the scrape so it does not expire with a login:
+
+```bash
+python -m app.cli create-token --name prometheus --role analyst
+```
+
+### Prometheus scrape and alerts
+
+```yaml
+# prometheus.yml
+scrape_configs:
+  - job_name: threatpolish
+    metrics_path: /api/v1/metrics
+    authorization:
+      credentials: "<the analyst agent token>"
+    static_configs:
+      - targets: ["threatpolish:8000"]
+```
+
+```yaml
+# rules.yml
+groups:
+  - name: threatpolish-retention
+    rules:
+      - alert: ThreatPolishRetentionOverdue
+        expr: threatpolish_retention_overdue == 1
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: Retention work has waited past the grace window
+      - alert: ThreatPolishRetentionStalled
+        expr: time() - threatpolish_retention_last_run_timestamp_seconds > 172800
+        for: 30m
+        labels:
+          severity: critical
+        annotations:
+          summary: No retention run recorded for two days
+```
+
+The last-run series are absent until the first run, so pair the stalled rule
+with a notification on the absence of the metric if a new deployment must alert
+immediately.
+
+For a local review without waiting for history to accumulate, run
+`python -m app.cli seed-demo`; it refuses to run in production, seeds synthetic
+telemetry plus a week of retention runs, and creates a demo administrator with a
+one-time password when the database has no accounts. After `make install`,
+`make demo` seeds the data, builds the dashboard and serves it on
+`http://127.0.0.1:8000` in one command. On a Docker host, `make demo-docker`
+uses the Compose demo overlay instead and seeds the stack automatically after
+the API is healthy.
+`python -m app.cli status` shows configuration, retention and schema state.
 
 ## Known limitations
 
 - Cowrie was exercised with connection attempts, not a full interactive shell
   session; validate the fake filesystem against your image version.
-- No automated dependency scanning is configured in this repository.
 - Single-node deployment; correlation does not scale horizontally (it processes
-  at most 400 sessions per run), and the API runs one worker so startup
-  migrations cannot race.
+  at most 800 sessions per run). The API can run several workers — startup is
+  serialised and measured with four — but each correlation run is still one
+  batch job.

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import math
 import re
 import unicodedata
 from datetime import datetime, timedelta, timezone
@@ -33,9 +34,39 @@ _CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 _MAX_STRING = 4000
 
 
+def _identifier(value: str | None, *, limit: int, field: str) -> str | None:
+    """Validate an identifier that later becomes part of a storage key.
+
+    Session identifiers are joined into relationship keys, so a control
+    character — specifically the pair separator — would let two different
+    session pairs share one key and overwrite each other's evidence.  Sensors
+    choose these values, so they are rejected at the contract boundary rather
+    than sanitized: rewriting an identifier could make two distinct sessions
+    collide, which is the same defect with a quieter failure mode.
+    """
+    if value is None:
+        return None
+    cleaned = value.strip()
+    if not cleaned:
+        return None
+    if _CONTROL_RE.search(cleaned):
+        raise ValueError(f"{field} contains control characters")
+    if len(cleaned) > limit:
+        raise ValueError(f"{field} is longer than {limit} characters")
+    return cleaned
+
+
 def _clean(value: str, *, limit: int = _MAX_STRING) -> str:
     normalized = unicodedata.normalize("NFC", value)
     normalized = _CONTROL_RE.sub("", normalized)
+    # Lone surrogates can arrive through a JSON escape (``\ud800``).  Python's
+    # stdlib JSON parser accepts them, but they cannot be encoded back to UTF-8,
+    # so a stored value would break every later response that contains it.
+    if any(0xD800 <= ord(character) <= 0xDFFF for character in normalized):
+        normalized = "".join(
+            "\ufffd" if 0xD800 <= ord(character) <= 0xDFFF else character
+            for character in normalized
+        )
     return normalized.strip()[:limit]
 
 
@@ -53,7 +84,17 @@ def _clean_obj(value: Any, depth: int = 0) -> Any:
         if len(value) > 500:
             raise ValueError("feature array too long")
         return [_clean_obj(v, depth + 1) for v in value]
-    if isinstance(value, (int, float, bool)) or value is None:
+    if isinstance(value, bool) or value is None:
+        return value
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        # JSON parsers commonly accept ``NaN`` and ``Infinity`` even though they
+        # are not valid JSON.  Persisting them would make the stored payload and
+        # the API response unparseable for strict clients, so they are rejected
+        # at the contract boundary.
+        if not math.isfinite(value):
+            raise ValueError("non-finite numbers are not supported")
         return value
     raise ValueError(f"unsupported feature value type: {type(value).__name__}")
 
@@ -104,6 +145,16 @@ class EventIn(BaseModel):
     features: dict[str, Any] = Field(default_factory=dict)
     evidence_refs: list[str] = Field(default_factory=list, max_length=50)
     raw: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("session_id")
+    @classmethod
+    def _valid_session_id(cls, value: str | None) -> str | None:
+        return _identifier(value, limit=120, field="session_id")
+
+    @field_validator("target_id")
+    @classmethod
+    def _valid_target_id(cls, value: str | None) -> str | None:
+        return _identifier(value, limit=200, field="target_id")
 
     @field_validator("event_id")
     @classmethod

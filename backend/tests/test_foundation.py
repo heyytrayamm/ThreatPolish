@@ -1,8 +1,38 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
-from .conftest import make_event
+from .conftest import ADMIN_EMAIL, make_event
+
+
+def test_root_serves_the_dashboard_or_explains_its_absence(client):
+    """A source checkout that has not built the bundle must not look broken.
+
+    The dashboard is mounted at startup when `frontend/dist` exists, so the
+    root answers either the built page or a stated reason.  CI builds the
+    bundle in a different job, which is why both outcomes are valid here.
+    """
+    response = client.get("/")
+    dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+    if dist.is_dir():
+        assert response.status_code == 200
+        assert "text/html" in response.headers["content-type"]
+    else:
+        assert response.status_code == 404
+        body = response.json()
+        assert body["error"]["code"] == "dashboard_not_built"
+        assert "npm" in body["error"]["message"]
+
+
+def test_create_admin_without_a_terminal_says_how_to_pass_a_password(capsys):
+    """A setup script must get an instruction, not an empty error line."""
+    from app import cli
+
+    assert cli.main(["create-admin", "--email", "no-tty@threatpolish.test"]) == 1
+    captured = capsys.readouterr()
+    assert "terminal" in captured.err
+    assert "--password" in captured.err
 
 
 def test_health_endpoints_are_public(client):
@@ -36,6 +66,114 @@ def test_login_returns_token_and_identity(client):
     me = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {body['access_token']}"})
     assert me.status_code == 200
     assert me.json()["email"] == "admin@threatpolish.test"
+
+
+def test_long_identifiers_survive_ingestion_and_graph_storage(
+    client, sensor_headers, admin_headers
+):
+    event = make_event(
+        event_id="e" * 120,
+        session_id="s" * 120,
+        target_id="t" * 200,
+    )
+    ingest = client.post("/api/v1/ingest/events", json=event, headers=sensor_headers)
+    assert ingest.status_code == 202, ingest.text
+    assert ingest.json()["accepted"] == 1
+
+    correlate = client.post("/api/v1/correlate", json={"window_hours": 24}, headers=admin_headers)
+    assert correlate.status_code == 200, correlate.text
+    graph = client.get("/api/v1/graph?hours=24", headers=admin_headers).json()
+    assert any(node["id"] == f"session:{'s' * 120}" for node in graph["nodes"])
+
+
+def test_legacy_session_pair_edges_are_rekeyed(client):
+    import hashlib
+
+    from sqlalchemy import select
+
+    from app.db.database import _migration_005_rekey_session_pairs, connection
+    from app.db.schema import graph_edges
+
+    legacy = f"edg_{hashlib.sha256(b'sess-alpha::sess-beta').hexdigest()[:24]}"
+    expected = f"edg_{hashlib.sha256('sess-alpha\x1fsess-beta'.encode()).hexdigest()[:24]}"
+    with connection() as conn:
+        conn.execute(
+            graph_edges.insert().values(
+                id=legacy,
+                kind="session_similarity",
+                src_id="session:sess-alpha",
+                dst_id="session:sess-beta",
+                confidence=0.9,
+                score=0.8,
+                evidence="{}",
+                contradictions="[]",
+                algorithm_version="corr-1.0.0",
+                created_at="2026-01-01T00:00:00+00:00",
+                updated_at="2026-01-01T00:00:00+00:00",
+                expires_at=None,
+                status="active",
+                campaign_id=None,
+            )
+        )
+
+    with connection() as conn:
+        _migration_005_rekey_session_pairs(conn)
+    with connection() as conn:
+        _migration_005_rekey_session_pairs(conn)
+        stored = conn.execute(
+            select(graph_edges.c.id).where(graph_edges.c.id.in_([legacy, expected]))
+        ).fetchall()
+    assert [row[0] for row in stored] == [expected]
+
+
+def test_campaign_lifecycle_migration_upgrades_a_v8_table(tmp_path):
+    """Migration 9 must add nullable columns and keep existing reviews."""
+    from sqlalchemy import create_engine, inspect, text
+
+    from app.db.database import _migration_009_campaign_lifecycle
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'v8.db'}")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "CREATE TABLE campaigns ("
+                "id VARCHAR(40) PRIMARY KEY, name VARCHAR(120) NOT NULL, "
+                "status VARCHAR(24) NOT NULL, confidence FLOAT NOT NULL, "
+                "summary TEXT NOT NULL, evidence TEXT NOT NULL, "
+                "created_at VARCHAR(40) NOT NULL, updated_at VARCHAR(40) NOT NULL, "
+                "algorithm_version VARCHAR(24) NOT NULL, "
+                "member_count INTEGER NOT NULL, ip_count INTEGER NOT NULL)"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO campaigns VALUES ('cmp_v8', 'old campaign', 'confirmed', "
+                "0.9, 'kept', '{}', '2026-01-01T00:00:00+00:00', "
+                "'2026-01-02T00:00:00+00:00', 'corr-1.3.0', 2, 2)"
+            )
+        )
+        _migration_009_campaign_lifecycle(conn)
+        # Running it twice must not fail on the columns it just added.
+        _migration_009_campaign_lifecycle(conn)
+        columns = {column["name"] for column in inspect(conn).get_columns("campaigns")}
+        row = conn.execute(
+            text(
+                "SELECT status, status_updated_at, superseded_by, archived_at "
+                "FROM campaigns WHERE id = 'cmp_v8'"
+            )
+        ).fetchone()
+    engine.dispose()
+
+    assert {"status_updated_at", "superseded_by", "archived_at"} <= columns
+    assert row[0] == "confirmed"
+    assert row[1] == "2026-01-02T00:00:00+00:00"
+    assert row[2] is None and row[3] is None
+
+
+def test_invalid_severity_filter_is_rejected(client, admin_headers):
+    response = client.get("/api/v1/events?min_severity=bogus", headers=admin_headers)
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "validation_failed"
 
 
 def test_unauthenticated_event_access_is_denied(client):
@@ -113,6 +251,22 @@ def test_batch_size_limit(client, sensor_headers):
     assert response.status_code == 422
 
 
+def test_honeypot_sessions_list_all_observed_source_ips(client, sensor_headers, admin_headers):
+    batch = [
+        make_event(session_id="honeypot-ip-1", source_ip="203.0.113.41"),
+        make_event(session_id="honeypot-ip-1", source_ip="203.0.113.42"),
+        make_event(session_id="honeypot-ip-2", source_ip="203.0.113.43"),
+    ]
+    assert client.post(
+        "/api/v1/ingest/events", json=batch, headers=sensor_headers
+    ).status_code == 202
+
+    sessions = client.get("/api/v1/honeypot/sessions", headers=admin_headers).json()["items"]
+    first = next(item for item in sessions if item["session_id"] == "honeypot-ip-1")
+    assert first["source_ips"] == ["203.0.113.41", "203.0.113.42"]
+    assert first["events"] == 2
+
+
 def test_source_health_tracks_ingested_events(client, sensor_headers):
     client.post("/api/v1/ingest/events", json=make_event(), headers=sensor_headers)
     response = client.get("/api/v1/sources", headers=sensor_headers)
@@ -138,13 +292,24 @@ def test_token_tampering_is_rejected():
         subject="usr_1", role="viewer", secret="a" * 40, ttl_minutes=5
     )
     header, payload, signature = token.split(".")
-    tampered = f"{header}.{payload}.{'A' + signature[1:]}"
+    # The signature is random; pick a different leading character so the
+    # tampered token is never identical to the valid one.
+    replacement = "A" if signature[0] != "A" else "B"
+    tampered = f"{header}.{payload}.{replacement}{signature[1:]}"
     try:
         decode_access_token(tampered, secret="a" * 40)
     except Exception as exc:
         assert "signature" in str(exc)
     else:
         raise AssertionError("tampered token was accepted")
+
+
+def test_cli_status_redacts_database_password():
+    from app.cli import _display_db_url
+
+    shown = _display_db_url("postgresql+psycopg://user:super-secret@db:5432/name")
+    assert "super-secret" not in shown
+    assert "user:***@db" in shown
 
 
 def test_production_rejects_placeholder_signing_secret(monkeypatch):
@@ -158,3 +323,52 @@ def test_production_rejects_placeholder_signing_secret(monkeypatch):
 
     with pytest.raises(ConfigurationError):
         build_settings()
+
+
+def test_bootstrap_admin_loses_the_startup_race_without_failing(monkeypatch):
+    """Two workers on an empty database both try to create the first admin.
+
+    The loser hits the unique constraint.  That must not abort its lifespan, or
+    ``uvicorn --workers N`` stops the whole server during startup.
+    """
+    from app.auth import users
+    from app.db.database import init_db
+
+    init_db()
+    real_count = users.count_users
+    # Both workers observed an empty table before either insert completed.
+    monkeypatch.setattr(users, "count_users", lambda: 0)
+
+    assert users.ensure_bootstrap_admin() == ADMIN_EMAIL
+    assert users.ensure_bootstrap_admin() is None
+    assert real_count() == 1
+
+
+def test_role_matrix_lists_every_role_and_token_revocation_is_effective(client, admin_headers):
+    """The capability matrix is public surface, and revoking a token is final."""
+    roles = client.get("/api/v1/auth/roles", headers=admin_headers)
+    assert roles.status_code == 200, roles.text
+    assert set(roles.json()["roles"]) == {"admin", "analyst", "viewer", "sensor"}
+
+    created = client.post(
+        "/api/v1/auth/tokens",
+        headers=admin_headers,
+        json={"name": "surface-test", "role": "sensor"},
+    )
+    assert created.status_code == 201, created.text
+    token_id = created.json()["id"]
+    plaintext = created.json()["token"]
+
+    listed = client.get("/api/v1/auth/tokens", headers=admin_headers)
+    assert listed.status_code == 200, listed.text
+    assert any(item["id"] == token_id for item in listed.json()["tokens"])
+
+    revoked = client.delete(f"/api/v1/auth/tokens/{token_id}", headers=admin_headers)
+    assert revoked.status_code == 200, revoked.text
+
+    rejected = client.post(
+        "/api/v1/ingest/events",
+        headers={"X-Agent-Token": plaintext},
+        json=[make_event()],
+    )
+    assert rejected.status_code == 401, rejected.text

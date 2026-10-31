@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
 import httpx
@@ -126,6 +127,130 @@ def test_plan_activate_and_evaluate_investigation(client, sensor_headers, admin_
     assert stored["hypothesis_before"]["confidence"] == result["confidence_before"]
 
 
+def test_evaluation_counts_only_events_from_the_observed_address(
+    client, sensor_headers, admin_headers
+):
+    """Unrelated ingest traffic must not be credited to this investigation.
+
+    The previous count was platform-wide, so any other sensor event arriving
+    after planning made an observation look productive and could flip the
+    outcome away from ``insufficient_evidence``.
+    """
+    campaign = _build_campaign(client, sensor_headers, admin_headers)
+    plan = client.post(
+        "/api/v1/investigations", json={"campaign_id": campaign["id"]}, headers=admin_headers
+    ).json()
+    activated = client.post(
+        f"/api/v1/investigations/{plan['id']}/activate",
+        json={"source_ip": "198.51.100.7"},
+        headers=admin_headers,
+    )
+    assert activated.status_code == 200, activated.text
+
+    unrelated = _http_event("sess-unrelated", "203.0.113.200", "/unrelated", 0)
+    assert client.post("/api/v1/ingest/events", json=unrelated, headers=sensor_headers).status_code == 202
+
+    evaluation = client.post(
+        f"/api/v1/investigations/{plan['id']}/evaluate", headers=admin_headers
+    )
+    assert evaluation.status_code == 200, evaluation.text
+    result = evaluation.json()
+    assert result["new_events_observed"] == 0
+    assert result["outcome"] == "insufficient_evidence"
+    assert result["delta"] == 0.0
+
+
+def test_activation_is_visible_to_a_separate_decoy_process(client, sensor_headers, admin_headers):
+    campaign = _build_campaign(client, sensor_headers, admin_headers)
+    plan = client.post(
+        "/api/v1/investigations", json={"campaign_id": campaign["id"]}, headers=admin_headers
+    ).json()
+    activated = client.post(
+        f"/api/v1/investigations/{plan['id']}/activate",
+        json={"source_ip": "203.0.113.77"},
+        headers=admin_headers,
+    )
+    assert activated.status_code == 200, activated.text
+
+    from app.deception.adaptive import active_override
+
+    override = active_override("203.0.113.77")
+    assert override is not None
+    assert override["investigation_id"] == plan["id"]
+    assert active_override("203.0.113.78") is None
+
+
+def test_ipv6_activation_override_uses_the_canonical_address(client, sensor_headers, admin_headers):
+    """An expanded IPv6 address must match the compressed form the decoy sees."""
+    campaign = _build_campaign(client, sensor_headers, admin_headers)
+    plan = client.post(
+        "/api/v1/investigations", json={"campaign_id": campaign["id"]}, headers=admin_headers
+    ).json()
+    activated = client.post(
+        f"/api/v1/investigations/{plan['id']}/activate",
+        json={"source_ip": "2001:0db8:0000:0000:0000:0000:0000:0001"},
+        headers=admin_headers,
+    )
+    assert activated.status_code == 200, activated.text
+    assert activated.json()["source_ip"] == "2001:db8::1"
+
+    from app.deception.adaptive import active_override
+
+    assert active_override("2001:db8::1")["investigation_id"] == plan["id"]
+    assert active_override("2001:DB8::1")["investigation_id"] == plan["id"]
+    assert active_override("2001:db8::2") is None
+
+
+def test_expired_activation_releases_the_subject(client, sensor_headers, admin_headers):
+    campaign = _build_campaign(client, sensor_headers, admin_headers)
+    plan = client.post(
+        "/api/v1/investigations", json={"campaign_id": campaign["id"]}, headers=admin_headers
+    ).json()
+    activated = client.post(
+        f"/api/v1/investigations/{plan['id']}/activate",
+        json={"source_ip": "203.0.113.79"},
+        headers=admin_headers,
+    )
+    assert activated.status_code == 200, activated.text
+
+    from sqlalchemy import text
+
+    from app.db.database import connection
+
+    past = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
+    with connection() as conn:
+        conn.execute(
+            text("UPDATE investigations SET expires_at = :past WHERE id = :id"),
+            {"past": past, "id": plan["id"]},
+        )
+
+    listed = client.get("/api/v1/investigations", headers=admin_headers).json()["items"]
+    assert next(item for item in listed if item["id"] == plan["id"])["status"] == "expired"
+    assert client.get(
+        f"/api/v1/investigations/{plan['id']}", headers=admin_headers
+    ).json()["status"] == "expired"
+
+    replacement = client.post(
+        "/api/v1/investigations", json={"campaign_id": campaign["id"]}, headers=admin_headers
+    )
+    assert replacement.status_code == 201, replacement.text
+
+    activated = client.post(
+        f"/api/v1/investigations/{replacement.json()['id']}/activate",
+        json={"source_ip": "203.0.113.80"},
+        headers=admin_headers,
+    )
+    assert activated.status_code == 200, activated.text
+    with connection() as conn:
+        conn.execute(
+            text("UPDATE investigations SET expires_at = NULL WHERE id = :id"),
+            {"id": replacement.json()["id"]},
+        )
+    listed = client.get("/api/v1/investigations", headers=admin_headers).json()["items"]
+    legacy = next(item for item in listed if item["id"] == replacement.json()["id"])
+    assert legacy["status"] == "expired"
+
+
 def test_unknown_profile_is_rejected(client, sensor_headers, admin_headers):
     campaign = _build_campaign(client, sensor_headers, admin_headers)
     response = client.post(
@@ -135,6 +260,58 @@ def test_unknown_profile_is_rejected(client, sensor_headers, admin_headers):
     )
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "validation_failed"
+
+
+def test_concurrent_planning_keeps_one_open_investigation_per_subject(
+    client, sensor_headers, admin_headers
+):
+    """The duplicate check must hold when requests overlap, not just in series."""
+    from app.core.errors import Conflict
+    from app.deception.adaptive import plan_investigation
+
+    campaign = _build_campaign(client, sensor_headers, admin_headers)
+    workers = 5
+
+    def attempt(_: int) -> str:
+        try:
+            plan_investigation(campaign_id=campaign["id"], actor="test:race")
+        except Conflict:
+            return "conflict"
+        return "planned"
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        outcomes = list(pool.map(attempt, range(workers)))
+
+    assert outcomes.count("planned") == 1, outcomes
+    assert outcomes.count("conflict") == workers - 1, outcomes
+
+    listed = client.get("/api/v1/investigations", headers=admin_headers).json()["items"]
+    open_for_campaign = [
+        item
+        for item in listed
+        if item["campaign_id"] == campaign["id"] and item["status"] in {"planned", "active"}
+    ]
+    assert len(open_for_campaign) == 1, open_for_campaign
+
+    # The guarantee comes from the database, not from the planner's own check:
+    # a second open row for the same campaign is refused outright.
+    import pytest
+    from sqlalchemy import text
+    from sqlalchemy.exc import IntegrityError
+
+    from app.db.database import connection
+
+    with pytest.raises(IntegrityError):
+        with connection() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO investigations (id, created_at, updated_at, campaign_id, "
+                    "edge_id, status, missing_evidence, hypothesis_before, notes, "
+                    "algorithm_version) VALUES ('inv_manual', :now, :now, :campaign, NULL, "
+                    "'planned', '[]', '{}', '', 'test')"
+                ),
+                {"now": datetime.now(timezone.utc).isoformat(), "campaign": campaign["id"]},
+            )
 
 
 def test_activation_requires_valid_ip_and_permission(client, sensor_headers, admin_headers):

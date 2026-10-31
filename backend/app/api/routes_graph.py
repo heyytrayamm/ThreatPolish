@@ -8,8 +8,12 @@ from fastapi import APIRouter, Depends, Query
 
 from ..auth.rbac import Principal
 from ..core.audit import audit_standalone
+from ..core.errors import ValidationFailure
 from ..correlation.engine import correlate, latest_run
 from ..correlation.repository import (
+    DEFAULT_GRAPH_NODES,
+    MAX_GRAPH_EDGES,
+    MAX_GRAPH_NODES,
     add_feedback,
     feedback_summary,
     get_campaign,
@@ -29,13 +33,28 @@ def graph(
     hours: int = Query(default=24, ge=1, le=720),
     min_confidence: float = Query(default=0.0, ge=0.0, le=1.0),
     kinds: str | None = Query(default=None, max_length=120),
+    limit: int = Query(default=DEFAULT_GRAPH_NODES, ge=1, le=MAX_GRAPH_NODES),
+    edge_limit: int | None = Query(default=None, ge=1, le=MAX_GRAPH_EDGES),
     principal: Principal = Depends(require("graph:read")),
 ) -> dict[str, Any]:
     selected = [kind.strip() for kind in kinds.split(",") if kind.strip()] if kinds else None
     allowed = {"session", "ip", "asset", "indicator", "campaign"}
-    if selected and not set(selected) <= allowed:
-        selected = [kind for kind in selected if kind in allowed]
-    return graph_view(hours=hours, min_confidence=min_confidence, kinds=selected)
+    if selected:
+        unknown = sorted(set(selected) - allowed)
+        if unknown:
+            # Dropping an unknown kind silently returned every node, which made
+            # a typo look like a successful filter.
+            raise ValidationFailure(
+                "unknown graph node kind",
+                details={"unknown": unknown, "allowed": sorted(allowed)},
+            )
+    return graph_view(
+        hours=hours,
+        min_confidence=min_confidence,
+        kinds=selected,
+        limit=limit,
+        edge_limit=edge_limit,
+    )
 
 
 @router.post("/correlate")
@@ -83,10 +102,16 @@ def last_run(principal: Principal = Depends(require("graph:read"))) -> dict[str,
 @router.get("/campaigns")
 def campaigns(
     status: str | None = Query(default=None, max_length=24),
+    include_archived: bool = Query(default=False),
     limit: int = Query(default=50, ge=1, le=200),
     principal: Principal = Depends(require("campaigns:read")),
 ) -> dict[str, Any]:
-    return {"items": list_campaigns(limit=limit, status=status), "algorithm_version": ALGORITHM_VERSION}
+    return {
+        "items": list_campaigns(
+            limit=limit, status=status, include_archived=include_archived
+        ),
+        "algorithm_version": ALGORITHM_VERSION,
+    }
 
 
 @router.get("/campaigns/{campaign_id}")

@@ -13,8 +13,8 @@ document explains the intent and the per-module feature conventions.
 | `source_module` | enum | yes | `honeypot`, `websec`, `cryptointel`, `app`, `correlation`, `manual` |
 | `event_type` | string 3–120 chars | yes | Namespaced verb, e.g. `honeypot.ssh.login_failed` |
 | `source_ip` | IPv4/IPv6 string | no | Validated; absent for internal analytical events |
-| `session_id` | string ≤120 | no | Sensor-scoped session key |
-| `target_id` | string ≤200 | no | Asset or host identifier |
+| `session_id` | string ≤120, no control characters | no | Sensor-scoped session key |
+| `target_id` | string ≤200, no control characters | no | Asset or host identifier |
 | `severity` | enum | no, default `info` | `info`, `low`, `medium`, `high`, `critical` |
 | `provenance` | object | yes | See below |
 | `features` | object | no | Module-specific, bounded |

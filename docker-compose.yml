@@ -40,6 +40,26 @@ services:
       retries: 3
       start_period: 20s
 
+  retention:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      TP_DB_URL: postgresql+psycopg://threatpolish:${TP_DB_PASSWORD}@db:5432/threatpolish
+      TP_DATA_DIR: /data
+    # Runs once on start, then on the interval from .env.  Waiting for the API
+    # to be healthy means startup migrations finish before this connects.
+    command:
+      - /bin/sh
+      - -c
+      - "while true; do python -m app.cli retention --scheduled; sleep ${TP_RETENTION_INTERVAL_SECONDS:-86400}; done"
+    healthcheck:
+      disable: true
+    networks: [backend]
+
   cowrie:
     image: cowrie/cowrie:latest
     profiles: ["honeypot"]

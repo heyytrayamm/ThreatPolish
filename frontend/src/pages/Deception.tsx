@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { api, User } from "../api";
+import { api, Investigation, User } from "../api";
 import { Badge, Card, Empty, ErrorBox, Field, formatTime, Loading, can, shortId, useAsync } from "../ui";
 
 export default function Deception({ user }: { user: User }) {
@@ -9,6 +9,7 @@ export default function Deception({ user }: { user: User }) {
 
   const profiles = useAsync(() => api.profiles(), [tick]);
   const investigations = useAsync(() => api.investigations(), [tick]);
+  const sessions = useAsync(() => api.decoySessions(24, 20), [tick]);
   const events = useAsync(
     () => api.events({ module: "honeypot", limit: 20, since: new Date(Date.now() - 6 * 3600 * 1000).toISOString() }),
     [tick],
@@ -26,6 +27,20 @@ export default function Deception({ user }: { user: User }) {
     } catch (error) {
       setNotice((error as Error).message);
     }
+  }
+
+  function replacementFor(item: Investigation, all: Investigation[]): Investigation | undefined {
+    // Duplicate rows are closed by the database constraint; the investigation
+    // that kept the subject is the newest open row sharing it.
+    const subject = item.campaign_id ?? item.edge_id;
+    if (!subject) return undefined;
+    const later = all
+      .filter((other) => other.id !== item.id)
+      .filter((other) => (other.campaign_id ?? other.edge_id) === subject)
+      .filter((other) => other.created_at > item.created_at)
+      .filter((other) => other.status === "planned" || other.status === "active")
+      .sort((left, right) => (left.created_at < right.created_at ? 1 : -1));
+    return later[0];
   }
 
   async function evaluate(id: string) {
@@ -50,7 +65,7 @@ export default function Deception({ user }: { user: User }) {
         </div>
       </header>
 
-      <ErrorBox message={profiles.error ?? investigations.error ?? events.error} />
+      <ErrorBox message={profiles.error ?? investigations.error ?? sessions.error ?? events.error} />
       {notice && <div className="notice">{notice}</div>}
 
       <div className="grid two">
@@ -79,30 +94,41 @@ export default function Deception({ user }: { user: User }) {
             <Empty>No investigations planned. Open a campaign to plan one.</Empty>
           )}
           <div className="list">
-            {investigations.data?.items.map((investigation) => (
-              <div key={investigation.id} className="list-item static">
-                <div className="row space">
-                  <strong className="mono">{shortId(investigation.id, 16)}</strong>
-                  <Badge value={investigation.status} kind="status" />
-                </div>
-                <div className="muted small">
-                  profile {investigation.chosen_profile ?? "—"} · missing {investigation.missing_evidence.join(", ") || "none"}
-                  {investigation.outcome ? ` · outcome ${investigation.outcome}` : ""}
-                </div>
-                {can(user.role, "analyse") && (
-                  <div className="row wrap">
-                    <input
-                      placeholder="source IP"
-                      value={activationIp}
-                      onChange={(event) => setActivationIp(event.target.value)}
-                      className="compact"
-                    />
-                    <button className="secondary" onClick={() => activate(investigation.id)}>Activate</button>
-                    <button className="secondary" onClick={() => evaluate(investigation.id)}>Evaluate</button>
+            {investigations.data?.items.map((investigation) => {
+              const replacement = replacementFor(investigation, investigations.data?.items ?? []);
+              return (
+                <div key={investigation.id} className="list-item static">
+                  <div className="row space">
+                    <strong className="mono">{shortId(investigation.id, 16)}</strong>
+                    <Badge value={investigation.status} kind="status" />
                   </div>
-                )}
-              </div>
-            ))}
+                  <div className="muted small">
+                    profile {investigation.chosen_profile ?? "—"} · missing {investigation.missing_evidence.join(", ") || "none"}
+                    {investigation.outcome ? ` · outcome ${investigation.outcome}` : ""}
+                  </div>
+                  {investigation.status === "superseded" && (
+                    <div className="muted small">
+                      Closed because another investigation was already open for this subject
+                      {replacement ? ` · replaced by ${shortId(replacement.id, 16)}` : ""}.
+                    </div>
+                  )}
+                  {can(user.role, "analyse") &&
+                    (investigation.status === "planned" ||
+                      investigation.status === "active") && (
+                    <div className="row wrap">
+                      <input
+                        placeholder="source IP"
+                        value={activationIp}
+                        onChange={(event) => setActivationIp(event.target.value)}
+                        className="compact"
+                      />
+                      <button className="secondary" onClick={() => activate(investigation.id)}>Activate</button>
+                      <button className="secondary" onClick={() => evaluate(investigation.id)}>Evaluate</button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
           <Field label="Observation target IP">
             <input value={activationIp} onChange={(event) => setActivationIp(event.target.value)} placeholder="203.0.113.10" />
@@ -113,6 +139,42 @@ export default function Deception({ user }: { user: User }) {
           </p>
         </Card>
       </div>
+
+      <Card title="Decoy sessions (24h)">
+        {sessions.loading && <Loading />}
+        {sessions.data && sessions.data.items.length === 0 && (
+          <Empty>No decoy sessions in the last 24 hours.</Empty>
+        )}
+        {sessions.data && sessions.data.items.length > 0 && (
+          <table>
+            <thead>
+              <tr>
+                <th>Session</th><th>First seen</th><th>Last seen</th><th>Events</th>
+                <th>Source IPs</th><th>Severity</th><th>Target</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sessions.data.items.map((session) => (
+                <tr key={session.session_id}>
+                  <td className="mono small">{session.session_id}</td>
+                  <td>{formatTime(session.first_seen)}</td>
+                  <td>{formatTime(session.last_seen)}</td>
+                  <td>{session.events}</td>
+                  <td className="mono small">
+                    {session.source_ips.length > 0 ? session.source_ips.join(", ") : "—"}
+                  </td>
+                  <td><Badge value={session.severity} /></td>
+                  <td>{session.target ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        <p className="muted small">
+          Sessions are interactions observed by the decoy services, grouped by the identifier the sensor
+          assigned. A session is not an identity.
+        </p>
+      </Card>
 
       <Card title="Recent honeypot interactions">
         {events.loading && <Loading />}

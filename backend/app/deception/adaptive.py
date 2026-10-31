@@ -11,21 +11,23 @@ Safety limits enforced here:
   selected;
 * at most one active investigation per campaign or edge;
 * activations expire (15 minutes by default, 60 maximum);
-* a per-process ceiling prevents a loop from continuously re-targeting decoys.
+* a persisted active-investigation ceiling prevents a loop from continuously
+  re-targeting decoys across API and decoy processes.
 """
 
 from __future__ import annotations
 
-import threading
-from datetime import datetime, timedelta
+import ipaddress
+from datetime import timedelta
 from typing import Any
 
-from sqlalchemy import select, text
+from sqlalchemy import or_, select, text
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from ..core.errors import Conflict, NotFound, PolicyDenied, ValidationFailure
 from ..core.logging import get_logger
 from ..core.security import iso, new_id, utcnow
-from ..db.database import connection, dumps, loads
+from ..db.database import connection, dumps, loads, query_one
 from ..db.schema import investigations
 from ..correlation.engine import correlate
 from ..correlation.repository import get_campaign, get_edge
@@ -47,43 +49,70 @@ MAX_TTL_MINUTES = 60
 MAX_ACTIVE = 50
 
 
-class _OverrideRegistry:
-    def __init__(self) -> None:
-        self._items: dict[str, dict[str, Any]] = {}
-        self._lock = threading.Lock()
-
-    def set(self, ip: str, *, profile: str, investigation_id: str, expires_at: datetime) -> None:
-        with self._lock:
-            self._items[ip] = {
-                "profile": profile,
-                "investigation_id": investigation_id,
-                "expires_at": expires_at,
-            }
-
-    def get(self, ip: str) -> dict[str, Any] | None:
-        with self._lock:
-            item = self._items.get(ip)
-            if not item:
-                return None
-            if item["expires_at"] <= utcnow():
-                del self._items[ip]
-                return None
-            return dict(item)
-
-    def clear(self) -> None:
-        with self._lock:
-            self._items.clear()
-
-    def size(self) -> int:
-        with self._lock:
-            return len(self._items)
-
-
-OVERRIDES = _OverrideRegistry()
+def _normalize_ip(ip: str) -> str:
+    """Use the canonical text form so an expanded IPv6 address still matches."""
+    try:
+        return str(ipaddress.ip_address(ip.strip()))
+    except ValueError:
+        return ip.strip()
 
 
 def active_override(ip: str) -> dict[str, Any] | None:
-    return OVERRIDES.get(ip)
+    """Load the active decoy override from the database.
+
+    The API and the decoy listener are separate processes, so an in-memory
+    registry cannot carry an activation between them. The investigation row is
+    the shared source of truth; expiry is enforced on the read path.
+    """
+    try:
+        with connection() as conn:
+            row = query_one(
+                conn,
+                "SELECT id, chosen_profile, expires_at FROM investigations "
+                "WHERE status = 'active' AND source_ip = :ip AND expires_at > :now "
+                "ORDER BY updated_at DESC LIMIT 1",
+                {"ip": _normalize_ip(ip), "now": iso(utcnow())},
+            )
+    except SQLAlchemyError as exc:
+        log.warning("active override lookup failed", extra={"error": str(exc)})
+        return None
+    if not row:
+        return None
+    return {
+        "profile": row["chosen_profile"],
+        "investigation_id": row["id"],
+        "expires_at": row["expires_at"],
+    }
+
+
+def _expire_activations() -> int:
+    """Mark activations whose TTL has elapsed so they stop reserving a subject."""
+    now = iso(utcnow())
+    with connection() as conn:
+        result = conn.execute(
+            investigations.update()
+            .where(
+                investigations.c.status == "active",
+                or_(
+                    investigations.c.expires_at.is_(None),
+                    investigations.c.expires_at < now,
+                ),
+            )
+            .values(status="expired", updated_at=now)
+        )
+    return int(result.rowcount or 0)
+
+
+def _active_count() -> int:
+    with connection() as conn:
+        row = conn.execute(
+            text(
+                "SELECT COUNT(*) FROM investigations "
+                "WHERE status = 'active' AND expires_at > :now"
+            ),
+            {"now": iso(utcnow())},
+        ).fetchone()
+    return int(row[0]) if row else 0
 
 
 def plan_investigation(
@@ -99,6 +128,7 @@ def plan_investigation(
     if edge_id and campaign_id:
         raise ValidationFailure("provide only one of edge_id or campaign_id")
     ttl = max(5, min(MAX_TTL_MINUTES, ttl_minutes))
+    _expire_activations()
 
     if edge_id:
         edge = get_edge(edge_id)
@@ -142,46 +172,35 @@ def plan_investigation(
 
     investigation_id = new_id("inv")
     now = utcnow()
-    # Build predicates only for the identifiers present. PostgreSQL cannot
-    # infer the type of a NULL parameter used as ``:value IS NOT NULL``.
-    subject_clauses: list[str] = []
-    subject_params: dict[str, Any] = {}
-    if edge_id:
-        subject_clauses.append("edge_id = :edge")
-        subject_params["edge"] = edge_id
-    if campaign_id:
-        subject_clauses.append("campaign_id = :campaign")
-        subject_params["campaign"] = campaign_id
-    with connection() as conn:
-        existing = conn.execute(
-            text(
-                "SELECT id FROM investigations WHERE status IN ('planned', 'active') "
-                f"AND ({' OR '.join(subject_clauses)}) LIMIT 1"
-            ),
-            subject_params,
-        ).fetchone()
-        if existing:
-            raise Conflict(
-                "an investigation is already planned or active for this subject",
-                details={"investigation_id": existing[0]},
+    try:
+        with connection() as conn:
+            conn.execute(
+                investigations.insert().values(
+                    id=investigation_id,
+                    created_at=iso(now),
+                    updated_at=iso(now),
+                    campaign_id=campaign_id,
+                    edge_id=edge_id,
+                    status="planned",
+                    missing_evidence=dumps(missing),
+                    chosen_profile=chosen["name"] if chosen else None,
+                    hypothesis_before=dumps(hypothesis_before),
+                    hypothesis_after=None,
+                    outcome=None,
+                    notes=notes,
+                    algorithm_version=ALGORITHM_VERSION,
+                )
             )
-        conn.execute(
-            investigations.insert().values(
-                id=investigation_id,
-                created_at=iso(now),
-                updated_at=iso(now),
-                campaign_id=campaign_id,
-                edge_id=edge_id,
-                status="planned",
-                missing_evidence=dumps(missing),
-                chosen_profile=chosen["name"] if chosen else None,
-                hypothesis_before=dumps(hypothesis_before),
-                hypothesis_after=None,
-                outcome=None,
-                notes=notes,
-                algorithm_version=ALGORITHM_VERSION,
-            )
-        )
+    except IntegrityError as exc:
+        # The partial unique indexes on edge_id and campaign_id decide the
+        # conflict atomically.  A read-then-insert check could let two
+        # concurrent planners both pass, leaving duplicate investigations and
+        # two decoy activations for the same campaign.
+        existing = _open_investigation_id(edge_id=edge_id, campaign_id=campaign_id)
+        raise Conflict(
+            "an investigation is already planned or active for this subject",
+            details={"investigation_id": existing} if existing else {},
+        ) from exc
 
     return {
         "id": investigation_id,
@@ -210,11 +229,16 @@ def plan_investigation(
 def activate_investigation(
     investigation_id: str, *, source_ip: str, actor: str, ttl_minutes: int | None = None
 ) -> dict[str, Any]:
+    _expire_activations()
     record = get_investigation(investigation_id)
     if record["status"] not in {"planned", "active"}:
         raise Conflict(f"investigation is {record['status']} and cannot be activated")
-    if OVERRIDES.size() >= MAX_ACTIVE and record["status"] != "active":
+    if _active_count() >= MAX_ACTIVE and record["status"] != "active":
         raise PolicyDenied("active investigation capacity reached")
+    try:
+        source_ip = str(ipaddress.ip_address(source_ip.strip()))
+    except ValueError as exc:
+        raise ValidationFailure("source_ip must be a valid IP address") from exc
 
     profile = get_profile(record["chosen_profile"] or "")
     if not profile or not profile["enabled"] or profile["kind"] != "http":
@@ -222,19 +246,19 @@ def activate_investigation(
 
     ttl = max(5, min(MAX_TTL_MINUTES, ttl_minutes or DEFAULT_TTL_MINUTES))
     expires = utcnow() + timedelta(minutes=ttl)
-    OVERRIDES.set(
-        source_ip,
-        profile=profile["name"],
-        investigation_id=investigation_id,
-        expires_at=expires,
-    )
 
     now = utcnow()
     with connection() as conn:
         conn.execute(
             investigations.update()
             .where(investigations.c.id == investigation_id)
-            .values(status="active", updated_at=iso(now), notes=record["notes"])
+            .values(
+                status="active",
+                updated_at=iso(now),
+                source_ip=source_ip,
+                expires_at=iso(expires),
+                notes=record["notes"],
+            )
         )
     log.info(
         "adaptive investigation activated",
@@ -264,7 +288,11 @@ def evaluate_investigation(investigation_id: str, *, actor: str) -> dict[str, An
         raise ValidationFailure("investigation has no relationship edge to re-evaluate")
 
     since = record["created_at"]
-    new_events = _events_since(since)
+    # Count only telemetry from the address the investigation is observing.
+    # The previous platform-wide count credited unrelated ingest traffic with
+    # changing this hypothesis and could turn an empty observation into a
+    # confident "strengthened" or "weakened" outcome.
+    new_events = _events_since(since, record.get("source_ip"))
 
     run = correlate(trigger="adaptive_investigation", actor=actor)
     try:
@@ -313,9 +341,9 @@ def evaluate_investigation(investigation_id: str, *, actor: str) -> dict[str, An
                 updated_at=iso(now),
                 hypothesis_after=dumps(after_payload),
                 outcome=outcome,
+                expires_at=None,
             )
         )
-    OVERRIDES.clear()
     return {
         "id": investigation_id,
         "outcome": outcome,
@@ -334,6 +362,7 @@ def evaluate_investigation(investigation_id: str, *, actor: str) -> dict[str, An
 
 
 def get_investigation(investigation_id: str) -> dict[str, Any]:
+    _expire_activations()
     with connection() as conn:
         row = conn.execute(
             select(investigations).where(investigations.c.id == investigation_id)
@@ -348,6 +377,7 @@ def get_investigation(investigation_id: str) -> dict[str, Any]:
 
 
 def list_investigations(limit: int = 50) -> list[dict[str, Any]]:
+    _expire_activations()
     with connection() as conn:
         rows = conn.execute(
             select(investigations).order_by(investigations.c.created_at.desc()).limit(limit)
@@ -360,6 +390,29 @@ def list_investigations(limit: int = 50) -> list[dict[str, Any]]:
         data["hypothesis_after"] = loads(data.get("hypothesis_after"), None)
         result.append(data)
     return result
+
+
+def _open_investigation_id(*, edge_id: str | None, campaign_id: str | None) -> str | None:
+    """Find the open investigation that blocked an insert, for the error detail."""
+    clauses: list[str] = []
+    params: dict[str, Any] = {}
+    if edge_id:
+        clauses.append("edge_id = :edge")
+        params["edge"] = edge_id
+    if campaign_id:
+        clauses.append("campaign_id = :campaign")
+        params["campaign"] = campaign_id
+    if not clauses:
+        return None
+    with connection() as conn:
+        row = conn.execute(
+            text(
+                "SELECT id FROM investigations WHERE status IN ('planned', 'active') "
+                f"AND ({' OR '.join(clauses)}) ORDER BY updated_at DESC LIMIT 1"
+            ),
+            params,
+        ).fetchone()
+    return str(row[0]) if row else None
 
 
 def _select_profile(requested: str | None, observable: list[str]) -> dict[str, Any] | None:
@@ -381,10 +434,12 @@ def _select_profile(requested: str | None, observable: list[str]) -> dict[str, A
     return enabled[0] if enabled else None
 
 
-def _events_since(since_iso: str) -> int:
+def _events_since(since_iso: str, source_ip: str | None = None) -> int:
+    clause = "SELECT COUNT(*) FROM events WHERE received_at >= :since"
+    params: dict[str, Any] = {"since": since_iso}
+    if source_ip:
+        clause += " AND source_ip = :source_ip"
+        params["source_ip"] = source_ip
     with connection() as conn:
-        row = conn.execute(
-            text("SELECT COUNT(*) FROM events WHERE received_at >= :since"),
-            {"since": since_iso},
-        ).fetchone()
+        row = conn.execute(text(clause), params).fetchone()
     return int(row[0]) if row else 0

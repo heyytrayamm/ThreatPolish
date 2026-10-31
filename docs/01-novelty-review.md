@@ -45,6 +45,10 @@ A cross-IP evidence graph in which:
   timing, identity, verified intelligence and toolchain;
 - tokens are weighted by document frequency in the analysed window, and
   tokens present in most sessions are excluded as uninformative;
+- the evidence families themselves are scaled by that same corpus statistic,
+  so a family whose tokens are almost all ubiquitous (generic shell commands,
+  a stock client string) contributes less than one that still separates
+  sessions in this window;
 - a link requires both a numeric threshold and a **high-specificity anchor**
   (verified indicator, matching command structure, or shared credential plus
   client signature);
@@ -66,10 +70,18 @@ A cross-IP evidence graph in which:
 
 This is falsified if precision is not materially higher than the rule baseline,
 or if adaptive observation fails to improve recall, or if the improvement
-disappears under ablation. The measured results, including a seed where the
+disappears under ablation. The correlation clause holds on the synthetic
+benchmark: precision is 1.000 against 0.066 for the rule baseline, with recall
+0.91 and 0.81. The adaptive clause is **not established**: once the simulation
+stops injecting a shared constant, additional observation gains one or two
+links and loses none, which points the right way on far too small a sample.
+The Jaccard-only and uniform-weight ablations reproduce the previous models, so
+the gain from overlap-based sequence comparison (0.81 → 0.91, 0.56 → 0.81) and
+the smaller gain from corpus-relative family weighting are visible rather than
+assumed. Full tables, including a seed where the
 intelligence-family ablation performs slightly better, are in
-`docs/research/evaluation-results.md`. The hypothesis is supported on the
-synthetic benchmark and remains unverified on production telemetry.
+`docs/research/evaluation-results.md`. The result remains unverified on
+production telemetry.
 
 ## What is not claimed
 

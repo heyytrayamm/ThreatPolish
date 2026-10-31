@@ -19,6 +19,7 @@ from sqlalchemy import (
     Table,
     Text,
     UniqueConstraint,
+    text,
 )
 
 metadata = MetaData()
@@ -32,6 +33,7 @@ users = Table(
     Column("role", String(20), nullable=False),
     Column("password_hash", Text, nullable=False),
     Column("is_active", Integer, nullable=False, default=1),
+    Column("token_version", Integer, nullable=False, default=0),
     Column("created_at", String(40), nullable=False),
     Column("last_login_at", String(40), nullable=True),
 )
@@ -49,10 +51,21 @@ agent_tokens = Table(
     Column("revoked_at", String(40), nullable=True),
 )
 
+revoked_sessions = Table(
+    "revoked_sessions",
+    metadata,
+    Column("jti", String(64), primary_key=True),
+    Column("user_id", String(64), nullable=False),
+    Column("revoked_at", String(40), nullable=False),
+    Column("expires_at", String(40), nullable=False),
+    Column("reason", String(120), nullable=False, default="user_request"),
+    Index("ix_revoked_sessions_user", "user_id"),
+)
+
 events = Table(
     "events",
     metadata,
-    Column("id", String(64), primary_key=True),
+    Column("id", String(120), primary_key=True),
     Column("schema_version", String(12), nullable=False),
     Column("occurred_at", String(40), nullable=False),
     Column("received_at", String(40), nullable=False),
@@ -202,13 +215,14 @@ crypto_risk = Table(
 graph_nodes = Table(
     "graph_nodes",
     metadata,
-    Column("id", String(120), primary_key=True),
+    Column("id", String(255), primary_key=True),
     Column("kind", String(24), nullable=False),
     Column("label", String(255), nullable=False),
     Column("props", Text, nullable=False, default="{}"),
     Column("first_seen", String(40), nullable=False),
     Column("last_seen", String(40), nullable=False),
     Index("ix_nodes_kind", "kind"),
+    Index("ix_nodes_last_seen", "last_seen"),
 )
 
 graph_edges = Table(
@@ -216,8 +230,8 @@ graph_edges = Table(
     metadata,
     Column("id", String(80), primary_key=True),
     Column("kind", String(40), nullable=False),
-    Column("src_id", String(120), nullable=False),
-    Column("dst_id", String(120), nullable=False),
+    Column("src_id", String(255), nullable=False),
+    Column("dst_id", String(255), nullable=False),
     Column("confidence", Float, nullable=False),
     Column("score", Float, nullable=False),
     Column("evidence", Text, nullable=False),
@@ -230,6 +244,10 @@ graph_edges = Table(
     Column("campaign_id", String(40), nullable=True),
     UniqueConstraint("src_id", "dst_id", "kind", name="uq_edge"),
     Index("ix_edges_campaign", "campaign_id"),
+    # Retention walks endpoints and age; the uniqueness index already covers
+    # ``src_id`` as a prefix, but not ``dst_id`` or the status filter.
+    Index("ix_edges_dst", "dst_id"),
+    Index("ix_edges_status_updated", "status", "updated_at"),
 )
 
 campaigns = Table(
@@ -246,6 +264,14 @@ campaigns = Table(
     Column("algorithm_version", String(24), nullable=False),
     Column("member_count", Integer, nullable=False, default=0),
     Column("ip_count", Integer, nullable=False, default=0),
+    # Lifecycle.  A campaign keeps its identifier while membership evolves, so
+    # analyst feedback keeps pointing at it.  When membership changes
+    # materially the old row is archived rather than deleted, and when two
+    # campaigns merge the absorbed row records which one took over.
+    Column("status_updated_at", String(40), nullable=True),
+    Column("superseded_by", String(40), nullable=True),
+    Column("archived_at", String(40), nullable=True),
+    Index("ix_campaigns_archived", "archived_at"),
 )
 
 feedback = Table(
@@ -314,7 +340,27 @@ investigations = Table(
     Column("outcome", String(24), nullable=True),
     Column("notes", Text, nullable=False, default=""),
     Column("algorithm_version", String(24), nullable=False),
+    Column("source_ip", String(64), nullable=True),
+    Column("expires_at", String(40), nullable=True),
     Index("ix_investigations_campaign", "campaign_id"),
+    Index("ix_investigations_active", "status", "source_ip"),
+    # At most one open investigation per subject.  A partial index makes the
+    # check atomic: of two concurrent planners only one insert commits, and the
+    # loser is rejected by the database instead of by a read that saw no row.
+    Index(
+        "uq_investigations_active_edge",
+        "edge_id",
+        unique=True,
+        sqlite_where=text("status IN ('planned', 'active') AND edge_id IS NOT NULL"),
+        postgresql_where=text("status IN ('planned', 'active') AND edge_id IS NOT NULL"),
+    ),
+    Index(
+        "uq_investigations_active_campaign",
+        "campaign_id",
+        unique=True,
+        sqlite_where=text("status IN ('planned', 'active') AND campaign_id IS NOT NULL"),
+        postgresql_where=text("status IN ('planned', 'active') AND campaign_id IS NOT NULL"),
+    ),
 )
 
 source_health = Table(
@@ -347,6 +393,28 @@ correlation_runs = Table(
     Column("error", Text, nullable=True),
     Column("metrics", Text, nullable=False, default="{}"),
     Column("trigger", String(32), nullable=False, default="manual"),
+)
+
+retention_runs = Table(
+    "retention_runs",
+    metadata,
+    Column("id", String(40), primary_key=True),
+    Column("ran_at", String(40), nullable=False),
+    Column("trigger", String(24), nullable=False),
+    Column("duration_ms", Integer, nullable=False, default=0),
+    Column("events_removed", Integer, nullable=False, default=0),
+    Column("edges_removed", Integer, nullable=False, default=0),
+    Column("observations_removed", Integer, nullable=False, default=0),
+    Column("nodes_removed", Integer, nullable=False, default=0),
+    # Backlog seen before the run, so the dashboard can show a trend rather
+    # than an always-zero count after cleanup.
+    Column("events_expired", Integer, nullable=False, default=0),
+    Column("retired_edges", Integer, nullable=False, default=0),
+    Column("stale_observations", Integer, nullable=False, default=0),
+    Column("graph_nodes", Integer, nullable=False, default=0),
+    Column("graph_edges", Integer, nullable=False, default=0),
+    Column("overdue", Integer, nullable=False, default=0),
+    Index("ix_retention_runs_ran_at", "ran_at"),
 )
 
 schema_migrations = Table(

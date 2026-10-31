@@ -8,7 +8,8 @@ from typing import Callable
 from fastapi import Depends, Header, Request
 
 from ..auth.rbac import Principal, require_permission
-from ..auth.users import get_user, resolve_agent_token
+from ..auth.sessions import session_is_revoked
+from ..auth.users import get_user_with_session, resolve_agent_token
 from ..core.config import get_settings
 from ..core.errors import AuthenticationFailure
 from ..core.limits import SlidingWindowLimiter
@@ -30,15 +31,21 @@ def get_principal(
             raise AuthenticationFailure("expected 'Authorization: Bearer <token>'")
         payload = decode_access_token(token.strip(), secret=get_settings().jwt_secret)
         user_id = str(payload.get("sub", ""))
-        user = get_user(user_id)
+        user, session_version = get_user_with_session(user_id)
         if not user["is_active"]:
             raise AuthenticationFailure("account is disabled")
+        if int(payload.get("tv", -1)) != session_version:
+            raise AuthenticationFailure("session has been revoked; sign in again")
+        jti = str(payload.get("jti", ""))
+        if jti and session_is_revoked(jti):
+            raise AuthenticationFailure("this session was signed out")
         return Principal(
             user_id=user["id"],
             role=user["role"],
             name=user["name"],
             email=user["email"],
             via="session",
+            jti=jti or None,
         )
 
     if x_agent_token:
@@ -72,7 +79,19 @@ def ingest_limiter() -> SlidingWindowLimiter:
 
 @lru_cache(maxsize=1)
 def login_limiter() -> SlidingWindowLimiter:
+    """Per-account attempt budget, independent of the client address."""
     return SlidingWindowLimiter(10, 60.0, max_keys=10_000)
+
+
+@lru_cache(maxsize=1)
+def login_ip_limiter() -> SlidingWindowLimiter:
+    """Per-address attempt budget.
+
+    Without this, an attacker can rotate the email address on every attempt and
+    never hit the per-account bucket, which turns the login endpoint into an
+    unlimited password-spraying oracle.
+    """
+    return SlidingWindowLimiter(30, 60.0, max_keys=10_000)
 
 
 @lru_cache(maxsize=1)

@@ -44,6 +44,7 @@ export default function Campaigns({ user }: { user: User }) {
     <div className="page">
       <header className="page-head">
         <div>
+          <span className="eyebrow">Relationship hypotheses</span>
           <h1>Campaigns</h1>
           <p className="muted">
             Relationship hypotheses derived from evidence. Confidence is not an attribution.
@@ -73,6 +74,13 @@ export default function Campaigns({ user }: { user: User }) {
                   {campaign.member_count} sessions · {campaign.ip_count} IPs · confidence{" "}
                   {campaign.confidence.toFixed(2)}
                 </div>
+                <span className="list-meter" aria-hidden="true">
+                  <span
+                    style={{
+                      width: `${Math.round(Math.max(0, Math.min(1, campaign.confidence)) * 100)}%`,
+                    }}
+                  />
+                </span>
               </button>
             ))}
           </div>
@@ -85,7 +93,7 @@ export default function Campaigns({ user }: { user: User }) {
         </Card>
       </div>
 
-      {detail.data && (
+      {detail.data && detail.data.campaign.id === selectedId && (
         <>
           <Card
             title={detail.data.campaign.name}
@@ -162,6 +170,12 @@ export default function Campaigns({ user }: { user: User }) {
             </Card>
           </div>
 
+          <EvidenceMatrix detail={detail.data} />
+
+          <KillChain coverage={detail.data.kill_chain} />
+
+          <EvidencePlan plan={detail.data.evidence_plan} />
+
           <Card title="Relationship evidence">
             {detail.data.edges.map((edge) => (
               <details key={edge.id} className="evidence" open={detail.data!.edges.length === 1}>
@@ -200,5 +214,233 @@ export default function Campaigns({ user }: { user: User }) {
         </>
       )}
     </div>
+  );
+}
+
+const MATRIX_SESSIONS = 12;
+const FAMILY_ORDER = ["behavior", "targeting", "timing", "identity", "intel", "toolchain"];
+
+// Matrix headers only have room for a few characters. Keep the trailing
+// components of the identifier, which vary, and let the tooltip carry the rest.
+function sessionLabel(id: string): string {
+  const parts = id.split("-");
+  return parts.length > 1 ? parts.slice(-2).join("-") : id.slice(-6);
+}
+
+function EvidenceMatrix({ detail }: { detail: CampaignDetail }) {
+  // A full campaign can contain hundreds of sessions. The matrix is a reading
+  // aid, so it shows the earliest members and states how many were omitted;
+  // the complete pair evidence remains in the edge list below.
+  const sessions = detail.sessions.slice(0, MATRIX_SESSIONS);
+  const byPair = new Map<string, CampaignDetail["edges"][number]>();
+  for (const edge of detail.edges) {
+    const left = edge.source.replace(/^session:/, "");
+    const right = edge.target.replace(/^session:/, "");
+    byPair.set(`${left}|${right}`, edge);
+    byPair.set(`${right}|${left}`, edge);
+  }
+  // The API returns only edges that currently support the campaign, so every
+  // cell here is asserted evidence; hypotheses live in the graph view instead.
+  const linked = detail.edges.filter((edge) => edge.status === "active");
+  const meanConfidence = linked.length
+    ? linked.reduce((total, edge) => total + edge.confidence, 0) / linked.length
+    : 0;
+  const familyTotals = new Map<string, { total: number; count: number }>();
+  for (const edge of linked) {
+    for (const component of edge.evidence.components ?? []) {
+      if (!component.available) continue;
+      const current = familyTotals.get(component.family) ?? { total: 0, count: 0 };
+      current.total += component.score;
+      current.count += 1;
+      familyTotals.set(component.family, current);
+    }
+  }
+  const families = FAMILY_ORDER.map((name) => {
+    const current = familyTotals.get(name);
+    return { name, score: current ? current.total / current.count : 0 };
+  });
+
+  return (
+    <Card title="Evidence matrix">
+      <p className="muted small">
+        Pairwise confidence for the first {sessions.length} of {detail.sessions.length}{" "}
+        sessions. Bright cells are linked relationships; hollow cells are unconfirmed
+        hypotheses. Every cell is backed by the component table below.
+      </p>
+      <div className="matrix-summary">
+        <span><strong>{linked.length}</strong> linked pairs</span>
+        <span><strong>{meanConfidence.toFixed(2)}</strong> mean link confidence</span>
+        <span><strong>{detail.observation.observations}</strong> observations</span>
+        <span>
+          <strong>{detail.observation.observations_per_link ?? "–"}</strong> observations / link
+        </span>
+      </div>
+      <div className="matrix-scroll">
+        <table className="evidence-matrix" aria-label="Pairwise session evidence matrix">
+          <thead>
+            <tr>
+              <th scope="col">session</th>
+              {sessions.map((session) => (
+                <th scope="col" key={session.id} title={session.id}>
+                  {sessionLabel(session.id)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {sessions.map((row) => (
+              <tr key={row.id}>
+                <th scope="row" title={row.id}>{sessionLabel(row.id)}</th>
+                {sessions.map((column) => {
+                  if (row.id === column.id) {
+                    return <td key={column.id} className="matrix-self">·</td>;
+                  }
+                  const edge = byPair.get(`${row.id}|${column.id}`);
+                  if (!edge) return <td key={column.id} className="matrix-none" />;
+                  const strength = Math.max(0.08, Math.min(0.86, edge.confidence * 0.8));
+                  return (
+                    <td
+                      key={column.id}
+                      className="matrix-cell active"
+                      // The ramp is mixed from the theme tokens, so the same
+                      // confidence reads as teal on the dark field and as a
+                      // pale wash on paper. `--cell-mix` bounds each theme's
+                      // range; the cell's own number carries the value.
+                      style={{
+                        background: `color-mix(in srgb, var(--cyan) calc(${strength} * var(--cell-mix)), var(--surface-solid))`,
+                      }}
+                      title={`${row.id} × ${column.id} · ${edge.status} · confidence ${edge.confidence.toFixed(3)} · score ${edge.score.toFixed(3)}`}
+                    >
+                      {edge.confidence.toFixed(2)}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="family-profile">
+        <div>
+          <h3>Family contribution · linked edges</h3>
+          {linked.length === 0 && <p className="muted small">No linked edge yet.</p>}
+          {linked.length > 0 && (
+            <ul className="family-bars">
+              {families.map((family) => (
+                <li key={family.name}>
+                  <span>{family.name}</span>
+                  <span className="family-track">
+                    <span style={{ width: `${Math.round(family.score * 100)}%` }} />
+                  </span>
+                  <strong>{family.score.toFixed(2)}</strong>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <div className="matrix-legend">
+          <h3>Reading the grid</h3>
+          <p><span className="legend-swatch linked" /> linked · confidence ≥ 0.70 with an anchor</p>
+          <p><span className="legend-swatch none" /> no stored edge · below the evidence floor</p>
+          <p className="muted small">
+            Confidence is an evidence index, not a probability of shared identity.
+            Empty cells are a finding, not missing UI: the pair did not clear the store threshold.
+          </p>
+          <p className="muted small">{detail.observation.note}</p>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function KillChain({ coverage }: { coverage: CampaignDetail["kill_chain"] }) {
+  const breadth = Math.round(coverage.coverage * 100);
+  const weighted = Math.round(coverage.risk_weighted_coverage * 100);
+  return (
+    <Card title="Kill-chain coverage">
+      <p className="muted small">
+        Tactics evidenced by this campaign's recorded activity. Breadth counts how
+        many tactics appeared; risk-weighted coverage counts how much consequence
+        they carry. Neither is a prediction of intent.
+      </p>
+      <div className="killchain-summary">
+        <span><strong>{weighted}%</strong> risk-weighted coverage</span>
+        <span><strong>{coverage.observed.length}/{coverage.tactics.length}</strong> tactics observed</span>
+        <span><strong>{coverage.furthest?.label ?? "none"}</strong> furthest tactic</span>
+        <span><strong>{coverage.asset_criticality}</strong> asset criticality</span>
+      </div>
+      <div className="killchain-meter" aria-label={`${weighted}% risk-weighted coverage`}>
+        <span style={{ width: `${weighted}%` }} />
+      </div>
+      <ol className="killchain-rail">
+        {coverage.tactics.map((tactic) => (
+          <li
+            key={tactic.key}
+            className={tactic.observed ? "observed" : "unobserved"}
+            title={tactic.observed ? tactic.evidence.join(" · ") : "not observed in this campaign"}
+          >
+            <span className="killchain-weight">{tactic.weight}</span>
+            <span className="killchain-label">{tactic.label}</span>
+            <span className="killchain-meta">
+              {tactic.observed ? `${tactic.session_count} session${tactic.session_count === 1 ? "" : "s"}` : "not observed"}
+            </span>
+          </li>
+        ))}
+      </ol>
+      <div className="killchain-foot">
+        <span className="muted small">{breadth}% breadth · weights 1–5 by consequence</span>
+        <span className="muted small">{coverage.note}</span>
+      </div>
+    </Card>
+  );
+}
+
+function EvidencePlan({ plan }: { plan: CampaignDetail["evidence_plan"] }) {
+  const peak = Math.max(...plan.items.map((item) => item.weight_at_stake), 0.001);
+  return (
+    <Card title="Evidence acquisition plan">
+      <p className="muted small">
+        What the campaign could not see, ranked by how many linked pairs the gap
+        weakens. Each row is a collection task an analyst can act on today.
+      </p>
+      {plan.items.length === 0 && (
+        <p className="muted small">
+          Every recorded evidence family is present on this campaign. The remaining
+          uncertainty is measurement noise, not a missing source.
+        </p>
+      )}
+      {plan.items.length > 0 && (
+        <div className="plan-list">
+          {plan.items.map((item) => (
+            <article key={item.family} className="plan-item">
+              <header>
+                <strong>{item.family}</strong>
+                <span className="mono small">
+                  missing on {item.missing_on_edges} pair{item.missing_on_edges === 1 ? "" : "s"}
+                </span>
+              </header>
+              <span className="plan-track">
+                <span style={{ width: `${Math.round((item.weight_at_stake / peak) * 100)}%` }} />
+              </span>
+              <p className="muted small">
+                weight at stake (summed over pairs) {item.weight_at_stake.toFixed(2)} · {item.guidance}
+              </p>
+              {item.components.length > 0 && (
+                <p className="mono small muted">missing: {item.components.join(", ")}</p>
+              )}
+            </article>
+          ))}
+        </div>
+      )}
+      {plan.absent_families.length > 0 && (
+        <div className="plan-absent">
+          <span className="muted small">Never observed on this campaign:</span>
+          {plan.absent_families.map((family) => (
+            <span key={family} className="chip mono">{family}</span>
+          ))}
+        </div>
+      )}
+      <p className="muted small">{plan.note}</p>
+    </Card>
   );
 }

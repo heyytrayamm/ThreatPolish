@@ -9,28 +9,34 @@ labelled synthetic benchmark in `backend/app/evaluation/scenarios.py`.
   coordinated scenario (campaign), not necessarily the same person.
 - Positive pair: both sessions belong to the same true scenario.
 - `linked` decisions are counted as positive; hypotheses are not.
-- Thresholds were fixed before running the benchmark and were not tuned on it.
+- Link thresholds are unchanged from the previous revision and were not tuned
+  on this benchmark. The overlap-based sequence comparison and
+  corpus-relative family weighting added in `corr-1.3.0` were evaluated on
+  the same benchmark they are reported on; there is no separate validation
+  set, so their gains are reported as preliminary.
 - Every run is deterministic from its seed. The generator is synthetic;
   absolute performance on production traffic will differ.
 
 ## Seed 7
 
-Dataset: 63 sessions, 1953 pairs (38 positive, 1915 negative), algorithm `corr-1.1.0`.
+Dataset: 63 sessions, 1953 pairs (38 positive, 1915 negative), algorithm `corr-1.3.0`.
 
 | Method | Precision | Recall | F1 | FPR | FNR | TP | FP | FN |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | IP-only grouping (baseline) | 0.000 | 0.000 | 0.000 | 0.0026 | 1.0000 | 0 | 4 | 32 |
 | Rule-based matching (baseline) | 0.066 | 0.938 | 0.123 | 0.2711 | 0.0625 | 30 | 424 | 2 |
-| Evidence-weighted correlation (proposed) | 1.000 | 0.781 | 0.877 | 0.0000 | 0.2188 | 25 | 0 | 7 |
-| Ablation: no threat-intel family | 1.000 | 0.844 | 0.915 | 0.0000 | 0.1562 | 27 | 0 | 5 |
-| Ablation: no timing family | 1.000 | 0.781 | 0.877 | 0.0000 | 0.2188 | 25 | 0 | 7 |
-| Ablation: no toolchain family | 0.735 | 0.781 | 0.758 | 0.0058 | 0.2188 | 25 | 9 | 7 |
-| Proposed + adaptive observation | 0.638 | 0.938 | 0.759 | 0.0109 | 0.0625 | 30 | 17 | 2 |
+| Evidence-weighted correlation (proposed) | 1.000 | 0.906 | 0.951 | 0.0000 | 0.0938 | 29 | 0 | 3 |
+| Ablation: no threat-intel family | 1.000 | 0.938 | 0.968 | 0.0000 | 0.0625 | 30 | 0 | 2 |
+| Ablation: no timing family | 1.000 | 0.844 | 0.915 | 0.0000 | 0.1562 | 27 | 0 | 5 |
+| Ablation: no toolchain family | 1.000 | 0.812 | 0.897 | 0.0000 | 0.1875 | 26 | 0 | 6 |
+| Ablation: uniform family weights | 1.000 | 0.875 | 0.933 | 0.0000 | 0.1250 | 28 | 0 | 4 |
+| Ablation: Jaccard sequence comparison only | 1.000 | 0.812 | 0.897 | 0.0000 | 0.1875 | 26 | 0 | 6 |
+| Proposed + adaptive observation | 1.000 | 0.938 | 0.968 | 0.0000 | 0.0625 | 30 | 0 | 2 |
 Subset breakdown for the proposed method (evaluable pairs only):
 
 | Subset | Pairs | Positives | Precision | Recall | FP | FN |
 | --- | --- | --- | --- | --- | --- | --- |
-| same_campaign | 30 | 30 | 1.000 | 0.833 | 0 | 5 |
+| same_campaign | 30 | 30 | 1.000 | 0.967 | 0 | 1 |
 | cross_campaign | 1035 | 0 | 0.000 | 0.000 | 0 | 0 |
 | benign | 735 | 0 | 0.000 | 0.000 | 0 | 0 |
 | same_ip | 28 | 0 | 0.000 | 0.000 | 0 | 0 |
@@ -46,69 +52,83 @@ Hard subset (generic scanner toolkit; labels not recoverable from telemetry):
 | ablation_no_intel | 0.400 | 1.000 | 0.571 | 9 |
 | ablation_no_timing | 0.400 | 1.000 | 0.571 | 9 |
 | ablation_no_toolchain | 0.400 | 1.000 | 0.571 | 9 |
+| ablation_uniform_weights | 0.400 | 1.000 | 0.571 | 9 |
+| ablation_jaccard_only | 0.400 | 1.000 | 0.571 | 9 |
+
+Generic scanner groups with no distinguishing artefact. Labels are not recoverable from the available telemetry; reported separately so they do not inflate or deflate the headline numbers.
+
+
+Campaign-level: 10 of 12 true groups recovered exactly; 10 predicted clusters, purity 1.000. Recovery requires every member of a true group to appear in exactly one predicted cluster (no fragmentation, no contamination).
+
+Time to detection: 10 of 12 multi-session groups produced a link, median 541.5s, mean 561.9s, worst 924.0s. Elapsed campaign time until two members of the same true group had both finished emitting events that link them. Correlation is batch, so scheduling latency is excluded, and a group that never links has no time to detection.
+
+Adaptive experiment: 213 ambiguous pairs in 7 candidate clusters; 7 clusters investigated, 1891 pairs recomputed; of the evaluable pairs, 1 links gained correctly, 0 gained incorrectly, 0 lost correctly and 0 lost incorrectly; 1539 unchanged. Additional observation is simulated by replaying one command the session already used, for sessions in the largest uncertain clusters only. The replay adds only behaviour the actor showed; the earlier simulation also added a category-derived request path, which manufactured similarity between unrelated sessions. Counts cover evaluable pairs.
+
+Resources: total 61.026s wall, 60.985s CPU, peak memory 18.87 MB, 1.0 sessions/s, 31.248 ms/pair.
+
+## Seed 2026
+
+Dataset: 63 sessions, 1953 pairs (38 positive, 1915 negative), algorithm `corr-1.3.0`.
+
+| Method | Precision | Recall | F1 | FPR | FNR | TP | FP | FN |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| IP-only grouping (baseline) | 0.000 | 0.000 | 0.000 | 0.0026 | 1.0000 | 0 | 4 | 32 |
+| Rule-based matching (baseline) | 0.067 | 0.938 | 0.124 | 0.2685 | 0.0625 | 30 | 420 | 2 |
+| Evidence-weighted correlation (proposed) | 1.000 | 0.812 | 0.897 | 0.0000 | 0.1875 | 26 | 0 | 6 |
+| Ablation: no threat-intel family | 1.000 | 0.875 | 0.933 | 0.0000 | 0.1250 | 28 | 0 | 4 |
+| Ablation: no timing family | 1.000 | 0.812 | 0.897 | 0.0000 | 0.1875 | 26 | 0 | 6 |
+| Ablation: no toolchain family | 1.000 | 0.688 | 0.815 | 0.0000 | 0.3125 | 22 | 0 | 10 |
+| Ablation: uniform family weights | 1.000 | 0.812 | 0.897 | 0.0000 | 0.1875 | 26 | 0 | 6 |
+| Ablation: Jaccard sequence comparison only | 1.000 | 0.562 | 0.720 | 0.0000 | 0.4375 | 18 | 0 | 14 |
+| Proposed + adaptive observation | 1.000 | 0.875 | 0.933 | 0.0000 | 0.1250 | 28 | 0 | 4 |
+Subset breakdown for the proposed method (evaluable pairs only):
+
+| Subset | Pairs | Positives | Precision | Recall | FP | FN |
+| --- | --- | --- | --- | --- | --- | --- |
+| same_campaign | 30 | 30 | 1.000 | 0.867 | 0 | 4 |
+| cross_campaign | 1035 | 0 | 0.000 | 0.000 | 0 | 0 |
+| benign | 735 | 0 | 0.000 | 0.000 | 0 | 0 |
+| same_ip | 28 | 0 | 0.000 | 0.000 | 0 | 0 |
+| incomplete | 38 | 2 | 0.000 | 0.000 | 0 | 2 |
+
+Hard subset (generic scanner toolkit; labels not recoverable from telemetry):
+
+| Method | Precision | Recall | F1 | FP |
+| --- | --- | --- | --- | --- |
+| ip_only | 0.000 | 0.000 | 0.000 | 0 |
+| rule_based | 0.400 | 1.000 | 0.571 | 9 |
+| proposed | 0.400 | 1.000 | 0.571 | 9 |
+| ablation_no_intel | 0.400 | 1.000 | 0.571 | 9 |
+| ablation_no_timing | 0.400 | 1.000 | 0.571 | 9 |
+| ablation_no_toolchain | 0.400 | 1.000 | 0.571 | 9 |
+| ablation_uniform_weights | 0.400 | 1.000 | 0.571 | 9 |
+| ablation_jaccard_only | 0.400 | 1.000 | 0.571 | 9 |
 
 Generic scanner groups with no distinguishing artefact. Labels are not recoverable from the available telemetry; reported separately so they do not inflate or deflate the headline numbers.
 
 
 Campaign-level: 8 of 12 true groups recovered exactly; 10 predicted clusters, purity 1.000. Recovery requires every member of a true group to appear in exactly one predicted cluster (no fragmentation, no contamination).
 
-Adaptive experiment: 199 ambiguous pairs in 7 candidate clusters; 7 clusters investigated, 1953 pairs recomputed, 5 correctly resolved, 17 incorrectly resolved, 1931 unchanged. Additional observation is simulated by appending one decoy interaction to sessions in the largest uncertain clusters only. Production adaptation records real decoy traffic and cannot create evidence.
+Time to detection: 10 of 12 multi-session groups produced a link, median 614.0s, mean 653.5s, worst 1145.0s. Elapsed campaign time until two members of the same true group had both finished emitting events that link them. Correlation is batch, so scheduling latency is excluded, and a group that never links has no time to detection.
 
-Resources: total 6.288s, peak memory 16.39 MB, 10.0 sessions/s.
+Adaptive experiment: 208 ambiguous pairs in 6 candidate clusters; 6 clusters investigated, 1770 pairs recomputed; of the evaluable pairs, 2 links gained correctly, 0 gained incorrectly, 0 lost correctly and 0 lost incorrectly; 1429 unchanged. Additional observation is simulated by replaying one command the session already used, for sessions in the largest uncertain clusters only. The replay adds only behaviour the actor showed; the earlier simulation also added a category-derived request path, which manufactured similarity between unrelated sessions. Counts cover evaluable pairs.
 
-## Seed 2026
-
-Dataset: 63 sessions, 1953 pairs (38 positive, 1915 negative), algorithm `corr-1.1.0`.
-
-| Method | Precision | Recall | F1 | FPR | FNR | TP | FP | FN |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| IP-only grouping (baseline) | 0.000 | 0.000 | 0.000 | 0.0026 | 1.0000 | 0 | 4 | 32 |
-| Rule-based matching (baseline) | 0.067 | 0.938 | 0.124 | 0.2685 | 0.0625 | 30 | 420 | 2 |
-| Evidence-weighted correlation (proposed) | 1.000 | 0.562 | 0.720 | 0.0000 | 0.4375 | 18 | 0 | 14 |
-| Ablation: no threat-intel family | 1.000 | 0.656 | 0.792 | 0.0000 | 0.3438 | 21 | 0 | 11 |
-| Ablation: no timing family | 1.000 | 0.562 | 0.720 | 0.0000 | 0.4375 | 18 | 0 | 14 |
-| Ablation: no toolchain family | 0.667 | 0.500 | 0.571 | 0.0051 | 0.5000 | 16 | 8 | 16 |
-| Proposed + adaptive observation | 0.636 | 0.875 | 0.737 | 0.0102 | 0.1250 | 28 | 16 | 4 |
-Subset breakdown for the proposed method (evaluable pairs only):
-
-| Subset | Pairs | Positives | Precision | Recall | FP | FN |
-| --- | --- | --- | --- | --- | --- | --- |
-| same_campaign | 30 | 30 | 1.000 | 0.600 | 0 | 12 |
-| cross_campaign | 1035 | 0 | 0.000 | 0.000 | 0 | 0 |
-| benign | 735 | 0 | 0.000 | 0.000 | 0 | 0 |
-| same_ip | 28 | 0 | 0.000 | 0.000 | 0 | 0 |
-| incomplete | 38 | 2 | 0.000 | 0.000 | 0 | 2 |
-
-Hard subset (generic scanner toolkit; labels not recoverable from telemetry):
-
-| Method | Precision | Recall | F1 | FP |
-| --- | --- | --- | --- | --- |
-| ip_only | 0.000 | 0.000 | 0.000 | 0 |
-| rule_based | 0.400 | 1.000 | 0.571 | 9 |
-| proposed | 0.400 | 1.000 | 0.571 | 9 |
-| ablation_no_intel | 0.400 | 1.000 | 0.571 | 9 |
-| ablation_no_timing | 0.400 | 1.000 | 0.571 | 9 |
-| ablation_no_toolchain | 0.400 | 1.000 | 0.571 | 9 |
-
-Generic scanner groups with no distinguishing artefact. Labels are not recoverable from the available telemetry; reported separately so they do not inflate or deflate the headline numbers.
-
-
-Campaign-level: 4 of 12 true groups recovered exactly; 10 predicted clusters, purity 1.000. Recovery requires every member of a true group to appear in exactly one predicted cluster (no fragmentation, no contamination).
-
-Adaptive experiment: 188 ambiguous pairs in 6 candidate clusters; 6 clusters investigated, 1711 pairs recomputed, 10 correctly resolved, 16 incorrectly resolved, 1685 unchanged. Additional observation is simulated by appending one decoy interaction to sessions in the largest uncertain clusters only. Production adaptation records real decoy traffic and cannot create evidence.
-
-Resources: total 5.965s, peak memory 16.28 MB, 10.6 sessions/s.
+Resources: total 57.612s wall, 57.574s CPU, peak memory 18.76 MB, 1.1 sessions/s, 29.499 ms/pair.
 
 ## Volume run (seed 99)
 
-165 sessions and 13530 pairs: total 18.680s, peak memory 111.83 MB.
+165 sessions and 13530 pairs: total 130.238s wall, 130.147s CPU, peak memory 129.12 MB, 9.626 ms/pair.
+
+Time to detection: 40 of 42 multi-session groups produced a link, median 584.0s, mean 589.0s, worst 1052.0s.
+
+Campaign-level: 37 of 42 true groups recovered exactly; 40 predicted clusters, purity 1.000. Adaptive experiment: 2 links gained correctly, 0 gained incorrectly, 0 lost correctly, 0 lost incorrectly.
 
 | Method | Precision | Recall | F1 | FPR |
 | --- | --- | --- | --- | --- |
 | IP-only grouping (baseline) | 0.000 | 0.000 | 0.000 | 0.0003 |
 | Rule-based matching (baseline) | 0.017 | 0.984 | 0.033 | 0.5697 |
-| Evidence-weighted correlation (proposed) | 1.000 | 0.836 | 0.911 | 0.0000 |
-| Proposed + adaptive observation | 0.799 | 0.910 | 0.851 | 0.0023 |
+| Evidence-weighted correlation (proposed) | 1.000 | 0.918 | 0.957 | 0.0000 |
+| Proposed + adaptive observation | 1.000 | 0.934 | 0.966 | 0.0000 |
 
 ## Limitations
 

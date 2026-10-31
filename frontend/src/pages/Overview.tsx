@@ -1,8 +1,15 @@
 import { useEffect, useState } from "react";
-import { api, User } from "../api";
+import { api, SessionRecord, User } from "../api";
+import { describeSignInAnomaly } from "../components/SessionTable";
 import { Badge, Card, Empty, ErrorBox, Field, formatTime, Loading, can, useAsync } from "../ui";
 
-export default function Overview({ user }: { user: User }) {
+export default function Overview({
+  user,
+  onOpenRetention,
+}: {
+  user: User;
+  onOpenRetention: () => void;
+}) {
   const [hours, setHours] = useState(24);
   const [tick, setTick] = useState(0);
   const [running, setRunning] = useState(false);
@@ -17,6 +24,25 @@ export default function Overview({ user }: { user: User }) {
   const sources = useAsync(() => api.sources(), [tick]);
   const latest = useAsync(() => api.latestRun(), [tick]);
   const campaigns = useAsync(() => api.campaigns(), [tick]);
+  const sessions = useAsync(() => api.sessions(10), [tick]);
+  const audit = useAsync(
+    () => (user.role === "admin" ? api.audit() : Promise.resolve(null)),
+    [user.role, tick],
+  );
+  // Retention counts scan the event and graph tables, so they refresh far less
+  // often than the dashboard metrics. Analysts can read the status without the
+  // account and credential panels that Administration exposes.
+  const canReadRetention = user.role === "admin" || user.role === "analyst";
+  const [retentionTick, setRetentionTick] = useState(0);
+  useEffect(() => {
+    if (!canReadRetention) return;
+    const timer = window.setInterval(() => setRetentionTick((value) => value + 1), 60000);
+    return () => window.clearInterval(timer);
+  }, [canReadRetention]);
+  const retention = useAsync(
+    () => (canReadRetention ? api.retention() : Promise.resolve(null)),
+    [canReadRetention, retentionTick],
+  );
 
   async function runCorrelation() {
     setRunning(true);
@@ -37,11 +63,20 @@ export default function Overview({ user }: { user: User }) {
 
   const data = summary.data;
   const maxHour = Math.max(1, ...(data?.hourly.map((point) => point.count) ?? [1]));
+  const ownAlerts = (sessions.data?.sessions ?? []).filter(
+    (entry: SessionRecord) => entry.anomaly,
+  );
+  const fleetAlerts = (audit.data?.items ?? []).filter(
+    (entry) => entry.action === "auth.signin.anomaly",
+  );
+  const severeEvents = (data?.by_severity.high ?? 0) + (data?.by_severity.critical ?? 0);
+  const severeShare = data?.total ? severeEvents / data.total : 0;
 
   return (
     <div className="page">
       <header className="page-head">
         <div>
+          <span className="eyebrow">Live telemetry envelope</span>
           <h1>Overview</h1>
           <p className="muted">Live telemetry, correlation status and campaign candidates.</p>
         </div>
@@ -65,11 +100,55 @@ export default function Overview({ user }: { user: User }) {
       <ErrorBox message={summary.error ?? sources.error ?? campaigns.error} />
       {notice && <div className="notice">{notice}</div>}
 
+      {retention.data?.overdue && (
+        <div className="error" role="alert">
+          <strong>Retention is overdue.</strong> The backlog is older than the{" "}
+          {retention.data.grace_days}-day grace window. Check the scheduled retention service.{" "}
+          <button
+            type="button"
+            className="secondary small alert-action"
+            onClick={onOpenRetention}
+          >
+            Open Retention
+          </button>
+        </div>
+      )}
+
+      {(ownAlerts.length > 0 || fleetAlerts.length > 0) && (
+        <Card title="Sign-in attention">
+          {ownAlerts.length > 0 && (
+            <div className="error" role="alert">
+              <strong>Unusual sign-in.</strong>{" "}
+              {describeSignInAnomaly(ownAlerts[0].anomaly as NonNullable<SessionRecord["anomaly"]>)}
+            </div>
+          )}
+          {fleetAlerts.length > 0 && (
+            <p className="muted small">
+              {fleetAlerts.length} sign-in {fleetAlerts.length === 1 ? "alert" : "alerts"} recorded in the
+              recent audit trail. Open an account's sessions under Administration to review them.
+            </p>
+          )}
+        </Card>
+      )}
+
       <div className="metrics">
-        <Metric label="Events" value={data?.total ?? 0} />
-        <Metric label="Severe events" value={(data?.by_severity.high ?? 0) + (data?.by_severity.critical ?? 0)} />
-        <Metric label="Sessions correlated" value={latest.data?.run?.sessions ?? 0} />
-        <Metric label="Campaign candidates" value={campaigns.data?.items.length ?? 0} />
+        <Metric label="Events" value={data?.total ?? 0} hint={`last ${hours}h`} />
+        <Metric
+          label="Severe events"
+          value={severeEvents}
+          hint={data?.total ? `${Math.round(severeShare * 100)}% of events` : "no events in window"}
+          meter={severeShare}
+        />
+        <Metric
+          label="Sessions correlated"
+          value={latest.data?.run?.sessions ?? 0}
+          hint={latest.data?.run ? "latest correlation run" : "no run recorded"}
+        />
+        <Metric
+          label="Campaign candidates"
+          value={campaigns.data?.items.length ?? 0}
+          hint="tracked in this window"
+        />
       </div>
 
       <div className="grid two">
@@ -204,11 +283,29 @@ export default function Overview({ user }: { user: User }) {
   );
 }
 
-function Metric({ label, value }: { label: string; value: number }) {
+function Metric({
+  label,
+  value,
+  hint,
+  meter,
+}: {
+  label: string;
+  value: number;
+  hint: string;
+  meter?: number;
+}) {
   return (
     <div className="metric">
       <span className="muted small">{label}</span>
       <strong>{value}</strong>
+      <span className="metric-hint">{hint}</span>
+      {/* Only gauges with a real fraction behind them carry a charge bar; the
+          hint above states the same number in words. */}
+      {meter !== undefined && (
+        <span className="metric-meter" aria-hidden="true">
+          <span style={{ width: `${Math.round(Math.min(1, Math.max(0, meter)) * 100)}%` }} />
+        </span>
+      )}
     </div>
   );
 }

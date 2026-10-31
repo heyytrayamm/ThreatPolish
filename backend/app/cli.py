@@ -7,6 +7,9 @@ Examples:
     python -m app.cli cowrie-tail --path /var/log/cowrie/cowrie.json
     python -m app.cli correlate --window-hours 72
     python -m app.cli purge
+    python -m app.cli purge-graph
+    python -m app.cli retention
+    python -m app.cli seed-demo
 """
 
 from __future__ import annotations
@@ -17,17 +20,31 @@ import sys
 
 from .core.config import get_settings
 from .core.logging import configure_logging, get_logger
-from .core.security import iso, utcnow
-from .db.database import connection, init_db
-from .db.schema import events
+from .db.database import init_db
 
 log = get_logger("cli")
+
+
+def _resolve_password(given: str | None) -> str:
+    """The password from the flag, or a prompt when there is a terminal.
+
+    Without this check a script or a CI step falls into ``getpass`` with no
+    terminal, which warns about echoing and then fails with an empty message.
+    """
+    if given:
+        return given
+    if not sys.stdin.isatty():
+        raise ValueError(
+            "no password given and stdin is not a terminal; pass --password <value> "
+            "(or set TP_BOOTSTRAP_ADMIN_PASSWORD for the API's bootstrap path)"
+        )
+    return getpass.getpass("Password: ")
 
 
 def _create_admin(args: argparse.Namespace) -> int:
     from .auth.users import create_user
 
-    password = args.password or getpass.getpass("Password: ")
+    password = _resolve_password(args.password)
     user = create_user(
         email=args.email, name=args.name, role="admin", password=password
     )
@@ -38,7 +55,7 @@ def _create_admin(args: argparse.Namespace) -> int:
 def _create_user(args: argparse.Namespace) -> int:
     from .auth.users import create_user
 
-    password = args.password or getpass.getpass("Password: ")
+    password = _resolve_password(args.password)
     user = create_user(email=args.email, name=args.name, role=args.role, password=password)
     print(f"created {user['role']} {user['email']} ({user['id']})")
     return 0
@@ -101,17 +118,89 @@ def _correlate(args: argparse.Namespace) -> int:
     return 0
 
 
-def _purge(args: argparse.Namespace) -> int:
-    settings = get_settings()
+def _purge(_: argparse.Namespace) -> int:
+    from .db.retention import purge_events
+
     init_db()
-    cutoff = utcnow()
-    with connection() as conn:
-        result = conn.execute(
-            events.delete().where(events.c.retention_until < iso(cutoff))
-        )
-        removed = int(result.rowcount or 0)
-    print(f"removed {removed} events past the {settings.retention_days}-day retention window")
+    result = purge_events()
+    print(
+        f"removed {result['events']} events past the {result['days']}-day "
+        f"retention window (cutoff {result['cutoff']})"
+    )
     return 0
+
+
+def _purge_graph(args: argparse.Namespace) -> int:
+    from .db.retention import purge_graph
+
+    init_db()
+    result = purge_graph(days=args.days)
+    print(
+        f"removed {result['edges']} retired edges, {result['observations']} stale "
+        f"observations and {result['nodes']} orphan nodes older than "
+        f"{result['days']} days (cutoff {result['cutoff']})"
+    )
+    return 0
+
+
+def _retention(args: argparse.Namespace) -> int:
+    from .db.retention import run_retention
+
+    init_db()
+    trigger = "scheduled" if args.scheduled else "manual"
+    result = run_retention(trigger=trigger)
+    events_result = result["events"]
+    graph_result = result["graph"]
+    print(
+        f"retention run {result['run_id']} ({trigger}, {result['duration_ms']} ms): "
+        f"removed {events_result['events']} events past the "
+        f"{events_result['days']}-day window (cutoff {events_result['cutoff']}); "
+        f"removed {graph_result['edges']} retired edges, "
+        f"{graph_result['observations']} stale observations and "
+        f"{graph_result['nodes']} orphan nodes past the "
+        f"{graph_result['days']}-day graph window (cutoff {graph_result['cutoff']})"
+    )
+    return 0
+
+
+def _seed_demo(args: argparse.Namespace) -> int:
+    from .demo import seed_demo_data
+
+    init_db()
+    result = seed_demo_data(seed=args.seed)
+    already_present = (
+        result["events_accepted"] == 0
+        and result["events_duplicate"] == 0
+        and result["retention_runs_added"] == 0
+    )
+    lines = [
+        "Demo data already present:" if already_present else "Demo data ready:",
+        f"  events: {result['events_accepted']} accepted, "
+        f"{result['events_duplicate']} duplicate across "
+        f"{result['sessions_generated']} synthetic sessions",
+        f"  campaigns: {result['campaigns']}",
+        f"  retention history: {result['retention_runs_added']} runs added",
+    ]
+    if result["login"]:
+        lines += [
+            f"  sign in: {result['login']['email']}",
+            f"  password: {result['login']['password']}",
+            "  This password is shown once; set TP_DEMO_PASSWORD to choose your own.",
+        ]
+    else:
+        lines.append("  sign in with an existing account; accounts were left unchanged.")
+    print("\n".join(lines))
+    return 0
+
+
+def _display_db_url(url: str) -> str:
+    """Never print a password embedded in a database URL."""
+    from sqlalchemy.engine import make_url
+
+    try:
+        return make_url(url).render_as_string(hide_password=True)
+    except Exception:
+        return "<configured database>"
 
 
 def _status(_: argparse.Namespace) -> int:
@@ -120,9 +209,10 @@ def _status(_: argparse.Namespace) -> int:
     init_db()
     settings = get_settings()
     print(f"environment:   {settings.env}")
-    print(f"database:      {settings.db_url}")
+    print(f"database:      {_display_db_url(settings.db_url)}")
     print(f"schema:        {schema_version()}")
     print(f"retention:     {settings.retention_days} days")
+    print(f"graph:         {settings.graph_retention_days} days")
     print(f"decoy enabled: {settings.decoy_enabled}")
     return 0
 
@@ -169,6 +259,26 @@ def build_parser() -> argparse.ArgumentParser:
     purge = sub.add_parser("purge", help="delete events past the retention window")
     purge.set_defaults(func=_purge)
 
+    purge_graph = sub.add_parser(
+        "purge-graph", help="delete retired graph evidence past the graph retention window"
+    )
+    purge_graph.add_argument("--days", type=int, default=None)
+    purge_graph.set_defaults(func=_purge_graph)
+
+    retention = sub.add_parser(
+        "retention", help="run event and graph retention; safe to schedule"
+    )
+    retention.add_argument(
+        "--scheduled", action="store_true", help="mark this as the scheduled service run"
+    )
+    retention.set_defaults(func=_retention)
+
+    demo = sub.add_parser(
+        "seed-demo", help="populate development telemetry and retention history"
+    )
+    demo.add_argument("--seed", type=int, default=7)
+    demo.set_defaults(func=_seed_demo)
+
     status = sub.add_parser("status", help="show configuration and schema state")
     status.set_defaults(func=_status)
     return parser
@@ -180,7 +290,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return int(args.func(args))
     except Exception as exc:
-        print(f"error: {exc}", file=sys.stderr)
+        # Some failures (an EOF from a prompt, for instance) carry no message;
+        # the class name is then the only useful thing to print.
+        print(f"error: {exc or exc.__class__.__name__}", file=sys.stderr)
         return 1
 
 
