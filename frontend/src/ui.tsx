@@ -69,7 +69,7 @@ export function Badge({ value, kind = "severity" }: { value: string; kind?: "sev
 }
 
 export function formatTime(value: string | null | undefined): string {
-  if (!value) return "—";
+  if (!value) return "-";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString(undefined, {

@@ -1,9 +1,9 @@
 /* ==========================================================================
-   ThreatPolish dashboard — holographic HUD design language.
+   ThreatPolish dashboard - holographic HUD design language.
 
    The shell is a fixed analyst console: a deep-space field with a receding
    floor grid, hairline instrument panels with calibration ticks and corner
-   brackets, monospaced telemetry labels, and cyan/violet holographic light.
+   brackets, monospaced telemetry labels, and cyan/azure telemetry instrumentation.
    Panels are not cards floating on a page; they are instruments bolted into
    the console frame, so the language is square-cornered, thin and luminous
    rather than rounded and soft.
@@ -26,7 +26,7 @@
   --field-mid: #04080f;
   --field-low: #02040a;
   --bloom-a: rgba(76, 201, 255, 0.17);
-  --bloom-b: rgba(157, 139, 255, 0.18);
+  --bloom-b: rgba(76, 201, 255, 0.12);
   --bloom-c: rgba(95, 245, 224, 0.1);
   --floor-line: rgba(95, 245, 224, 0.13);
   --grid-line: rgba(140, 180, 220, 0.035);
@@ -46,7 +46,7 @@
   --ribbon-bg-flat: #03060d;
   --login-card-bg: linear-gradient(168deg, rgba(17, 34, 56, 0.92), rgba(4, 9, 18, 0.9));
   --login-card-bg-flat: linear-gradient(168deg, #112238, #040912);
-  --card-head-bg: linear-gradient(95deg, rgba(95, 245, 224, 0.07), rgba(157, 139, 255, 0.03) 62%, transparent);
+  --card-head-bg: linear-gradient(95deg, rgba(95, 245, 224, 0.07), rgba(76, 201, 255, 0.03) 62%, transparent);
   --surface-solid: #08111e;
   --control-bg: rgba(6, 14, 26, 0.78);
   --sunken: rgba(2, 6, 13, 0.88);
@@ -61,7 +61,7 @@
   /* light */
   --cyan-rgb: 95, 245, 224;
   --azure-rgb: 76, 201, 255;
-  --violet-rgb: 157, 139, 255;
+  --violet-rgb: 56, 189, 248;
   --cyan: rgb(var(--cyan-rgb));
   --azure: rgb(var(--azure-rgb));
   --violet: rgb(var(--violet-rgb));
@@ -69,7 +69,7 @@
   --mark-ink: #02131a;
   --title-a: #ffffff;
   --title-b: #b9f2ff;
-  --title-c: #9d8bff;
+  --title-c: #7ed4f7;
   --btn-a: rgba(95, 245, 224, 0.94);
   --btn-b: rgba(76, 201, 255, 0.94);
   --btn-ink: #02131a;
@@ -104,7 +104,7 @@
   --status-wait-ink: #ffdb9b;
   --status-dead-ink: #ffb0bf;
   --status-flat-ink: #cfdcea;
-  --status-soft-ink: #cbc2ff;
+  --status-soft-ink: #a5d8f7;
 
   /* data */
   --data-1: rgb(var(--cyan-rgb));
@@ -121,7 +121,7 @@
   --node-ip: #7f93ab;
   --node-campaign: #ffb35c;
   --node-asset: #5ff5e0;
-  --node-indicator: #9d8bff;
+  --node-indicator: #38bdf8;
   /* Bounded so the number inside the brightest cell keeps 4.5:1 against
      `--cell-ink`; `Campaigns.tsx` multiplies it by a strength of at most 0.86. */
   --cell-mix: 50%;
@@ -150,7 +150,7 @@
   --field-mid: #e7eef7;
   --field-low: #dfe8f3;
   --bloom-a: rgba(3, 105, 161, 0.1);
-  --bloom-b: rgba(109, 40, 217, 0.09);
+  --bloom-b: rgba(3, 105, 161, 0.06);
   --bloom-c: rgba(15, 118, 110, 0.07);
   --floor-line: rgba(15, 118, 110, 0.16);
   --grid-line: rgba(74, 96, 122, 0.06);
@@ -169,7 +169,7 @@
   --ribbon-bg-flat: #eef3f9;
   --login-card-bg: linear-gradient(168deg, #ffffff, #eef4fb);
   --login-card-bg-flat: linear-gradient(168deg, #ffffff, #eef4fb);
-  --card-head-bg: linear-gradient(95deg, rgba(15, 118, 110, 0.09), rgba(109, 40, 217, 0.04) 62%, transparent);
+  --card-head-bg: linear-gradient(95deg, rgba(15, 118, 110, 0.09), rgba(3, 105, 161, 0.04) 62%, transparent);
   --surface-solid: #ffffff;
   --control-bg: rgba(255, 255, 255, 0.94);
   --sunken: rgba(244, 248, 252, 0.96);
@@ -182,12 +182,12 @@
 
   --cyan-rgb: 15, 118, 110;
   --azure-rgb: 3, 105, 161;
-  --violet-rgb: 109, 40, 217;
+  --violet-rgb: 3, 105, 161;
   --edge: rgba(var(--cyan-rgb), 0.5);
   --mark-ink: #f8ffff;
   --title-a: #071726;
   --title-b: #0f5f6e;
-  --title-c: #5b21b6;
+  --title-c: #0369a1;
   --btn-a: rgba(15, 118, 110, 0.96);
   --btn-b: rgba(3, 105, 161, 0.96);
   --btn-ink: #f7ffff;
@@ -217,7 +217,7 @@
   --status-wait-ink: #854d0e;
   --status-dead-ink: #9f1239;
   --status-flat-ink: #475569;
-  --status-soft-ink: #5b21b6;
+  --status-soft-ink: #0369a1;
 
   --bar-label: #46596e;
   --graph-bg: radial-gradient(520px 240px at 50% 0%, rgba(var(--azure-rgb), 0.08), transparent 72%), #ffffff;
@@ -230,7 +230,7 @@
   --node-ip: #64748b;
   --node-campaign: #b45309;
   --node-asset: #0f766e;
-  --node-indicator: #6d28d9;
+  --node-indicator: #0284c7;
   /* Cells stay readable in daylight by capping the mix and inking them dark. */
   --cell-mix: 55%;
   --cell-base: rgba(var(--cyan-rgb), 0.22);
@@ -344,7 +344,7 @@ h1::before {
   top: 0.12em;
   bottom: 0.12em;
   width: 3px;
-  background: linear-gradient(180deg, var(--cyan), rgba(var(--violet-rgb), 0.35));
+  background: linear-gradient(180deg, var(--cyan), rgba(var(--azure-rgb), 0.35));
   box-shadow: 0 0 14px rgba(var(--cyan-rgb), 0.75);
 }
 
@@ -499,7 +499,7 @@ input[type="date"] { font-family: var(--font-mono); font-size: 0.8rem; }
   position: absolute;
   inset: 0 0 auto 0;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(var(--cyan-rgb), 0.6), rgba(var(--violet-rgb), 0.4), transparent);
+  background: linear-gradient(90deg, transparent, rgba(var(--cyan-rgb), 0.6), rgba(var(--azure-rgb), 0.4), transparent);
 }
 
 .brand { display: flex; gap: 0.7rem; align-items: center; padding: 0.1rem 0.15rem; }
@@ -509,7 +509,7 @@ input[type="date"] { font-family: var(--font-mono); font-size: 0.8rem; }
   display: grid;
   place-items: center;
   border-radius: var(--radius-sm);
-  background: linear-gradient(150deg, var(--cyan), var(--azure) 48%, var(--violet));
+  background: linear-gradient(150deg, var(--cyan), var(--azure));
   color: var(--mark-ink);
   font-weight: 800;
   font-size: 0.8rem;
@@ -531,8 +531,8 @@ input[type="date"] { font-family: var(--font-mono); font-size: 0.8rem; }
 }
 .brand-sigil::after {
   inset: -11px;
-  border: 1px solid rgba(var(--violet-rgb), 0.22);
-  border-top-color: rgba(var(--violet-rgb), 0.7);
+  border: 1px solid rgba(var(--azure-rgb), 0.22);
+  border-top-color: rgba(var(--azure-rgb), 0.7);
   animation: spin 12s linear infinite reverse;
 }
 .brand-logo {
@@ -931,7 +931,7 @@ label.toggle input { width: auto; accent-color: var(--cyan); }
   position: absolute;
   inset: 0 auto 0 0;
   width: 2px;
-  background: linear-gradient(180deg, var(--cyan), rgba(var(--violet-rgb), 0.2));
+  background: linear-gradient(180deg, var(--cyan), rgba(var(--azure-rgb), 0.2));
   box-shadow: 0 0 16px rgba(var(--cyan-rgb), 0.6);
 }
 .strip-label {
@@ -1012,7 +1012,7 @@ tbody tr:hover td { color: var(--ink-bright); }
   background: rgba(var(--slate-rgb), 0.1); color: var(--status-flat-ink); border-color: rgba(var(--slate-rgb), 0.24);
 }
 .status-uncertain, .status-disabled {
-  background: rgba(var(--violet-rgb), 0.13); color: var(--status-soft-ink); border-color: rgba(var(--violet-rgb), 0.3);
+  background: rgba(var(--azure-rgb), 0.13); color: var(--status-soft-ink); border-color: rgba(var(--azure-rgb), 0.3);
 }
 
 /* ---------------------------------------------------------- lists -------- */
@@ -1065,7 +1065,7 @@ tbody tr:hover td { color: var(--ink-bright); }
 .list-meter span {
   display: block;
   height: 100%;
-  background: linear-gradient(90deg, var(--cyan), var(--violet));
+  background: linear-gradient(90deg, var(--cyan), var(--azure));
   box-shadow: 0 0 12px -2px rgba(var(--cyan-rgb), 0.8);
 }
 
@@ -1313,7 +1313,7 @@ svg g:nth-child(4n) .bar { fill: var(--data-3); }
 .family-track span {
   display: block;
   height: 100%;
-  background: linear-gradient(90deg, var(--cyan), var(--azure) 62%, var(--violet));
+  background: linear-gradient(90deg, var(--cyan), var(--azure));
   box-shadow: 0 0 12px rgba(var(--azure-rgb), 0.55);
 }
 
@@ -1321,7 +1321,7 @@ svg g:nth-child(4n) .bar { fill: var(--data-3); }
 .killchain-meter span {
   display: block;
   height: 100%;
-  background: linear-gradient(90deg, var(--cyan), var(--azure) 55%, var(--violet));
+  background: linear-gradient(90deg, var(--cyan), var(--azure));
   box-shadow: 0 0 16px rgba(var(--azure-rgb), 0.6);
   transition: width 240ms ease;
 }
@@ -1404,7 +1404,7 @@ svg g:nth-child(4n) .bar { fill: var(--data-3); }
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   padding: 0.68rem 0.8rem;
-  background: linear-gradient(150deg, rgba(var(--cyan-rgb), 0.07), rgba(var(--violet-rgb), 0.04));
+  background: linear-gradient(150deg, rgba(var(--cyan-rgb), 0.07), rgba(var(--azure-rgb), 0.04));
 }
 .observation-pulse .pulse-metric strong { display: block; font-size: 1.22rem; color: var(--cyan); font-variant-numeric: tabular-nums; }
 .observation-pulse .pulse-metric span {
@@ -1437,7 +1437,7 @@ svg g:nth-child(4n) .bar { fill: var(--data-3); }
     from 120deg,
     rgba(var(--cyan-rgb), 0.34),
     rgba(var(--azure-rgb), 0.14),
-    rgba(var(--violet-rgb), 0.34),
+    rgba(var(--azure-rgb), 0.2),
     rgba(var(--cyan-rgb), 0.34)
   );
   filter: blur(118px);
@@ -1481,7 +1481,7 @@ svg g:nth-child(4n) .bar { fill: var(--data-3); }
   border: 1px solid rgba(var(--cyan-rgb), 0.26);
 }
 .login-orbit span:nth-child(1) { animation: spin 34s linear infinite; border-style: dashed; }
-.login-orbit span:nth-child(2) { inset: 12%; border-top-color: rgba(var(--violet-rgb), 0.8); animation: spin 20s linear infinite reverse; }
+.login-orbit span:nth-child(2) { inset: 12%; border-top-color: rgba(var(--azure-rgb), 0.8); animation: spin 20s linear infinite reverse; }
 .login-orbit span:nth-child(3) { inset: 26%; border-left-color: rgba(var(--azure-rgb), 0.9); animation: spin 14s linear infinite; }
 .login-orbit span:nth-child(2)::after,
 .login-orbit span:nth-child(3)::after {
@@ -1700,4 +1700,85 @@ svg g:nth-child(4n) .bar { fill: var(--data-3); }
   .card { overflow-x: auto; }
   .login { padding: 1.2rem; }
   .login-foot { position: static; margin-top: 1.5rem; }
+}
+
+.login-foot {
+  position: absolute;
+  bottom: 1.15rem;
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--faint);
+  font-family: var(--font-mono);
+  font-size: 0.59rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  z-index: 10;
+}
+
+.login-foot-links {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.login-foot-links button.link {
+  font-family: var(--font-mono);
+  font-size: 0.59rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.login-foot-links button.link:hover {
+  color: var(--cyan);
+}
+
+.sidebar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+}
+.sidebar-actions .small {
+  font-size: 0.72rem;
+}
+
+.public-shell {
+  position: relative;
+  width: 100%;
+  max-width: 920px;
+  margin: 2rem auto;
+  padding: 0 1.5rem 5rem;
+  z-index: 10;
+}
+
+.public-nav {
+  margin-bottom: 1.5rem;
+}
+
+.legal-list {
+  list-style: none;
+  margin: 0.8rem 0;
+  padding: 0;
+  display: grid;
+  gap: 0.6rem;
+}
+.legal-list li {
+  display: flex;
+  gap: 0.65rem;
+  color: var(--text);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+.legal-list li::before {
+  content: "";
+  flex: 0 0 5px;
+  width: 5px;
+  height: 5px;
+  margin-top: 0.45rem;
+  background: var(--cyan);
+  transform: rotate(45deg);
 }

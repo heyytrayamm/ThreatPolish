@@ -255,8 +255,8 @@ export default function Events() {
                   <td>{formatTime(event.occurred_at)}</td>
                   <td>{event.source_module}</td>
                   <td className="mono">{event.event_type}</td>
-                  <td className="mono">{event.source_ip ?? "—"}</td>
-                  <td className="mono">{event.session_id ?? "—"}</td>
+                  <td className="mono">{event.source_ip ?? "-"}</td>
+                  <td className="mono">{event.session_id ?? "-"}</td>
                   <td><Badge value={event.severity} /></td>
                 </tr>
               ))}
@@ -275,7 +275,7 @@ export default function Events() {
             <div className="kv"><span>Occurred</span><strong>{formatTime(selected.occurred_at)}</strong></div>
             <div className="kv"><span>Received</span><strong>{formatTime(selected.received_at)}</strong></div>
             <div className="kv"><span>Module / type</span><strong>{selected.source_module} / {selected.event_type}</strong></div>
-            <div className="kv"><span>Target</span><strong>{selected.target_id ?? "—"}</strong></div>
+            <div className="kv"><span>Target</span><strong>{selected.target_id ?? "-"}</strong></div>
             <div className="kv"><span>Provenance</span><strong>{selected.provenance.synthetic ? "synthetic (test/fixture)" : "live sensor"}</strong></div>
             <h3>Normalized features</h3>
             <JsonBlock value={selected.features} />

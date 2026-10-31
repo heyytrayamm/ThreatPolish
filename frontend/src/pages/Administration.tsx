@@ -289,7 +289,7 @@ export default function Administration() {
 
       {audited && (
         <Card
-          title={`Sessions \u2014 ${audited.name}`}
+          title={`Sessions - ${audited.name}`}
           actions={
             <button type="button" className="link" onClick={closeInspection}>
               Close
@@ -397,11 +397,11 @@ export default function Administration() {
               {audit.data.items.map((entry) => (
                 <tr key={entry.id}>
                   <td>{formatTime(entry.ts)}</td>
-                  <td className="mono small">{entry.actor_id ?? "\u2014"}</td>
+                  <td className="mono small">{entry.actor_id ?? "-"}</td>
                   <td>{entry.action}</td>
-                  <td className="mono small">{entry.object_type}:{entry.object_id ?? "\u2014"}</td>
+                  <td className="mono small">{entry.object_type}:{entry.object_id ?? "-"}</td>
                   <td>{entry.outcome}</td>
-                  <td className="mono small">{entry.request_ip ?? "\u2014"}</td>
+                  <td className="mono small">{entry.request_ip ?? "-"}</td>
                 </tr>
               ))}
             </tbody>
@@ -423,7 +423,7 @@ export default function Administration() {
               {quarantine.data.items.map((item) => (
                 <tr key={item.id}>
                   <td>{formatTime(item.received_at)}</td>
-                  <td>{item.source_module ?? "\u2014"}</td>
+                  <td>{item.source_module ?? "-"}</td>
                   <td className="mono">{item.reason_code}</td>
                   <td className="small">{item.reason}</td>
                 </tr>

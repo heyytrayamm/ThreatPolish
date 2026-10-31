@@ -12,6 +12,8 @@ import Responses from "./pages/Responses";
 import Retention from "./pages/Retention";
 import Administration from "./pages/Administration";
 import Account from "./pages/Account";
+import PrivacyPolicy from "./pages/PrivacyPolicy";
+import TermsAndConditions from "./pages/TermsAndConditions";
 
 type View =
   | "overview"
@@ -23,7 +25,9 @@ type View =
   | "responses"
   | "retention"
   | "admin"
-  | "account";
+  | "account"
+  | "privacy"
+  | "terms";
 
 function viewFromUrl(): View {
   const requested = new URLSearchParams(window.location.search).get("view");
@@ -60,7 +64,7 @@ const NAV: { key: View; label: string }[] = [
   { key: "account", label: "Account" },
 ];
 
-const VIEWS = new Set<View>(NAV.map((item) => item.key));
+const VIEWS = new Set<View>([...NAV.map((item) => item.key), "privacy", "terms"]);
 
 function canView(view: View, role: string): boolean {
   if (view === "admin") return role === "admin";
@@ -149,6 +153,33 @@ export default function App() {
   if (checking) return <div className="center"><Loading label="Restoring session" /></div>;
 
   if (!user) {
+    if (view === "privacy" || view === "terms") {
+      return (
+        <main className="login">
+          <div className="hud-scan" aria-hidden="true" />
+          <div className="public-shell">
+            <header className="public-nav">
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => selectView("overview")}
+              >
+                Back to Sign in
+              </button>
+            </header>
+            {view === "privacy" ? <PrivacyPolicy /> : <TermsAndConditions />}
+          </div>
+          <footer className="login-foot">
+            <div className="login-foot-links">
+              <button type="button" className="link" onClick={() => selectView("privacy")}>Privacy Policy</button>
+              <span>·</span>
+              <button type="button" className="link" onClick={() => selectView("terms")}>Terms and Conditions</button>
+            </div>
+          </footer>
+        </main>
+      );
+    }
+
     return (
       <main className="login">
         <div className="hud-scan" aria-hidden="true" />
@@ -203,7 +234,7 @@ export default function App() {
               />
             </label>
             <button type="submit" disabled={busy}>
-              {busy ? "Signing in…" : "Sign in"}
+              {busy ? "Signing in\u2026" : "Sign in"}
             </button>
             <p className="muted small">
               Sessions expire automatically. Contact an administrator if you do not have an account.
@@ -214,12 +245,22 @@ export default function App() {
             </div>
           </form>
         </section>
-        <footer className="login-foot">Authorized defensive use only · Evidence retained with every decision</footer>
+        <footer className="login-foot">
+          <span>Authorized defensive use only · Evidence retained with every decision</span>
+          <div className="login-foot-links">
+            <button type="button" className="link" onClick={() => selectView("privacy")}>Privacy Policy</button>
+            <span>·</span>
+            <button type="button" className="link" onClick={() => selectView("terms")}>Terms and Conditions</button>
+          </div>
+        </footer>
       </main>
     );
   }
 
   const activeView: View = canView(view, user.role) ? view : "overview";
+  const viewTitle =
+    NAV.find((item) => item.key === activeView)?.label ??
+    (activeView === "privacy" ? "Privacy Policy" : activeView === "terms" ? "Terms and Conditions" : "Workspace");
 
   return (
     <div className="app">
@@ -271,23 +312,33 @@ export default function App() {
             <span className="muted small">{user.name}</span>
             <span className="role-chip">{user.role}</span>
           </div>
-          <button
-            type="button"
-            className="link"
-            onClick={() => {
-              setToken(null);
-              setUser(null);
-            }}
-          >
-            Sign out
-          </button>
+          <div className="sidebar-actions">
+            <button
+              type="button"
+              className="link"
+              onClick={() => {
+                setToken(null);
+                setUser(null);
+              }}
+            >
+              Sign out
+            </button>
+            <span className="muted small">·</span>
+            <button type="button" className="link small" onClick={() => selectView("privacy")}>
+              Privacy
+            </button>
+            <span className="muted small">·</span>
+            <button type="button" className="link small" onClick={() => selectView("terms")}>
+              Terms
+            </button>
+          </div>
         </div>
       </aside>
       <main className="content" id="main">
         <div className="hud-ribbon">
           <span className="ribbon-path">
             ThreatPolish <span className="ribbon-sep">/</span>{" "}
-            <b>{NAV.find((item) => item.key === activeView)?.label}</b>
+            <b>{viewTitle}</b>
           </span>
           <span className="ribbon-meta">{user.role} clearance</span>
           <button
@@ -315,6 +366,8 @@ export default function App() {
         {activeView === "retention" && <Retention />}
         {activeView === "admin" && <Administration />}
         {activeView === "account" && <Account user={user} />}
+        {activeView === "privacy" && <PrivacyPolicy />}
+        {activeView === "terms" && <TermsAndConditions />}
       </main>
     </div>
   );

@@ -758,14 +758,14 @@ def test_session_history_signs_out_one_device_and_admins_can_inspect_it(live_ser
             # deployment has the bootstrap administrator only.
             page.get_by_role("button", name="Administration").click()
             page.get_by_role("button", name="Sessions", exact=True).first.click()
-            page.wait_for_selector("text=Sessions — Administrator")
+            page.wait_for_selector("text=/Sessions\\s[-—]\\sAdministrator/")
             page.wait_for_selector("#main td:has-text('Sign-in')")
 
             # The administrator signs one device out of another account without
             # touching that account's other session.
             account_row = page.locator("#main tr", has_text=VIEWER_EMAIL)
             account_row.get_by_role("button", name="Sessions", exact=True).click()
-            page.wait_for_selector("text=Sessions — Viewer")
+            page.wait_for_selector("text=/Sessions\\s[-—]\\sViewer/")
             desk_row = page.locator("#main tr", has_text="viewer-desk/1.0")
             desk_row.wait_for()
             desk_row.get_by_role("button", name="Sign out").click()

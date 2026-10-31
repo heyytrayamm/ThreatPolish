@@ -178,7 +178,7 @@ export default function Overview({
                         {point.count}
                       </text>
                     )}
-                    <title>{`${point.hour}:00 — ${point.count} events`}</title>
+                    <title>{`${point.hour}:00 - ${point.count} events`}</title>
                   </g>
                 );
               })}
