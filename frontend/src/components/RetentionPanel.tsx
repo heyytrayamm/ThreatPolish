@@ -452,7 +452,7 @@ export function RetentionPanel({
                         className="bar"
                       />
                       <title>
-                        {`${formatTime(run.ran_at)} — ${backlog(run)} items (${run.trigger})`}
+                        {`${formatTime(run.ran_at)} - ${backlog(run)} items (${run.trigger})`}
                       </title>
                     </g>
                   );

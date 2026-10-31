@@ -55,9 +55,9 @@ export function SessionTable({
               <tr key={entry.id}>
                 <td>{formatTime(entry.occurred_at)}</td>
                 <td>{EVENT_LABEL[entry.event] ?? entry.event}</td>
-                <td className="small">{entry.client ?? "—"}</td>
+                <td className="small">{entry.client ?? "-"}</td>
                 <td className="mono small">
-                  {entry.ip ?? "—"}
+                  {entry.ip ?? "-"}
                   {entry.anomaly ? " · flagged" : ""}
                 </td>
                 <td>

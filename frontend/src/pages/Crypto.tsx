@@ -44,7 +44,7 @@ export default function Crypto({ user }: { user: User }) {
       <ErrorBox message={assets.error} />
       {notice && <div className="notice">{notice}</div>}
 
-      <Card title={`Assets (provider: ${assets.data?.provider ?? "—"})`}>
+      <Card title={`Assets (provider: ${assets.data?.provider ?? "-"})`}>
         {assets.loading && <Loading />}
         {assets.data && assets.data.items.length === 0 && (
           <Empty>No market observations yet. Refresh assets to fetch provider data.</Empty>
@@ -61,13 +61,13 @@ export default function Crypto({ user }: { user: User }) {
               {assets.data.items.map((asset) => (
                 <tr key={asset.symbol}>
                   <td><strong>{asset.symbol}</strong></td>
-                  <td>{asset.observed.price_usd == null ? "—" : `$${asset.observed.price_usd.toLocaleString()}`}</td>
+                  <td>{asset.observed.price_usd == null ? "-" : `$${asset.observed.price_usd.toLocaleString()}`}</td>
                   <td className={asset.observed.change_24h_pct != null && asset.observed.change_24h_pct < 0 ? "bad" : "ok"}>
-                    {asset.observed.change_24h_pct == null ? "—" : `${asset.observed.change_24h_pct.toFixed(2)}%`}
+                    {asset.observed.change_24h_pct == null ? "-" : `${asset.observed.change_24h_pct.toFixed(2)}%`}
                   </td>
-                  <td>{asset.inferred?.score ?? "—"}</td>
-                  <td>{asset.inferred ? <Badge value={asset.inferred.severity} /> : "—"}</td>
-                  <td>{asset.inferred ? asset.inferred.confidence.toFixed(2) : "—"}</td>
+                  <td>{asset.inferred?.score ?? "-"}</td>
+                  <td>{asset.inferred ? <Badge value={asset.inferred.severity} /> : "-"}</td>
+                  <td>{asset.inferred ? asset.inferred.confidence.toFixed(2) : "-"}</td>
                   <td className="small">
                     {asset.inferred?.reasons.map((reason) => reason.code).join(", ") || "none"}
                   </td>

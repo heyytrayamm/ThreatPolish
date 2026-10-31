@@ -103,7 +103,7 @@ export default function Deception({ user }: { user: User }) {
                     <Badge value={investigation.status} kind="status" />
                   </div>
                   <div className="muted small">
-                    profile {investigation.chosen_profile ?? "—"} · missing {investigation.missing_evidence.join(", ") || "none"}
+                    profile {investigation.chosen_profile ?? "-"} · missing {investigation.missing_evidence.join(", ") || "none"}
                     {investigation.outcome ? ` · outcome ${investigation.outcome}` : ""}
                   </div>
                   {investigation.status === "superseded" && (
@@ -161,10 +161,10 @@ export default function Deception({ user }: { user: User }) {
                   <td>{formatTime(session.last_seen)}</td>
                   <td>{session.events}</td>
                   <td className="mono small">
-                    {session.source_ips.length > 0 ? session.source_ips.join(", ") : "—"}
+                    {session.source_ips.length > 0 ? session.source_ips.join(", ") : "-"}
                   </td>
                   <td><Badge value={session.severity} /></td>
-                  <td>{session.target ?? "—"}</td>
+                  <td>{session.target ?? "-"}</td>
                 </tr>
               ))}
             </tbody>
@@ -187,8 +187,8 @@ export default function Deception({ user }: { user: User }) {
                 <tr key={event.id}>
                   <td>{formatTime(event.occurred_at)}</td>
                   <td className="mono">{event.event_type}</td>
-                  <td className="mono">{event.source_ip ?? "—"}</td>
-                  <td className="mono">{shortId(event.session_id ?? "—", 20)}</td>
+                  <td className="mono">{event.source_ip ?? "-"}</td>
+                  <td className="mono">{shortId(event.session_id ?? "-", 20)}</td>
                   <td><Badge value={event.severity} /></td>
                 </tr>
               ))}
