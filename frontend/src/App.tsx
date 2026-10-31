@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { api, getToken, setToken, User } from "./api";
 import { applyTheme, readTheme, rememberTheme, watchHostTheme, type Theme } from "./theme";
-import { ErrorBox, Loading } from "./ui";
+import { ErrorBox, IconEye, IconEyeOff, IconShield, Loading, TerminalWindow } from "./ui";
 import Overview from "./pages/Overview";
 import Events from "./pages/Events";
 import Campaigns from "./pages/Campaigns";
@@ -40,8 +40,6 @@ function rememberView(view: View, mode: "push" | "replace" = "push"): void {
   else url.searchParams.set("view", view);
   const next = `${url.pathname}${url.search}${url.hash}`;
   const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-  // A new entry makes the browser's back and forward buttons follow the
-  // sidebar; re-clicking the current view should not add a duplicate.
   if (next === current) return;
   if (mode === "replace") window.history.replaceState(null, "", url);
   else window.history.pushState(null, "", url);
@@ -79,9 +77,8 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [passwordVisible, setPasswordVisible] = useState(false);
   const [busy, setBusy] = useState(false);
-  // The console ribbon runs a live clock so the workspace reads as a station
-  // rather than a report.
   const [clock, setClock] = useState(utcClock);
   const [theme, setTheme] = useState<Theme>(readTheme);
 
@@ -94,8 +91,6 @@ export default function App() {
     applyTheme(theme);
   }, [theme]);
 
-  // With no stored switch the workspace tracks the host, including a change
-  // made while the page is open.
   useEffect(() => watchHostTheme(setTheme), []);
 
   useEffect(() => {
@@ -115,8 +110,6 @@ export default function App() {
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
-  // A hand-edited or stale link must not mount a view the signed-in role
-  // cannot use. Replace the entry so Back does not bounce into the same link.
   useEffect(() => {
     if (user && !canView(view, user.role)) {
       setView("overview");
@@ -150,18 +143,23 @@ export default function App() {
     setTheme(next);
   }
 
-  if (checking) return <div className="center"><Loading label="Restoring session" /></div>;
+  if (checking) {
+    return (
+      <div className="login-view">
+        <Loading label="Restoring session" />
+      </div>
+    );
+  }
 
   if (!user) {
     if (view === "privacy" || view === "terms") {
       return (
-        <main className="login">
-          <div className="hud-scan" aria-hidden="true" />
+        <main className="login-view">
           <div className="public-shell">
             <header className="public-nav">
               <button
                 type="button"
-                className="secondary"
+                className="secondary small"
                 onClick={() => selectView("overview")}
               >
                 Back to Sign in
@@ -172,7 +170,7 @@ export default function App() {
           <footer className="login-foot">
             <div className="login-foot-links">
               <button type="button" className="link" onClick={() => selectView("privacy")}>Privacy Policy</button>
-              <span>·</span>
+              <span>-</span>
               <button type="button" className="link" onClick={() => selectView("terms")}>Terms and Conditions</button>
             </div>
           </footer>
@@ -181,75 +179,115 @@ export default function App() {
     }
 
     return (
-      <main className="login">
-        <div className="hud-scan" aria-hidden="true" />
-        <div className="login-aurora" aria-hidden="true" />
-        <section className="login-shell">
-          <div className="login-intro">
-            <span className="eyebrow">Analyst workspace</span>
-            <h1>See the campaign behind the noise.</h1>
-            <p>
-              ThreatPolish correlates decoy and assessment telemetry across
-              addresses, shows the evidence behind every link, and asks for more
-              observation only when the answer is genuinely uncertain.
-            </p>
-            <ul className="login-points">
-              <li>Cross-IP correlation with auditable evidence and contradictions</li>
-              <li>Adaptive decoys that observe without inventing evidence</li>
-              <li>Response actions with approval, expiry and rollback</li>
-            </ul>
-            <div className="login-orbit" aria-hidden="true">
-              <span />
-              <span />
-              <span />
+      <main className="login-view">
+        <div className="login-container">
+          {/* Technical Platform Intro with Interactive Terminal Simulator */}
+          <section className="login-intro-section">
+            <div className="hero-tag">
+              <IconShield size={14} />
+              Defensive Cybersecurity Platform
             </div>
-          </div>
-          <form onSubmit={signIn} className="login-card" aria-label="sign in">
-            <div className="login-card-head">
-              <img className="brand-mark brand-logo" src="/logo-mark.png" alt="" width={44} height={44} />
-              <div>
-                <strong>ThreatPolish</strong>
-                <span className="muted small">Analyst access</span>
+            <h1>Understand the Threat. Follow the Evidence.</h1>
+            <p>
+              An evidence-driven cybersecurity platform for threat observation, session correlation,
+              campaign analysis and adaptive deception.
+            </p>
+
+            <div className="hero-terminal-wrap">
+              <TerminalWindow
+                title="threatpolish@sensor-node-01: live-telemetry"
+                lines={[
+                  { text: "threatpolish listen --port 8022 --mode adaptive", type: "cmd" },
+                  { text: "[+] Deception engine ready on :8022 (HTTP) & :2222 (SSH)", type: "accent" },
+                  { text: "[!] Sensor alert: incoming probe from 198.51.100.42", type: "warn" },
+                  { text: "[+] Fingerprint: JA3=771,4865-4866, client='Go-http-client/1.1'", type: "output" },
+                  { text: "[*] Evaluating session correlation graph (corr-1.3.0)...", type: "output" },
+                  { text: "[+] Campaign candidate formed: cmp_5a9676 (conf: 0.942)", type: "accent" },
+                ]}
+              />
+            </div>
+
+            <div className="login-pillars">
+              <div className="pillar-item">
+                <strong>Cross-IP Correlation</strong>
+                <span>Links sessions via multi-family behavioral specificity.</span>
+              </div>
+              <div className="pillar-item">
+                <strong>Adaptive Deception</strong>
+                <span>Engages ambiguous sources with isolated decoy profiles.</span>
+              </div>
+              <div className="pillar-item">
+                <strong>Audited Containment</strong>
+                <span>Policy-gated, expiring mitigations with rollback.</span>
               </div>
             </div>
-            <ErrorBox message={error} />
-            <label>
-              Email
-              <input
-                type="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                autoComplete="username"
-                required
-              />
-            </label>
-            <label>
-              Password
-              <input
-                type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                autoComplete="current-password"
-                required
-              />
-            </label>
-            <button type="submit" disabled={busy}>
-              {busy ? "Signing in\u2026" : "Sign in"}
-            </button>
-            <p className="muted small">
-              Sessions expire automatically. Contact an administrator if you do not have an account.
-            </p>
-            <div className="login-card-meta">
-              <span>HS256 session</span>
-              <span>every decision retained</span>
-            </div>
-          </form>
-        </section>
+          </section>
+
+          {/* Clean Cybersecurity Login Card */}
+          <section className="login-form-section">
+            <form onSubmit={signIn} className="login-box" aria-label="sign in">
+              <div className="login-box-head">
+                <img className="brand-mark" src="/logo-mark.png" alt="ThreatPolish" width={44} height={44} />
+                <h1>ThreatPolish</h1>
+                <p>Analyst Access Portal</p>
+              </div>
+
+              <ErrorBox message={error} />
+
+              <div className="tp-field">
+                <label htmlFor="login-email" className="tp-field-label">Email</label>
+                <input
+                  id="login-email"
+                  type="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  autoComplete="username"
+                  placeholder="analyst@threatpolish.local"
+                  required
+                />
+              </div>
+
+              <div className="tp-field">
+                <label htmlFor="login-password" className="tp-field-label">Password</label>
+                <div className="tp-password-input-wrap">
+                  <input
+                    id="login-password"
+                    type={passwordVisible ? "text" : "password"}
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    autoComplete="current-password"
+                    placeholder="Enter password"
+                    required
+                  />
+                  <button
+                    type="button"
+                    className="tp-password-toggle"
+                    onClick={() => setPasswordVisible(!passwordVisible)}
+                    aria-label={passwordVisible ? "Hide password" : "Show password"}
+                    tabIndex={-1}
+                  >
+                    {passwordVisible ? <IconEyeOff size={16} /> : <IconEye size={16} />}
+                  </button>
+                </div>
+              </div>
+
+              <button type="submit" className="primary" disabled={busy}>
+                {busy ? "Signing in..." : "Sign in"}
+              </button>
+
+              <div className="login-box-footer">
+                <span>Sessions expire automatically upon token revocation.</span>
+                <span className="mono text-muted">HS256 session - zero-knowledge credentials</span>
+              </div>
+            </form>
+          </section>
+        </div>
+
         <footer className="login-foot">
-          <span>Authorized defensive use only · Evidence retained with every decision</span>
+          <span>Authorized defensive use only - Evidence retained with every decision</span>
           <div className="login-foot-links">
             <button type="button" className="link" onClick={() => selectView("privacy")}>Privacy Policy</button>
-            <span>·</span>
+            <span>-</span>
             <button type="button" className="link" onClick={() => selectView("terms")}>Terms and Conditions</button>
           </div>
         </footer>
@@ -264,37 +302,26 @@ export default function App() {
 
   return (
     <div className="app">
-      <div className="hud-scan" aria-hidden="true" />
       <a className="skip-link" href="#main">Skip to content</a>
       <aside className="sidebar">
         <div className="brand">
-          <span className="brand-sigil">
-            <img className="brand-mark brand-logo" src="/logo-mark.png" alt="" width={42} height={42} />
-          </span>
+          <img className="brand-mark" src="/logo-mark.png" alt="ThreatPolish" width={36} height={36} />
           <div>
             <strong>ThreatPolish</strong>
-            <span className="brand-sub">Security workspace</span>
+            <span className="brand-sub">Security Workspace</span>
           </div>
         </div>
         <div className="side-status">
           <span className="status-dot" />
-          Evidence engine
-          <span className="signal-bars" aria-hidden="true">
-            <i />
-            <i />
-            <i />
-            <i />
-          </span>
+          Evidence Engine Active
         </div>
         <nav>
-          <span className="nav-label">Workspace</span>
+          <span className="nav-label">Navigation</span>
           {NAV.filter((item) => canView(item.key, user.role)).map((item, index) => (
             <button
               key={item.key}
               type="button"
               className={activeView === item.key ? "nav-item active" : "nav-item"}
-              // The rail index is drawn from markup rather than generated
-              // content so it never joins the button's accessible name.
               aria-label={item.label}
               aria-current={activeView === item.key ? "page" : undefined}
               onClick={() => selectView(item.key)}
@@ -315,7 +342,7 @@ export default function App() {
           <div className="sidebar-actions">
             <button
               type="button"
-              className="link"
+              className="link small"
               onClick={() => {
                 setToken(null);
                 setUser(null);
@@ -323,11 +350,11 @@ export default function App() {
             >
               Sign out
             </button>
-            <span className="muted small">·</span>
+            <span className="muted small">-</span>
             <button type="button" className="link small" onClick={() => selectView("privacy")}>
               Privacy
             </button>
-            <span className="muted small">·</span>
+            <span className="muted small">-</span>
             <button type="button" className="link small" onClick={() => selectView("terms")}>
               Terms
             </button>
@@ -343,14 +370,12 @@ export default function App() {
           <span className="ribbon-meta">{user.role} clearance</span>
           <button
             type="button"
-            className="secondary theme-toggle"
-            // A fixed label keeps the control's name stable whatever the
-            // pressed state says.
+            className="secondary theme-toggle small"
             aria-label="Daylight theme"
             aria-pressed={theme === "daylight"}
             onClick={() => selectTheme(theme === "daylight" ? "console" : "daylight")}
           >
-            Daylight
+            {theme === "daylight" ? "Console Theme" : "Daylight Theme"}
           </button>
           <span className="ribbon-clock">{clock}</span>
         </div>
