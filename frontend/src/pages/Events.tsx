@@ -1,7 +1,17 @@
 import { useEffect, useState } from "react";
 import { api, EventRecord } from "../api";
 import { copyText } from "../clipboard";
-import { Badge, Card, Empty, ErrorBox, Field, formatTime, JsonBlock, Loading, useAsync } from "../ui";
+import {
+  Badge,
+  Card,
+  Empty,
+  ErrorBox,
+  Field,
+  formatTime,
+  JsonBlock,
+  Loading,
+  useAsync,
+} from "../ui";
 
 const PAGE_SIZE = 25;
 const MODULES = ["honeypot", "websec", "cryptointel", "app"];
@@ -78,15 +88,10 @@ export default function Events() {
 
   useEffect(() => setPage(0), [module, severity, query, hours]);
 
-  // The committed filter set is shareable and survives a reload, like the
-  // Retention window. Invalid URL values are removed on mount; pagination stays
-  // out of the URL because it moves with new events.
   useEffect(() => {
     rememberFilters(initial, "replace");
   }, [initial]);
 
-  // Filter changes push history entries; back and forward restore the form and
-  // the result window instead of only moving between views.
   useEffect(() => {
     function handlePopState() {
       const next = readFiltersFromUrl();
@@ -112,7 +117,6 @@ export default function Events() {
     setCopyBusy(true);
     setNotice(null);
     try {
-      // Include a search term that has been typed but not committed yet.
       await copyText(filtersUrl(filters).toString());
       setNotice("Link copied to the clipboard.");
     } catch (error) {
@@ -143,143 +147,224 @@ export default function Events() {
     <div className="page">
       <header className="page-head">
         <div>
-          <span className="eyebrow">Event stream</span>
+          <span className="eyebrow">Security Event Explorer</span>
           <h1>Events</h1>
-          <p className="muted">Normalized telemetry from decoys, assessments and application sources.</p>
+          <p className="muted">Normalized telemetry ingested from decoys, vulnerability assessments and security hooks.</p>
         </div>
-        <label className="toggle">
-          <input type="checkbox" checked={live} onChange={(event) => setLive(event.target.checked)} />
-          <span>Auto refresh</span>
-        </label>
+        <div className="row">
+          <label className="row" style={{ cursor: "pointer", fontSize: "0.85rem" }}>
+            <input
+              type="checkbox"
+              checked={live}
+              onChange={(event) => setLive(event.target.checked)}
+              style={{ width: "auto" }}
+            />
+            <span className="muted">Live Stream (10s)</span>
+          </label>
+        </div>
       </header>
 
-      <div className="filters control-strip">
-        <span className="strip-label">Filter bank</span>
-        <Field label="Module">
-          <select
-            value={module}
-            onChange={(event) =>
-              commitFilters({ ...filters, module: event.target.value })
-            }
-          >
-            <option value="">All</option>
-            <option value="honeypot">honeypot</option>
-            <option value="websec">websec</option>
-            <option value="cryptointel">cryptointel</option>
-            <option value="app">app</option>
-          </select>
-        </Field>
-        <Field label="Severity">
-          <select
-            value={severity}
-            onChange={(event) =>
-              commitFilters({ ...filters, severity: event.target.value })
-            }
-          >
-            <option value="">Any</option>
-            <option value="critical">critical</option>
-            <option value="high">high</option>
-            <option value="medium">medium</option>
-            <option value="low">low</option>
-            <option value="info">info</option>
-          </select>
-        </Field>
-        <Field label="Window">
-          <select
-            value={hours}
-            onChange={(event) =>
-              commitFilters({ ...filters, hours: Number(event.target.value) })
-            }
-          >
-            <option value={1}>1 hour</option>
-            <option value={24}>24 hours</option>
-            <option value={72}>72 hours</option>
-            <option value={168}>7 days</option>
-          </select>
-        </Field>
-        <Field label="Search">
-          <input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            onBlur={(event) =>
-              commitFilters({ ...filters, query: event.currentTarget.value })
-            }
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                commitFilters({ ...filters, query: event.currentTarget.value });
-              }
-            }}
-            placeholder="session, IP or target"
-          />
-        </Field>
+      {/* Filter Control Station */}
+      <Card title="Filter Bank" actions={
         <button
           type="button"
-          className="secondary"
+          className="secondary small"
           disabled={copyBusy}
           onClick={copyLink}
         >
-          {copyBusy ? "Copying…" : "Copy link"}
+          {copyBusy ? "Copying..." : "Copy link"}
         </button>
-      </div>
+      }>
+        <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: "1rem", alignItems: "flex-end" }}>
+          <Field label="Module">
+            <select
+              value={module}
+              onChange={(event) =>
+                commitFilters({ ...filters, module: event.target.value })
+              }
+            >
+              <option value="">All Modules</option>
+              <option value="honeypot">honeypot</option>
+              <option value="websec">websec</option>
+              <option value="cryptointel">cryptointel</option>
+              <option value="app">app</option>
+            </select>
+          </Field>
+          <Field label="Severity">
+            <select
+              value={severity}
+              onChange={(event) =>
+                commitFilters({ ...filters, severity: event.target.value })
+              }
+            >
+              <option value="">Any Severity</option>
+              <option value="critical">critical</option>
+              <option value="high">high</option>
+              <option value="medium">medium</option>
+              <option value="low">low</option>
+              <option value="info">info</option>
+            </select>
+          </Field>
+          <Field label="Window">
+            <select
+              value={hours}
+              onChange={(event) =>
+                commitFilters({ ...filters, hours: Number(event.target.value) })
+              }
+            >
+              <option value={1}>1 hour</option>
+              <option value={24}>24 hours</option>
+              <option value={72}>72 hours</option>
+              <option value={168}>7 days</option>
+            </select>
+          </Field>
+          <Field label="Search">
+            <div style={{ position: "relative" }}>
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                onBlur={(event) =>
+                  commitFilters({ ...filters, query: event.currentTarget.value })
+                }
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    commitFilters({ ...filters, query: event.currentTarget.value });
+                  }
+                }}
+                placeholder="Session, IP or target..."
+              />
+            </div>
+          </Field>
+        </div>
+      </Card>
 
       <ErrorBox message={result.error} />
       {notice && <div className="notice">{notice}</div>}
+
+      {/* Events Table View */}
       <Card
-        title={`${total} event${total === 1 ? "" : "s"}`}
+        title={`${total} event${total === 1 ? "" : "s"} observed`}
         actions={
           <div className="row">
-            <button className="secondary" disabled={page === 0} onClick={() => setPage((value) => value - 1)}>
+            <button
+              type="button"
+              className="secondary small"
+              disabled={page === 0}
+              onClick={() => setPage((value) => value - 1)}
+            >
               Previous
             </button>
-            <span className="muted small">
+            <span className="mono small muted">
               page {total === 0 ? 0 : page + 1} of {Math.max(1, Math.ceil(total / PAGE_SIZE))}
             </span>
-            <button className="secondary" disabled={(page + 1) * PAGE_SIZE >= total} onClick={() => setPage((value) => value + 1)}>
+            <button
+              type="button"
+              className="secondary small"
+              disabled={(page + 1) * PAGE_SIZE >= total}
+              onClick={() => setPage((value) => value + 1)}
+            >
               Next
             </button>
           </div>
         }
       >
-        {result.loading && <Loading />}
-        {!result.loading && events.length === 0 && <Empty>No events match these filters.</Empty>}
+        {result.loading && <Loading label="Querying event records" />}
+        {!result.loading && events.length === 0 && (
+          <Empty title="No matching events">Try adjusting the filter criteria, search term, or time window.</Empty>
+        )}
         {events.length > 0 && (
-          <table className="clickable">
-            <thead>
-              <tr>
-                <th>Time</th><th>Module</th><th>Type</th><th>Source</th><th>Session</th><th>Severity</th>
-              </tr>
-            </thead>
-            <tbody>
-              {events.map((event) => (
-                <tr key={event.id} onClick={() => setSelected(event)}>
-                  <td>{formatTime(event.occurred_at)}</td>
-                  <td>{event.source_module}</td>
-                  <td className="mono">{event.event_type}</td>
-                  <td className="mono">{event.source_ip ?? "-"}</td>
-                  <td className="mono">{event.session_id ?? "-"}</td>
-                  <td><Badge value={event.severity} /></td>
+          <div style={{ overflowX: "auto" }}>
+            <table>
+              <thead>
+                <tr>
+                  <th>Timestamp</th>
+                  <th>Module</th>
+                  <th>Event Type</th>
+                  <th>Source IP</th>
+                  <th>Session ID</th>
+                  <th>Severity</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {events.map((event) => (
+                  <tr
+                    key={event.id}
+                    onClick={() => setSelected(event)}
+                    style={{ cursor: "pointer" }}
+                    className={selected?.id === event.id ? "row-selected" : ""}
+                  >
+                    <td className="mono small">{formatTime(event.occurred_at)}</td>
+                    <td><span className="mono">{event.source_module}</span></td>
+                    <td className="mono"><strong>{event.event_type}</strong></td>
+                    <td className="mono text-code">{event.source_ip ?? "-"}</td>
+                    <td className="mono small">{event.session_id ? `${event.session_id.slice(0, 14)}...` : "-"}</td>
+                    <td><Badge value={event.severity} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </Card>
 
+      {/* Selected Event Inspection Drawer */}
       {selected && (
         <Card
-          title="Event detail"
-          actions={<button className="secondary" onClick={() => setSelected(null)}>Close</button>}
+          title={`Event Inspection: ${selected.id}`}
+          actions={
+            <button
+              type="button"
+              className="secondary small"
+              onClick={() => setSelected(null)}
+            >
+              Close Inspector
+            </button>
+          }
         >
-          <div className="stack">
-            <div className="kv"><span>ID</span><strong className="mono">{selected.id}</strong></div>
-            <div className="kv"><span>Occurred</span><strong>{formatTime(selected.occurred_at)}</strong></div>
-            <div className="kv"><span>Received</span><strong>{formatTime(selected.received_at)}</strong></div>
-            <div className="kv"><span>Module / type</span><strong>{selected.source_module} / {selected.event_type}</strong></div>
-            <div className="kv"><span>Target</span><strong>{selected.target_id ?? "-"}</strong></div>
-            <div className="kv"><span>Provenance</span><strong>{selected.provenance.synthetic ? "synthetic (test/fixture)" : "live sensor"}</strong></div>
-            <h3>Normalized features</h3>
+          <div className="stack" style={{ gap: "1rem" }}>
+            <div className="grid two" style={{ gap: "0.5rem" }}>
+              <div className="row" style={{ justifyContent: "space-between" }}>
+                <span className="muted">Event Identifier</span>
+                <span className="mono">{selected.id}</span>
+              </div>
+              <div className="row" style={{ justifyContent: "space-between" }}>
+                <span className="muted">Occurred Time</span>
+                <span className="mono">{formatTime(selected.occurred_at)}</span>
+              </div>
+              <div className="row" style={{ justifyContent: "space-between" }}>
+                <span className="muted">Sensor Module</span>
+                <span className="mono">{selected.source_module} / {selected.event_type}</span>
+              </div>
+              <div className="row" style={{ justifyContent: "space-between" }}>
+                <span className="muted">Target Resource</span>
+                <span className="mono">{selected.target_id ?? "-"}</span>
+              </div>
+              <div className="row" style={{ justifyContent: "space-between" }}>
+                <span className="muted">Source IP</span>
+                <span className="mono text-code">{selected.source_ip ?? "-"}</span>
+              </div>
+              <div className="row" style={{ justifyContent: "space-between" }}>
+                <span className="muted">Session Ref</span>
+                <span className="mono">{selected.session_id ?? "-"}</span>
+              </div>
+              <div className="row" style={{ justifyContent: "space-between" }}>
+                <span className="muted">Provenance Mode</span>
+                <span className="mono">{selected.provenance.synthetic ? "synthetic fixture" : "verified live sensor"}</span>
+              </div>
+              <div className="row" style={{ justifyContent: "space-between" }}>
+                <span className="muted">Severity Class</span>
+                <Badge value={selected.severity} />
+              </div>
+            </div>
+
+            <h3 style={{ fontSize: "0.9rem", color: "var(--text-bright)", marginTop: "0.5rem" }}>
+              Normalized Behavioral Features
+            </h3>
             <JsonBlock value={selected.features} />
-            <h3>Provenance</h3>
+
+            <h3 style={{ fontSize: "0.9rem", color: "var(--text-bright)", marginTop: "0.5rem" }}>
+              Provenance & Envelope Headers
+            </h3>
             <JsonBlock value={selected.provenance} />
           </div>
         </Card>
@@ -287,3 +372,5 @@ export default function Events() {
     </div>
   );
 }
+
+
