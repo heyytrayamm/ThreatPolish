@@ -148,6 +148,16 @@ export const api = {
   evaluateInvestigation: (id: string) =>
     request<Record<string, unknown>>(`/api/v1/investigations/${id}/evaluate`, { method: "POST" }),
   users: () => request<{ users: User[] }>("/api/v1/auth/users"),
+  createUser: (body: {
+    email: string;
+    name: string;
+    role: Role;
+    password: string;
+  }) =>
+    request<User>("/api/v1/auth/users", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   quarantine: () => request<{ items: QuarantineRecord[] }>("/api/v1/quarantine"),
   audit: () => request<{ items: AuditEntry[] }>("/api/v1/audit"),
   latestRun: () =>
