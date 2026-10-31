@@ -120,7 +120,7 @@ export default function Overview({
         <div className="tp-alert tp-alert-error" role="alert">
           <IconAlertTriangle />
           <div className="tp-alert-content">
-            <strong>Retention Maintenance Overdue</strong>
+            <strong>Retention is overdue</strong>
             <p>
               The event backlog is older than the {retention.data.grace_days}-day grace threshold. Run retention to purge expired telemetry.
             </p>
@@ -136,12 +136,12 @@ export default function Overview({
       )}
 
       {(ownAlerts.length > 0 || fleetAlerts.length > 0) && (
-        <Card title="Authentication Anomalies" className="attention-card">
+        <Card title="Sign-in attention" className="attention-card">
           {ownAlerts.length > 0 && (
-            <div className="tp-alert tp-alert-error" role="alert">
+            <div className="error tp-alert tp-alert-error" role="alert">
               <IconAlertTriangle />
               <div className="tp-alert-content">
-                <strong>Anomalous Operator Sign-in Detected</strong>
+                <strong>Unusual sign-in.</strong>{" "}
                 <p>{describeSignInAnomaly(ownAlerts[0].anomaly as NonNullable<SessionRecord["anomaly"]>)}</p>
               </div>
             </div>

@@ -147,8 +147,8 @@ export default function Events() {
     <div className="page">
       <header className="page-head">
         <div>
-          <span className="eyebrow">Telemetry Stream</span>
-          <h1>Security Event Explorer</h1>
+          <span className="eyebrow">Security Event Explorer</span>
+          <h1>Events</h1>
           <p className="muted">Normalized telemetry ingested from decoys, vulnerability assessments and security hooks.</p>
         </div>
         <div className="row">

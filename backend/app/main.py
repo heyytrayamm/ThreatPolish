@@ -22,7 +22,9 @@ log = get_logger(__name__)
 
 DASHBOARD_CSP = (
     "default-src 'self'; connect-src 'self'; img-src 'self' data:; "
-    "style-src 'self' 'unsafe-inline'; script-src 'self'; base-uri 'none'; "
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+    "font-src 'self' https://fonts.gstatic.com; "
+    "script-src 'self'; base-uri 'none'; "
     "form-action 'self'; frame-ancestors 'none'"
 )
 

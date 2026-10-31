@@ -154,7 +154,7 @@ export function Badge({
 }) {
   const className = kind === "severity" ? SEVERITY_CLASS[value] ?? "sev-info" : `status-${value}`;
   return (
-    <span className={`tp-badge ${className}`}>
+    <span className={`badge tp-badge ${className}`}>
       {dot && <span className="tp-badge-dot" aria-hidden="true" />}
       <span className="tp-badge-text">{value}</span>
     </span>

@@ -155,7 +155,7 @@ export default function Deception({ user }: { user: User }) {
         </Card>
       </div>
 
-      <Card title="Decoy Sessions (24h Window)">
+      <Card title="Decoy sessions (24h)">
         {sessions.loading && <Loading label="Loading decoy sessions" />}
         {sessions.data && sessions.data.items.length === 0 && (
           <Empty title="No decoy sessions">No sessions recorded in the past 24 hours.</Empty>
