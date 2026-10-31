@@ -1,32 +1,18 @@
-<p align="center">
-  <img src="docs/assets/hero.png" alt="ThreatPolish — campaign correlation that shows its work" />
-</p>
+# ThreatPolish
 
-<h1 align="center">ThreatPolish</h1>
+**Evidence-guided campaign correlation with uncertainty-aware adaptive deception.**
 
-<p align="center">
-  <strong>Campaign correlation that shows its work.</strong><br />
-  Evidence-guided session correlation with uncertainty-aware adaptive deception.
-</p>
+[![CI](https://github.com/heyytrayamm/ThreatPolish/actions/workflows/ci.yml/badge.svg)](https://github.com/heyytrayamm/ThreatPolish/actions/workflows/ci.yml)
+![Python 3.12](https://img.shields.io/badge/Python-3.12-0b7285?logo=python&logoColor=white)
+![React 18](https://img.shields.io/badge/React-18-087ea4?logo=react&logoColor=white)
+![PostgreSQL 16](https://img.shields.io/badge/PostgreSQL-16-31648c?logo=postgresql&logoColor=white)
+![License: proprietary](https://img.shields.io/badge/License-proprietary-6b21a8)
 
-<p align="center">
-  <a href="https://github.com/heyytrayamm/ThreatPolish/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/heyytrayamm/ThreatPolish/actions/workflows/ci.yml/badge.svg" /></a>
-  <img alt="Python 3.12" src="https://img.shields.io/badge/Python-3.12-0b7285?logo=python&amp;logoColor=white" />
-  <img alt="React 18" src="https://img.shields.io/badge/React-18-087ea4?logo=react&amp;logoColor=white" />
-  <img alt="PostgreSQL 16" src="https://img.shields.io/badge/PostgreSQL-16-31648c?logo=postgresql&amp;logoColor=white" />
-  <img alt="193 tests" src="https://img.shields.io/badge/tests-193%20passing-14b8a6" />
-  <img alt="License: proprietary" src="https://img.shields.io/badge/License-proprietary-6b21a8" />
-</p>
-
-> **Status — 1.0.5.** Self-hosted. The Docker/PostgreSQL path is verified end to
-> end, including restart, backup/restore, database outage and live Cowrie
-> ingestion. Benchmark results use synthetic telemetry; read the
-> [limits](#limits) before drawing operational conclusions.
-
-ThreatPolish ingests telemetry from authorized decoys and assessments, correlates
-sessions across IP addresses using explicit behavioural evidence, explains every
-relationship it proposes, and can request additional observation through isolated
-decoy profiles when the evidence is genuinely uncertain.
+ThreatPolish is a self-hosted defensive platform. It ingests telemetry from
+authorized decoys and assessments, correlates sessions across IP addresses using
+explicit behavioural evidence, explains every relationship it proposes, and can
+request additional observation through isolated decoy profiles when the evidence
+is genuinely uncertain.
 
 It does **not** identify attackers. It produces relationship hypotheses with
 recorded evidence, confidence, contradictions and expiry, so an analyst can

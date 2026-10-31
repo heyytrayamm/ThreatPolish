@@ -1,5 +1,5 @@
 import { FormEvent, useRef, useState } from "react";
-import { api, SessionHistory, User } from "../api";
+import { api, Role, SessionHistory, User } from "../api";
 import { RetentionPanel } from "../components/RetentionPanel";
 import { SessionTable } from "../components/SessionTable";
 import { Badge, Card, Empty, ErrorBox, Field, formatTime, Loading, useAsync } from "../ui";
@@ -19,6 +19,15 @@ export default function Administration() {
   // Session lookups are per-account. A slow response for the previously
   // inspected account must not overwrite the one now open.
   const inspection = useRef(0);
+
+  // Create-user form state
+  const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
+  const [password, setPassword] = useState("");
+  const [role, setRole] = useState<Role>("analyst");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
   const sources = useAsync(() => api.sources(), []);
   const quarantine = useAsync(() => api.quarantine(), []);
@@ -106,6 +115,33 @@ export default function Administration() {
     }
   }
 
+  async function handleCreateUser(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const created = await api.createUser({
+        email,
+        name,
+        role,
+        password,
+      });
+
+      setSuccess(`Account created successfully for ${created.email}.`);
+      setEmail("");
+      setName("");
+      setPassword("");
+      setRole("analyst");
+      setTick((previous) => previous + 1);
+    } catch (failure) {
+      setError((failure as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="page">
       <header className="page-head">
@@ -122,13 +158,80 @@ export default function Administration() {
       />
       {notice && <div className="notice">{notice}</div>}
 
+      <Card title="Create user account">
+        <form onSubmit={handleCreateUser} className="stack">
+          {error && <ErrorBox message={error} />}
+          {success && <p className="ok" role="status">{success}</p>}
+
+          <label className="field">
+            <span>Full name</span>
+            <input
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="Friend's name"
+              maxLength={120}
+              required
+            />
+          </label>
+
+          <label className="field">
+            <span>Email address</span>
+            <input
+              type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder="friend@example.com"
+              autoComplete="off"
+              required
+            />
+          </label>
+
+          <label className="field">
+            <span>Temporary password</span>
+            <input
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              minLength={10}
+              maxLength={256}
+              autoComplete="new-password"
+              required
+            />
+            <small className="muted">Minimum 10 characters. Share it securely with the new user.</small>
+          </label>
+
+          <label className="field">
+            <span>Account role</span>
+            <select
+              value={role}
+              onChange={(event) => setRole(event.target.value as Role)}
+            >
+              <option value="analyst">Analyst</option>
+              <option value="viewer">Viewer</option>
+              <option value="sensor">Sensor</option>
+              <option value="admin">Admin</option>
+            </select>
+          </label>
+
+          <div>
+            <button type="submit" disabled={busy}>
+              {busy ? "Creating account..." : "Create user"}
+            </button>
+          </div>
+        </form>
+      </Card>
+
       <div className="grid two">
         <Card title="Source health">
           {sources.loading && <Loading />}
-          {sources.data && sources.data.sources.length === 0 && <Empty>No sources have reported.</Empty>}
+          {sources.data && sources.data.sources.length === 0 && (
+            <Empty>No sources have reported.</Empty>
+          )}
           {sources.data && sources.data.sources.length > 0 && (
             <table>
-              <thead><tr><th>Source</th><th>Status</th><th>Last event</th><th>Errors</th></tr></thead>
+              <thead>
+                <tr><th>Source</th><th>Status</th><th>Last event</th><th>Errors</th></tr>
+              </thead>
               <tbody>
                 {sources.data.sources.map((source) => (
                   <tr key={source.source}>
@@ -145,7 +248,10 @@ export default function Administration() {
 
         <Card title="Accounts">
           {users.loading && <Loading />}
-          {users.data && (
+          {users.data && users.data.users.length === 0 && (
+            <Empty>No accounts found.</Empty>
+          )}
+          {users.data && users.data.users.length > 0 && (
             <table>
               <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Sessions</th></tr></thead>
               <tbody>
@@ -169,7 +275,7 @@ export default function Administration() {
                           disabled={busyUser === user.id}
                           onClick={() => revoke(user.id, user.email)}
                         >
-                          {busyUser === user.id ? "Revoking…" : "Revoke sessions"}
+                          {busyUser === user.id ? "Revoking\u2026" : "Revoke sessions"}
                         </button>
                       </div>
                     </td>
@@ -183,7 +289,7 @@ export default function Administration() {
 
       {audited && (
         <Card
-          title={`Sessions — ${audited.name}`}
+          title={`Sessions \u2014 ${audited.name}`}
           actions={
             <button type="button" className="link" onClick={closeInspection}>
               Close
@@ -225,7 +331,7 @@ export default function Administration() {
               {tokens.data.tokens.map((token) => (
                 <tr key={token.id}>
                   <td>{token.name}</td>
-                  <td className="mono small">{token.prefix}…</td>
+                  <td className="mono small">{token.prefix}{"\u2026"}</td>
                   <td>{token.role}</td>
                   <td>{formatTime(token.created_at)}</td>
                   <td>{formatTime(token.last_used_at)}</td>
@@ -268,7 +374,7 @@ export default function Administration() {
             </select>
           </Field>
           <button type="submit" disabled={tokenBusy || tokenName.trim() === ""}>
-            {tokenBusy ? "Creating…" : "Create token"}
+            {tokenBusy ? "Creating\u2026" : "Create token"}
           </button>
         </form>
         <p className="muted small">
@@ -279,19 +385,23 @@ export default function Administration() {
 
       <Card title="Audit trail">
         {audit.loading && <Loading />}
-        {audit.data && audit.data.items.length === 0 && <Empty>No audit entries yet.</Empty>}
+        {audit.data && audit.data.items.length === 0 && (
+          <Empty>No audit entries yet.</Empty>
+        )}
         {audit.data && audit.data.items.length > 0 && (
           <table>
-            <thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Object</th><th>Outcome</th><th>IP</th></tr></thead>
+            <thead>
+              <tr><th>Time</th><th>Actor</th><th>Action</th><th>Object</th><th>Outcome</th><th>IP</th></tr>
+            </thead>
             <tbody>
               {audit.data.items.map((entry) => (
                 <tr key={entry.id}>
                   <td>{formatTime(entry.ts)}</td>
-                  <td className="mono small">{entry.actor_id ?? "system"}</td>
+                  <td className="mono small">{entry.actor_id ?? "\u2014"}</td>
                   <td>{entry.action}</td>
-                  <td className="mono small">{entry.object_type}:{entry.object_id ?? "—"}</td>
+                  <td className="mono small">{entry.object_type}:{entry.object_id ?? "\u2014"}</td>
                   <td>{entry.outcome}</td>
-                  <td className="mono small">{entry.request_ip ?? "—"}</td>
+                  <td className="mono small">{entry.request_ip ?? "\u2014"}</td>
                 </tr>
               ))}
             </tbody>
@@ -301,15 +411,19 @@ export default function Administration() {
 
       <Card title="Quarantined payloads">
         {quarantine.loading && <Loading />}
-        {quarantine.data && quarantine.data.items.length === 0 && <Empty>No rejected payloads.</Empty>}
+        {quarantine.data && quarantine.data.items.length === 0 && (
+          <Empty>No rejected payloads.</Empty>
+        )}
         {quarantine.data && quarantine.data.items.length > 0 && (
           <table>
-            <thead><tr><th>Received</th><th>Module</th><th>Reason code</th><th>Reason</th></tr></thead>
+            <thead>
+              <tr><th>Received</th><th>Module</th><th>Reason code</th><th>Reason</th></tr>
+            </thead>
             <tbody>
               {quarantine.data.items.map((item) => (
                 <tr key={item.id}>
                   <td>{formatTime(item.received_at)}</td>
-                  <td>{item.source_module ?? "—"}</td>
+                  <td>{item.source_module ?? "\u2014"}</td>
                   <td className="mono">{item.reason_code}</td>
                   <td className="small">{item.reason}</td>
                 </tr>
