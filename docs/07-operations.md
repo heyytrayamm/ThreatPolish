@@ -63,7 +63,7 @@ The stack contains:
 | Service | Role | Exposure |
 | --- | --- | --- |
 | `db` | PostgreSQL 16 | Internal `backend` network only |
-| `app` | API plus the built dashboard | Bound to `127.0.0.1:8000` |
+| `app` | API plus the built dashboard | Bound to `127.0.0.1:${PORT:-8000}`; the container, its published port and its health check all follow that one value |
 | `cowrie` | Optional SSH/Telnet decoy | Profile `honeypot`, publishes `2222` |
 
 ```bash

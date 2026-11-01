@@ -24,6 +24,11 @@ them, the way it is deployed and the way it is documented.
   its health check, so a platform that assigns a port needs no image change.
   The README records the `postgresql+psycopg://` form `TP_DB_URL` needs, because
   the driver is psycopg 3 and a hosted URL arrives as `postgresql://`.
+- `docker-compose.yml` passes `PORT` through to the container and publishes and
+  probes the same value, so the override can be exercised locally as well. The
+  container job runs a smoke test that starts the image through Compose with
+  `PORT=9099` and waits for readiness on that port, which is the only check that
+  fails if the image and its health check disagree about the port.
 - `tests/test_browser.py` drives the landing page, the legal pages and the
   create-account flow in Chrome, and signs in as the account it just created.
 

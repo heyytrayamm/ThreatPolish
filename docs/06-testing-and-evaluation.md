@@ -73,11 +73,12 @@ and the environment they were measured in are in
 
 ## Measured behaviour
 
-Latest full run: **209 passed on SQLite in 124.1 s**, including the ten browser
-cases with the bundle built (199 pass and those ten skip when it is missing).
-The same 209 pass on PostgreSQL 16.15 in 312.6 s; the fixture drops and recreates
-the schema per test, so isolation matches the SQLite path and the extra time is
-the per-test schema reset. CI runs both engines on every push.
+Two consecutive full runs: **209 passed on SQLite in 104.1 s and 124.1 s**,
+including the ten browser cases with the bundle built (199 pass and those ten
+skip when it is missing). The same 209 pass on PostgreSQL 16.15 in 312.6 s; the
+fixture drops and recreates the schema per test, so isolation matches the SQLite
+path and the extra time is the per-test schema reset. CI runs both engines on
+every push.
 Static checks: the frontend builds with `tsc -b` and `vite build`; the backend
 passes Ruff and compiles with `compileall`.
 

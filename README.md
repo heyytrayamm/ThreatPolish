@@ -310,7 +310,7 @@ reconciled exactly with the stored count in both runs. Source:
 
 | Check | Result |
 | --- | --- |
-| Backend suite · SQLite | **209 passed** in 124.1 s (ten of them drive Chrome end to end) |
+| Backend suite · SQLite | **209 passed** in 104–124 s across runs (ten of them drive Chrome end to end) |
 | Backend suite · PostgreSQL 16 | **209 passed** in 312.6 s against a real service database (PostgreSQL 16.15) |
 | Four API workers, six writers, PostgreSQL 16 | No write errors while correlation ran; accepted events reconciled exactly; p95 18.7 → 24.5 ms and the worst request 43 → 555 ms |
 | Campaign evidence plan and observation metrics | Unit-tested against a seeded campaign; the same test runs on SQLite and PostgreSQL |
