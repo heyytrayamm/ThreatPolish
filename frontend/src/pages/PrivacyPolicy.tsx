@@ -2,7 +2,7 @@ import { Card } from "../ui";
 
 export default function PrivacyPolicy() {
   return (
-    <div className="page">
+    <div className="page legal-document">
       <header className="page-head">
         <div>
           <h1>Privacy Policy</h1>
