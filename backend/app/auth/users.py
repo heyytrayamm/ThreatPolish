@@ -27,6 +27,18 @@ from .rbac import validate_role
 
 log = get_logger(__name__)
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+# The email pattern excludes whitespace but not every control character, and a
+# name is free text: a NUL or a newline would reach the dashboard, the audit
+# trail and every export, and split log lines.  Session and target identifiers
+# already reject them for the same reason.
+_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def _clean_name(value: str) -> str:
+    text = value.strip()
+    if _CONTROL_RE.search(text):
+        raise ValidationFailure("name must not contain control characters")
+    return text[:120]
 
 
 def _public_user(row: dict[str, Any]) -> dict[str, Any]:
@@ -43,10 +55,13 @@ def _public_user(row: dict[str, Any]) -> dict[str, Any]:
 
 def create_user(*, email: str, name: str, role: str, password: str) -> dict[str, Any]:
     email = email.strip().lower()
+    if _CONTROL_RE.search(email):
+        raise ValidationFailure("email must not contain control characters")
     if not _EMAIL_RE.match(email):
         raise ValidationFailure("a valid email address is required")
     if len(password) < 10:
         raise ValidationFailure("password must be at least 10 characters")
+    name = _clean_name(name)
     validate_role(role)
     user_id = new_id("usr")
     created = iso(utcnow())
@@ -56,7 +71,7 @@ def create_user(*, email: str, name: str, role: str, password: str) -> dict[str,
                 users.insert().values(
                     id=user_id,
                     email=email,
-                    name=name.strip()[:120] or email.split("@")[0],
+                    name=name or email.split("@")[0],
                     role=role,
                     password_hash=hash_password(password),
                     is_active=1,

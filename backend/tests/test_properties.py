@@ -447,3 +447,48 @@ def test_corpus_fingerprint_tracks_the_evidence_it_summarises():
 
     # The summary is a report, not a key; it may coincide, the fingerprint may not.
     assert third.n_sessions == first.n_sessions + 1
+
+
+def test_account_text_cannot_carry_control_characters(client, admin_headers):
+    """A NUL slips past the email pattern and then reaches logs and every export."""
+    from app.auth.users import create_user
+    from app.core.errors import ValidationFailure
+
+    response = client.post(
+        "/api/v1/auth/users",
+        headers=admin_headers,
+        json={
+            "email": "control@threatpolish.test",
+            "name": "Evil\x00Name",
+            "role": "viewer",
+            "password": "long-enough-password",
+        },
+    )
+    assert response.status_code == 422, response.text
+    assert "control characters" in response.text
+
+    # The email pattern rejects whitespace but not every control character, so a
+    # NUL address would have been stored and then used as an audit object id.
+    with pytest.raises(ValidationFailure):
+        create_user(
+            email="nul\x00@threatpolish.test",
+            name="Fine",
+            role="viewer",
+            password="long-enough-password",
+        )
+    with pytest.raises(ValidationFailure):
+        create_user(
+            email="newline@threatpolish.test",
+            name="One\nTwo",
+            role="viewer",
+            password="long-enough-password",
+        )
+
+    # Ordinary text is unaffected, and the name is still trimmed.
+    created = create_user(
+        email="clean@threatpolish.test",
+        name="  Fine Name  ",
+        role="viewer",
+        password="long-enough-password",
+    )
+    assert created["name"] == "Fine Name"

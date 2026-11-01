@@ -2,6 +2,26 @@
 
 All notable changes to this project are recorded here. Dates use ISO 8601.
 
+## Unreleased
+
+### Fixed
+
+- Account creation rejects control characters in the display name and in the
+  address. The email pattern excludes whitespace but not every control
+  character, so a NUL could be stored, rendered in the dashboard and written
+  into the audit detail and every export — session and target identifiers
+  already rejected them for the same reason. A name is still trimmed, and
+  ordinary text is unaffected. `tests/test_properties.py` covers the name, the
+  address and the accepted case.
+
+### Verified
+
+- Deep scan clean across all six modes on this revision: 57 routes and 285
+  authorization checks with no disagreement, 60 operations across 652 hostile
+  requests with no 5xx, 23 SSRF payloads with no target reached, no redirect
+  followed or oversized body read, no scope drift and no endpoint over its
+  statement or payload budget.
+
 ## 2.0.3 — 2026-11-01
 
 ### Added
