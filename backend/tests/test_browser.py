@@ -1160,3 +1160,80 @@ def test_theme_follows_the_host_until_a_switch_is_stored(live_server: str):
             page.close()
         finally:
             browser.close()
+
+
+def test_landing_page_explains_the_product_and_signs_in_from_the_hero(live_server: str):
+    """The signed-out root is the landing page, not a bare login form."""
+    with playwright_api.sync_playwright() as p:
+        browser = _launch(p.chromium)
+        try:
+            page = browser.new_page()
+            page.goto(live_server, wait_until="domcontentloaded")
+
+            # The public page says what the platform does before it asks for a
+            # credential, and the workspace is not mounted behind it.
+            page.locator(".landing-page-white").wait_for()
+            page.get_by_text("Attract. Detect. Investigate.").wait_for()
+            assert page.locator(".app").count() == 0
+            # `Retention` only exists in the workspace navigation.
+            assert page.get_by_role("button", name="Retention").count() == 0
+
+            # The legal pages open without an account and lead back to it.
+            page.get_by_role("button", name="Privacy Policy").first.click()
+            page.get_by_role("heading", name="Privacy Policy").wait_for()
+            assert page.locator(".landing-page-white").count() == 0
+            page.get_by_role("button", name="Back to Platform").click()
+            page.locator(".landing-page-white").wait_for()
+
+            # The sign-in card is part of the page, so a visitor who already has
+            # an account lands in the console without a second page load.
+            page.get_by_label("Email").fill(ADMIN_EMAIL)
+            page.get_by_label("Password", exact=True).fill(ADMIN_PASSWORD)
+            page.get_by_role("button", name="Sign in").click()
+            page.wait_for_selector(".sidebar")
+            page.locator(".sidebar .nav-item").first.wait_for()
+            assert page.locator(".landing-page-white").count() == 0
+            page.close()
+        finally:
+            browser.close()
+
+
+def test_administration_creates_an_account_that_signs_in_with_its_password(live_server: str):
+    """A created account can sign in with the password typed in the form."""
+    created_email = "created-browser@threatpolish.test"
+    created_password = "created-browser-password-1"
+
+    with playwright_api.sync_playwright() as p:
+        browser = _launch(p.chromium)
+        try:
+            page = browser.new_page()
+            page.goto(live_server, wait_until="domcontentloaded")
+            page.get_by_label("Email").fill(ADMIN_EMAIL)
+            page.get_by_label("Password", exact=True).fill(ADMIN_PASSWORD)
+            page.get_by_role("button", name="Sign in").click()
+            page.wait_for_selector(".sidebar")
+
+            page.get_by_role("button", name="Administration").click()
+            page.get_by_label("Full name").fill("Created Analyst")
+            page.get_by_label("Email address").fill(created_email)
+            page.get_by_label("Temporary password").fill(created_password)
+            page.get_by_label("Account role").select_option("analyst")
+            page.get_by_role("button", name="Create user").click()
+            page.wait_for_selector(f"[role=status]:has-text('{created_email}')")
+
+            # The account appears in the inventory the administrator is reading.
+            page.wait_for_selector(f"td:has-text('{created_email}')")
+
+            # Signing out and back in with the typed password proves the form
+            # stored what it said it did, and the new role's navigation applies.
+            page.get_by_role("button", name="Sign out").click()
+            page.locator(".landing-page-white").wait_for()
+            page.get_by_label("Email").fill(created_email)
+            page.get_by_label("Password", exact=True).fill(created_password)
+            page.get_by_role("button", name="Sign in").click()
+            page.wait_for_selector(".sidebar")
+            assert page.get_by_role("button", name="Administration").count() == 0
+            assert page.locator(".role-chip:has-text('analyst')").count() == 1
+            page.close()
+        finally:
+            browser.close()

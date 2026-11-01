@@ -2,6 +2,67 @@
 
 All notable changes to this project are recorded here. Dates use ISO 8601.
 
+## 2.0.0 — 2026-11-01
+
+This release rebuilds the interface. The API surface, scoring model and event
+contract are unchanged from 1.0.5; everything below is the workspace around
+them, the way it is deployed and the way it is documented.
+
+### Added
+
+- A public landing page at the root for signed-out visitors: what the platform
+  does, how correlation works, the evidence model, the quick start and the
+  sign-in card on the same page. Privacy Policy and Terms and Conditions open
+  without an account (`?view=privacy`, `?view=terms`) and lead back to it.
+- Administration creates accounts from the console through `POST /auth/users`:
+  name, email, role and a temporary password validated by the same rules the
+  CLI applies, with the created account listed in the inventory it was created
+  from. `create-user` now has a UI counterpart.
+- `scripts/capture_screenshots.py` writes `landing.png` for the signed-out view,
+  which is what the README shows instead of the retired login form.
+- Render-style deployment: the container reads `PORT` in both its command and
+  its health check, so a platform that assigns a port needs no image change.
+  The README records the `postgresql+psycopg://` form `TP_DB_URL` needs, because
+  the driver is psycopg 3 and a hosted URL arrives as `postgresql://`.
+- `tests/test_browser.py` drives the landing page, the legal pages and the
+  create-account flow in Chrome, and signs in as the account it just created.
+
+### Changed
+
+- The analyst workspace is a horizontal top bar — brand, engine status,
+  navigation, theme switch and account — instead of a left rail, collapsing to
+  a menu button on a narrow screen. The theme switch moved from the ribbon to
+  the bar and reads `Daylight Theme` / `Console Theme`.
+- Every view was rebuilt on one token set: Overview, Events, Campaigns (with the
+  evidence matrix, acquisition plan and kill-chain coverage), Deception, Web
+  findings, Crypto, Responses, Retention, Administration and the account page.
+- Inter and JetBrains Mono ship with the bundle (OFL-1.1,
+  `frontend/public/fonts`) instead of being fetched from a font CDN, and the
+  icon set is redrawn in the palette the console uses.
+- The README leads with the logo, lists what this release changed, and shows
+  regenerated screenshots for both themes.
+
+### Fixed
+
+- The dashboard Content-Security-Policy no longer names `fonts.googleapis.com`
+  or `fonts.gstatic.com`. Nothing in the bundle references either origin, so the
+  allowance widened what an injected page could reach without serving a font.
+- The screenshot pass matched `.card`, which the redesign renamed to `tp-card`,
+  so it crashed on the campaign page; it also captured whatever scroll position
+  the sign-in click left behind. It matches both panel classes and frames every
+  view from its top.
+- The landing page's quick start started the API without building the bundle,
+  which is the ordering that answers `dashboard_not_built`.
+- `POST /auth/users` had no browser coverage; an account created from the form is
+  now signed in with the password that was typed into it.
+
+### Verifying
+
+- The suite passes on SQLite and on PostgreSQL 16.15, `ruff` is clean, the deep
+  scan reports no authorization disagreement, no 5xx across its hostile
+  requests, no accepted SSRF target and no scope or budget finding, and the
+  dashboard builds.
+
 ## 1.0.5 — 2026-10-27
 
 ### Added
