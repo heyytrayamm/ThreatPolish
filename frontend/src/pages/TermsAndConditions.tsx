@@ -2,7 +2,7 @@ import { Card } from "../ui";
 
 export default function TermsAndConditions() {
   return (
-    <div className="page">
+    <div className="page legal-document">
       <header className="page-head">
         <div>
           <h1>Terms and Conditions</h1>

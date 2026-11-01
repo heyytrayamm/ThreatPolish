@@ -150,7 +150,6 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000`;
               />
               <span className="landing-brand-name">ThreatPolish</span>
             </a>
-            <span className="landing-brand-pill">Defensive Honeypot Platform</span>
           </div>
 
           <nav className={`landing-nav-menu ${mobileMenuOpen ? "is-open" : ""}`} aria-label="Landing Navigation">
@@ -1471,10 +1470,6 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000`;
               <p className="footer-tagline">
                 See the Evidence. Understand the Threat.
               </p>
-              <div className="footer-status-pill">
-                <span className="status-dot" />
-                <span>Evidence Engine Ready</span>
-              </div>
             </div>
 
             <div className="footer-links-col">
