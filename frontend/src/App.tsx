@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { api, getToken, setToken, User } from "./api";
 import { applyTheme, readTheme, rememberTheme, watchHostTheme, type Theme } from "./theme";
-import { ErrorBox, IconEye, IconEyeOff, IconShield, Loading, TerminalWindow } from "./ui";
+import { Loading } from "./ui";
 import Overview from "./pages/Overview";
 import Events from "./pages/Events";
 import Campaigns from "./pages/Campaigns";
@@ -14,6 +14,7 @@ import Administration from "./pages/Administration";
 import Account from "./pages/Account";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import TermsAndConditions from "./pages/TermsAndConditions";
+import Landing from "./pages/Landing";
 
 type View =
   | "overview"
@@ -81,6 +82,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [clock, setClock] = useState(utcClock);
   const [theme, setTheme] = useState<Theme>(readTheme);
+  const [topbarMenuOpen, setTopbarMenuOpen] = useState(false);
 
   useEffect(() => {
     const timer = window.setInterval(() => setClock(utcClock()), 1000);
@@ -134,6 +136,7 @@ export default function App() {
   }
 
   function selectView(next: View) {
+    setTopbarMenuOpen(false);
     setView(next);
     rememberView(next);
   }
@@ -154,144 +157,58 @@ export default function App() {
   if (!user) {
     if (view === "privacy" || view === "terms") {
       return (
-        <main className="login-view">
+        <main className="public-shell-view">
           <div className="public-shell">
             <header className="public-nav">
+              <div className="public-nav-brand">
+                <img src="/logo-mark.png" alt="ThreatPolish" width={32} height={32} />
+                <strong>ThreatPolish</strong>
+              </div>
               <button
                 type="button"
                 className="secondary small"
                 onClick={() => selectView("overview")}
               >
-                Back to Sign in
+                Back to Platform
               </button>
             </header>
-            {view === "privacy" ? <PrivacyPolicy /> : <TermsAndConditions />}
-          </div>
-          <footer className="login-foot">
-            <div className="login-foot-links">
-              <button type="button" className="link" onClick={() => selectView("privacy")}>Privacy Policy</button>
-              <span>-</span>
-              <button type="button" className="link" onClick={() => selectView("terms")}>Terms and Conditions</button>
+            <div className="public-content-wrap">
+              {view === "privacy" ? <PrivacyPolicy /> : <TermsAndConditions />}
             </div>
-          </footer>
+            <footer className="public-foot">
+              <div className="public-foot-links">
+                <button type="button" className="link small" onClick={() => selectView("privacy")}>
+                  Privacy Policy
+                </button>
+                <span>-</span>
+                <button type="button" className="link small" onClick={() => selectView("terms")}>
+                  Terms and Conditions
+                </button>
+                <span>-</span>
+                <button type="button" className="link small" onClick={() => selectView("overview")}>
+                  Console Sign In
+                </button>
+              </div>
+            </footer>
+          </div>
         </main>
       );
     }
 
     return (
-      <main className="login-view">
-        <div className="login-container">
-          {/* Technical Platform Intro with Interactive Terminal Simulator */}
-          <section className="login-intro-section">
-            <div className="hero-tag">
-              <IconShield size={14} />
-              Defensive Cybersecurity Platform
-            </div>
-            <h1>Understand the Threat. Follow the Evidence.</h1>
-            <p>
-              An evidence-driven cybersecurity platform for threat observation, session correlation,
-              campaign analysis and adaptive deception.
-            </p>
-
-            <div className="hero-terminal-wrap">
-              <TerminalWindow
-                title="threatpolish@sensor-node-01: live-telemetry"
-                lines={[
-                  { text: "threatpolish listen --port 8022 --mode adaptive", type: "cmd" },
-                  { text: "[+] Deception engine ready on :8022 (HTTP) & :2222 (SSH)", type: "accent" },
-                  { text: "[!] Sensor alert: incoming probe from 198.51.100.42", type: "warn" },
-                  { text: "[+] Fingerprint: JA3=771,4865-4866, client='Go-http-client/1.1'", type: "output" },
-                  { text: "[*] Evaluating session correlation graph (corr-1.3.0)...", type: "output" },
-                  { text: "[+] Campaign candidate formed: cmp_5a9676 (conf: 0.942)", type: "accent" },
-                ]}
-              />
-            </div>
-
-            <div className="login-pillars">
-              <div className="pillar-item">
-                <strong>Cross-IP Correlation</strong>
-                <span>Links sessions via multi-family behavioral specificity.</span>
-              </div>
-              <div className="pillar-item">
-                <strong>Adaptive Deception</strong>
-                <span>Engages ambiguous sources with isolated decoy profiles.</span>
-              </div>
-              <div className="pillar-item">
-                <strong>Audited Containment</strong>
-                <span>Policy-gated, expiring mitigations with rollback.</span>
-              </div>
-            </div>
-          </section>
-
-          {/* Clean Cybersecurity Login Card */}
-          <section className="login-form-section">
-            <form onSubmit={signIn} className="login-box" aria-label="sign in">
-              <div className="login-box-head">
-                <img className="brand-mark" src="/logo-mark.png" alt="ThreatPolish" width={44} height={44} />
-                <h1>ThreatPolish</h1>
-                <p>Analyst Access Portal</p>
-              </div>
-
-              <ErrorBox message={error} />
-
-              <div className="tp-field">
-                <label htmlFor="login-email" className="tp-field-label">Email</label>
-                <input
-                  id="login-email"
-                  type="email"
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  autoComplete="username"
-                  placeholder="analyst@threatpolish.local"
-                  required
-                />
-              </div>
-
-              <div className="tp-field">
-                <label htmlFor="login-password" className="tp-field-label">Password</label>
-                <div className="tp-password-input-wrap">
-                  <input
-                    id="login-password"
-                    type={passwordVisible ? "text" : "password"}
-                    value={password}
-                    onChange={(event) => setPassword(event.target.value)}
-                    autoComplete="current-password"
-                    placeholder="Enter password"
-                    required
-                  />
-                  <button
-                    type="button"
-                    className="tp-password-toggle"
-                    onClick={() => setPasswordVisible(!passwordVisible)}
-                    aria-label={passwordVisible ? "Hide password" : "Show password"}
-                    tabIndex={-1}
-                  >
-                    {passwordVisible ? <IconEyeOff size={16} /> : <IconEye size={16} />}
-                  </button>
-                </div>
-              </div>
-
-              <button type="submit" className="primary" disabled={busy}>
-                {busy ? "Signing in..." : "Sign in"}
-              </button>
-
-              <div className="login-box-footer">
-                <span>Sessions expire automatically upon token revocation.</span>
-                <span className="mono text-muted">HS256 session - zero-knowledge credentials</span>
-              </div>
-            </form>
-          </section>
-        </div>
-
-        <footer className="login-foot">
-          <span>Authorized defensive use only - Evidence retained with every decision</span>
-          <div className="login-foot-links">
-            <button type="button" className="link" onClick={() => selectView("privacy")}>Privacy Policy</button>
-            <span>-</span>
-            <button type="button" className="link" onClick={() => selectView("terms")}>Terms and Conditions</button>
-          </div>
-        </footer>
-      </main>
+      <Landing
+        email={email}
+        setEmail={setEmail}
+        password={password}
+        setPassword={setPassword}
+        passwordVisible={passwordVisible}
+        setPasswordVisible={setPasswordVisible}
+        busy={busy}
+        error={error}
+        onSignIn={signIn}
+        onOpenPrivacy={() => selectView("privacy")}
+        onOpenTerms={() => selectView("terms")}
+      />
     );
   }
 
@@ -302,21 +219,30 @@ export default function App() {
 
   return (
     <div className="app">
-      <a className="skip-link" href="#main">Skip to content</a>
-      <aside className="sidebar">
-        <div className="brand">
-          <img className="brand-mark" src="/logo-mark.png" alt="ThreatPolish" width={36} height={36} />
-          <div>
-            <strong>ThreatPolish</strong>
-            <span className="brand-sub">Security Workspace</span>
+      <a className="skip-link" href="#main">
+        Skip to content
+      </a>
+
+      {/* Horizontal Top Navigation Bar with .sidebar class for Playwright compatibility */}
+      <header className="app-topbar sidebar" role="banner">
+        <div className="topbar-left">
+          <div className="topbar-brand">
+            <img className="brand-mark" src="/logo-mark.png" alt="ThreatPolish" width={32} height={32} />
+            <div className="topbar-brand-text">
+              <strong>ThreatPolish</strong>
+              <span className="brand-sub">Workspace</span>
+            </div>
+          </div>
+          <div className="side-status topbar-status" aria-hidden="true">
+            <span className="status-dot" />
+            <span className="topbar-status-text">Evidence Engine Active</span>
           </div>
         </div>
-        <div className="side-status">
-          <span className="status-dot" />
-          Evidence Engine Active
-        </div>
-        <nav>
-          <span className="nav-label">Navigation</span>
+
+        <nav
+          className={`topbar-nav ${topbarMenuOpen ? "topbar-nav-open" : ""}`}
+          aria-label="Main Navigation"
+        >
           {NAV.filter((item) => canView(item.key, user.role)).map((item, index) => (
             <button
               key={item.key}
@@ -334,40 +260,8 @@ export default function App() {
             </button>
           ))}
         </nav>
-        <div className="sidebar-foot">
-          <div className="sidebar-user">
-            <span className="muted small">{user.name}</span>
-            <span className="role-chip">{user.role}</span>
-          </div>
-          <div className="sidebar-actions">
-            <button
-              type="button"
-              className="link small"
-              onClick={() => {
-                setToken(null);
-                setUser(null);
-              }}
-            >
-              Sign out
-            </button>
-            <span className="muted small">-</span>
-            <button type="button" className="link small" onClick={() => selectView("privacy")}>
-              Privacy
-            </button>
-            <span className="muted small">-</span>
-            <button type="button" className="link small" onClick={() => selectView("terms")}>
-              Terms
-            </button>
-          </div>
-        </div>
-      </aside>
-      <main className="content" id="main">
-        <div className="hud-ribbon">
-          <span className="ribbon-path">
-            ThreatPolish <span className="ribbon-sep">/</span>{" "}
-            <b>{viewTitle}</b>
-          </span>
-          <span className="ribbon-meta">{user.role} clearance</span>
+
+        <div className="topbar-right">
           <button
             type="button"
             className="secondary theme-toggle small"
@@ -377,8 +271,49 @@ export default function App() {
           >
             {theme === "daylight" ? "Console Theme" : "Daylight Theme"}
           </button>
+
+          <div className="topbar-user">
+            <span className="user-name">{user.name}</span>
+            <span className="role-chip">{user.role}</span>
+          </div>
+
+          <button
+            type="button"
+            className="link small topbar-signout"
+            onClick={() => {
+              setToken(null);
+              setUser(null);
+            }}
+          >
+            Sign out
+          </button>
+
+          <button
+            type="button"
+            className="topbar-mobile-btn"
+            aria-label="Toggle navigation menu"
+            onClick={() => setTopbarMenuOpen(!topbarMenuOpen)}
+          >
+            <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              {topbarMenuOpen ? (
+                <path d="M18 6 6 18M6 6l12 12" />
+              ) : (
+                <path d="M3 12h18M3 6h18M3 18h18" />
+              )}
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <main className="content" id="main">
+        <div className="hud-ribbon">
+          <span className="ribbon-path">
+            ThreatPolish <span className="ribbon-sep">/</span> <b>{viewTitle}</b>
+          </span>
+          <span className="ribbon-meta">{user.role} clearance</span>
           <span className="ribbon-clock">{clock}</span>
         </div>
+
         {activeView === "overview" && (
           <Overview user={user} onOpenRetention={() => selectView("retention")} />
         )}
