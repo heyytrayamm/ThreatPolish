@@ -2,6 +2,33 @@
 
 All notable changes to this project are recorded here. Dates use ISO 8601.
 
+## 2.0.1 — 2026-11-01
+
+A follow-up to the interface release: one deployment defect, the artwork after
+the version change, and dependency updates handed to Dependabot.
+
+### Added
+
+- `tests/test_deployment.py` fails when the image command, its health check and
+  the Compose service disagree about the port, for the default and for an
+  assigned one. The container job also starts the image through Compose with
+  `PORT=9099` and waits for readiness there, which is the only check that
+  catches an image and a probe that disagree.
+- `.github/dependabot.yml` asks for weekly pip, npm, GitHub Actions and Docker
+  updates. The audits in CI only report an advisory; they never open a bump.
+
+### Fixed
+
+- `docker-compose.yml` published and probed `8000` while the image bound
+  `${PORT:-8000}`, so a deployment that assigned a port was reported unhealthy
+  on the port it was serving. The app service passes `PORT` through, publishes
+  it and probes the same value.
+
+### Changed
+
+- Screenshots regenerated after the version change.
+- Suite times are recorded over two runs rather than a single sample.
+
 ## 2.0.0 — 2026-11-01
 
 This release rebuilds the interface. The API surface, scoring model and event
