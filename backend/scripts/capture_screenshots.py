@@ -43,7 +43,10 @@ def _launch(browser_type):
 
 
 def _card(page, title: str):
-    card = page.locator(".card").filter(has=page.get_by_role("heading", name=title, exact=True)).first
+    # The panel markup is `tp-card`; older captures used `card`.  Accept both so
+    # the script keeps working across a redesign of the component itself.
+    heading = page.get_by_role("heading", name=title, exact=True)
+    card = page.locator(".tp-card, .card").filter(has=heading).first
     card.wait_for(state="visible")
     return card
 
@@ -70,6 +73,9 @@ def capture(base: str, email: str, password: str, out: Path, width: int = 1400,
     def shot(name: str) -> None:
         stem, _, extension = name.partition(".")
         path = out / f"{stem}{suffix}.{extension}"
+        # Focus can leave the viewport part-scrolled; every capture frames the
+        # view from its top so the artwork is comparable between runs.
+        page.evaluate("window.scrollTo(0, 0)")
         page.screenshot(path=str(path))
         written.append(path)
 
@@ -80,7 +86,7 @@ def capture(base: str, email: str, password: str, out: Path, width: int = 1400,
         )
         page.goto(base, wait_until="networkidle")
         if theme == "console":
-            shot("login.png")
+            shot("landing.png")
 
         page.fill("input[type=email]", email)
         page.fill("input[type=password]", password)

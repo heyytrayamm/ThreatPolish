@@ -121,10 +121,16 @@ python -m venv .venv
 source .venv/bin/activate  # On Windows: .venv\\Scripts\\activate
 pip install -r backend/requirements.txt
 
+# Build the dashboard the API serves
+npm --prefix frontend ci --no-audit --no-fund
+npm --prefix frontend run build
+
 # Configure environment & start API
 export TP_JWT_SECRET="generate-a-secure-secret-key-at-least-32-chars"
 export TP_DB_URL="sqlite:///./threatpolish.db"
-cd backend && python -m uvicorn app.main:app --host 127.0.0.1 --port 8000`;
+cd backend
+python -m app.cli create-admin --email you@example.com
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000`;
 
   return (
     <div className="landing-page-white">

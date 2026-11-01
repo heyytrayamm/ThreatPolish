@@ -1,12 +1,22 @@
-# ThreatPolish
+<p align="center">
+  <img src="docs/assets/logo.png" alt="ThreatPolish" width="150" />
+</p>
 
-**Evidence-guided campaign correlation with uncertainty-aware adaptive deception.**
+<h1 align="center">ThreatPolish</h1>
 
-[![CI](https://github.com/heyytrayamm/ThreatPolish/actions/workflows/ci.yml/badge.svg)](https://github.com/heyytrayamm/ThreatPolish/actions/workflows/ci.yml)
-![Python 3.12](https://img.shields.io/badge/Python-3.12-0b7285?logo=python&logoColor=white)
-![React 18](https://img.shields.io/badge/React-18-087ea4?logo=react&logoColor=white)
-![PostgreSQL 16](https://img.shields.io/badge/PostgreSQL-16-31648c?logo=postgresql&logoColor=white)
-![License: proprietary](https://img.shields.io/badge/License-proprietary-6b21a8)
+<p align="center">
+  <strong>Campaign correlation that shows its work.</strong><br />
+  Evidence-guided session correlation with uncertainty-aware adaptive deception.
+</p>
+
+<p align="center">
+  <a href="https://github.com/heyytrayamm/ThreatPolish/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/heyytrayamm/ThreatPolish/actions/workflows/ci.yml/badge.svg" /></a>
+  <img alt="Python 3.12" src="https://img.shields.io/badge/Python-3.12-0b7285?logo=python&amp;logoColor=white" />
+  <img alt="React 18" src="https://img.shields.io/badge/React-18-087ea4?logo=react&amp;logoColor=white" />
+  <img alt="PostgreSQL 16" src="https://img.shields.io/badge/PostgreSQL-16-31648c?logo=postgresql&amp;logoColor=white" />
+  <img alt="207 tests" src="https://img.shields.io/badge/tests-207%20passing-14b8a6" />
+  <img alt="License: proprietary" src="https://img.shields.io/badge/License-proprietary-6b21a8" />
+</p>
 
 ThreatPolish is a self-hosted defensive platform. It ingests telemetry from
 authorized decoys and assessments, correlates sessions across IP addresses using
@@ -17,6 +27,16 @@ is genuinely uncertain.
 It does **not** identify attackers. It produces relationship hypotheses with
 recorded evidence, confidence, contradictions and expiry, so an analyst can
 decide what the evidence supports.
+
+## What's new
+
+| Change | What it gives you |
+| --- | --- |
+| **Public landing page** | Signed-out visitors get an overview of the platform — architecture, evidence model and quick start — with the sign-in card on the same page. Privacy Policy and Terms and Conditions are reachable from it without an account (`?view=privacy`, `?view=terms`). |
+| **Console redesign** | The analyst workspace moved from a left rail to a horizontal top bar: brand, evidence-engine status, workspace navigation, theme switch and account in one line, collapsing to a menu on narrow screens. Overview, Events, Campaigns, Deception, Crypto, Responses and Retention were rebuilt on the same token set. |
+| **Self-hosted typography** | Inter and JetBrains Mono ship with the bundle (OFL-1.1, see `frontend/public/fonts/LICENSE.txt`), so the dashboard loads no third-party origin and the Content-Security-Policy stays closed. |
+| **Create accounts from the console** | Administration creates an analyst, viewer or administrator account through the same validated `POST /auth/users` path the CLI uses, with the password typed once and the role validated against the role matrix. |
+| **Render deployment** | The container reads `PORT` in both the command and the health check, so a platform that assigns its own port needs no image changes; `docker-compose.yml` keeps using 8000. |
 
 ---
 
@@ -90,16 +110,28 @@ Three invariants make the output auditable:
 
 ## The analyst workspace
 
+Signed out, the root is a landing page: what the platform does, how correlation
+works, the evidence model, and the sign-in card in the hero. Signing in opens the
+console.
+
+<p align="center">
+  <img src="docs/assets/landing.png" alt="The ThreatPolish landing page" width="820" />
+</p>
+
 Campaign candidates, the live evidence graph and the correlated-session counts.
 Severity and confidence are shown separately; no view presents an IP address as
-an identity.
+an identity. The workspace is a single horizontal top bar — brand, evidence-engine
+status, navigation, theme switch and account — over the ribbon and the page; on a
+narrow screen the navigation collapses to a menu button.
 
-The console is the default theme. `Daylight` in the ribbon switches to a
-bright-room variant of the same layout — the same panels, rail and gauge strip
+The console is the default theme. `Daylight Theme` in the top bar switches to a
+bright-room variant of the same layout — the same panels, bar and gauge strip
 with dark ink on cool paper — and the choice is remembered for the next visit.
 Until that switch is made the host decides, and goes on deciding: a console left
 open follows the operating system between light and dark as it changes. Both
-variants are drawn from one token set: no component knows which theme is active.
+variants are drawn from one token set: no component knows which theme is active,
+and the typefaces are served from the bundle, so opening the dashboard makes no
+request to a font CDN.
 
 | Console (default) | Daylight |
 | --- | --- |
@@ -316,8 +348,21 @@ docker compose ps
 curl -fsS http://127.0.0.1:8000/api/v1/health/ready
 ```
 
-Open `http://127.0.0.1:8000/` and sign in with the bootstrap administrator. After
-the first login, remove `TP_BOOTSTRAP_ADMIN_*` from `.env` and restart.
+Open `http://127.0.0.1:8000/` — the landing page carries the sign-in card — and
+sign in with the bootstrap administrator. After the first login, remove
+`TP_BOOTSTRAP_ADMIN_*` from `.env` and restart.
+
+### Render
+
+The image needs no change for a platform that assigns its own port: the container
+binds `${PORT:-8000}` and its health check probes the same value. Point a Render
+web service at this repository's `Dockerfile`, use `/api/v1/health/ready` as the
+health check path, and set `TP_ENV=production`, `TP_JWT_SECRET` and the bootstrap
+administrator. Render hands out URLs as `postgresql://…`; the driver here is
+psycopg 3, so give `TP_DB_URL` the explicit form
+`postgresql+psycopg://user:password@host:5432/database`. A persistent disk mounted
+at `/data` keeps a SQLite deployment alive across deploys; a single worker is
+required either way, because the schema migration runs at startup.
 
 ### Local development
 
@@ -334,7 +379,7 @@ python -m app.cli seed-demo      # demo login, telemetry, campaigns and retentio
 uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-Open `http://127.0.0.1:8000/` and sign in. For front-end work,
+Open `http://127.0.0.1:8000/` and sign in from the landing page. For front-end work,
 `npm --prefix frontend run dev` serves the dashboard on `127.0.0.1:5173` and
 proxies `/api` to `127.0.0.1:8000`, so keep the API on that port. Build the
 bundle before starting the API: the mount is decided at startup, and until it is
@@ -385,8 +430,9 @@ python -m app.cli decoy --host 0.0.0.0 --port 8022
 
 - Bearer sessions are short-lived and tab-scoped; agent tokens are hashed at rest
   and revocable.
-- The dashboard is served with a strict Content-Security-Policy; API docs are
-  excluded because they load their own assets.
+- The dashboard is served with a strict Content-Security-Policy that names no
+  third-party origin: scripts, styles and typefaces come from the bundle. API docs
+  are excluded because they load their own assets.
 - Production refuses example signing secrets and starts only with a real one.
 - Assessment targets require an unexpired authorization scope, must resolve to
   public addresses, and every redirect is re-checked. Response bodies are capped.
@@ -408,7 +454,7 @@ backend/app/telemetry    ingestion, normalization, repository
 backend/app/risk         severity, confidence and asset risk
 backend/scripts          evaluation, benchmark, asset and screenshot generation
 backend/tests            unit, integration and end-to-end tests
-frontend                 React/TypeScript analyst workspace
+frontend                 React/TypeScript landing page and analyst workspace
 docs                     architecture, method, threat model, runbooks
 docs/assets              generated figures and dashboard screenshots
 deploy                   Cowrie configuration

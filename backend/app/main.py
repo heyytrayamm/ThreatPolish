@@ -20,10 +20,11 @@ from .core.logging import configure_logging, get_logger
 
 log = get_logger(__name__)
 
+# Typefaces ship in the bundle (frontend/public/fonts), so no third-party origin
+# needs to be reachable from the dashboard.
 DASHBOARD_CSP = (
     "default-src 'self'; connect-src 'self'; img-src 'self' data:; "
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
-    "font-src 'self' https://fonts.gstatic.com; "
+    "style-src 'self' 'unsafe-inline'; font-src 'self'; "
     "script-src 'self'; base-uri 'none'; "
     "form-action 'self'; frame-ancestors 'none'"
 )
