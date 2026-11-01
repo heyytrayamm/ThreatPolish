@@ -113,8 +113,8 @@ export default function Landing({
   ];
 
   const quickstartCommands = `# Clone the repository
-git clone https://github.com/threatpolish/threatpolish.git
-cd threatpolish
+git clone https://github.com/heyytrayamm/ThreatPolish.git
+cd ThreatPolish
 
 # Install Python backend dependencies
 python -m venv .venv
@@ -164,7 +164,7 @@ cd backend && python -m uvicorn app.main:app --host 127.0.0.1 --port 8000`;
               Documentation
             </button>
             <a
-              href="https://github.com/threatpolish/threatpolish"
+              href="https://github.com/heyytrayamm/ThreatPolish"
               target="_blank"
               rel="noopener noreferrer"
               className="landing-nav-link external"
@@ -236,7 +236,7 @@ cd backend && python -m uvicorn app.main:app --host 127.0.0.1 --port 8000`;
                 Explore the Platform
               </button>
               <a
-                href="https://github.com/threatpolish/threatpolish"
+                href="https://github.com/heyytrayamm/ThreatPolish"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="btn-landing-outline"
@@ -1360,7 +1360,7 @@ cd backend && python -m uvicorn app.main:app --host 127.0.0.1 --port 8000`;
 
               <div className="cta-external-links">
                 <a
-                  href="https://github.com/threatpolish/threatpolish"
+                  href="https://github.com/heyytrayamm/ThreatPolish"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="btn-landing-outline light"
@@ -1496,7 +1496,7 @@ cd backend && python -m uvicorn app.main:app --host 127.0.0.1 --port 8000`;
                 Documentation
               </button>
               <a
-                href="https://github.com/threatpolish/threatpolish"
+                href="https://github.com/heyytrayamm/ThreatPolish"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="footer-link-anchor"
