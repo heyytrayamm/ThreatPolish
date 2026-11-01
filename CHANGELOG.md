@@ -2,6 +2,33 @@
 
 All notable changes to this project are recorded here. Dates use ISO 8601.
 
+## 2.0.3 — 2026-11-01
+
+### Added
+
+- Property tests for the corpus-relative weighting edges: an empty window, a
+  window below `CORPUS_MIN_SESSIONS`, and a window in which every token of every
+  field is ubiquitous. The last one must read as no evidence rather than divide
+  by zero or link two sessions on agreement about default usernames and stock
+  clients; a family with no tokens at all keeps its weight, because absent data
+  is not the same as data that cannot separate.
+- A fingerprint property: two contexts built from the same sessions hash
+  identically, and adding one session changes the hash, which is what makes a
+  cached pair decision safe to reuse.
+
+### Changed
+
+- `docs/research/correlation-runtime.md` and the README cost table are
+  regenerated against the cached model. At the 800-session cap a pair costs
+  0.087 ms (was 0.089 ms) and a cold run takes 26.95 s (was 27.69 s) — inside
+  run-to-run variation, because the benchmark's sessions average seven events.
+  The cache's measured gain is on long sessions: 1.7× at 50 actions, 2.8× at 200
+  and 4.7× at 500. The 1,000-session row now runs 982 sessions with the cap
+  raised and records the 1,947 links the edge budget discards at that size.
+- Backend dependencies bumped through Dependabot and merged with the suite green:
+  `pydantic` 2.14.1, `uvicorn` 0.54.0, `pytest` 9.2.0 and `ruff` 0.17.3. Five
+  frontend bumps are held back because their CI runs fail on this codebase.
+
 ## 2.0.2 — 2026-11-01
 
 The correlation model is unchanged in what it decides; this release makes it

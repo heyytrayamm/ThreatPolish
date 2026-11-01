@@ -73,9 +73,9 @@ and the environment they were measured in are in
 
 ## Measured behaviour
 
-The full suite is **214 tests on SQLite**, finishing in 104–125 s on this host
-across runs, including the ten browser cases with the bundle built (204 pass and
-those ten skip when it is missing). The same 214 pass against PostgreSQL 16.15 in
+The full suite is **216 tests on SQLite**, finishing in 104–125 s on this host
+across runs, including the ten browser cases with the bundle built (206 pass and
+those ten skip when it is missing). The same 216 pass against PostgreSQL 16.15 in
 214–313 s; the fixture drops and recreates the schema per test, so isolation
 matches the SQLite path and the extra time is the per-test schema reset. CI runs
 both engines on every push.

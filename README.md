@@ -14,7 +14,7 @@
   <img alt="Python 3.12" src="https://img.shields.io/badge/Python-3.12-0b7285?logo=python&amp;logoColor=white" />
   <img alt="React 18" src="https://img.shields.io/badge/React-18-087ea4?logo=react&amp;logoColor=white" />
   <img alt="PostgreSQL 16" src="https://img.shields.io/badge/PostgreSQL-16-31648c?logo=postgresql&amp;logoColor=white" />
-  <img alt="214 tests" src="https://img.shields.io/badge/tests-214%20passing-14b8a6" />
+  <img alt="216 tests" src="https://img.shields.io/badge/tests-216%20passing-14b8a6" />
   <img alt="License: proprietary" src="https://img.shields.io/badge/License-proprietary-6b21a8" />
 </p>
 
@@ -269,15 +269,17 @@ mechanism is reported as working, not as proven.
 
 | Target sessions | Actual | Pairs | Stored edges | Cold wall | Warm wall | Per pair |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| 250 | 247 | 30,381 | 3,655 | 6.71 s | 0.33 s | 0.221 ms |
-| 400 | 394 | 77,421 | 8,000 | 9.02 s | 0.62 s | 0.116 ms |
-| 600 | 591 | 174,345 | 8,000 | 16.83 s | 0.97 s | 0.097 ms |
-| 800 | 788 | 310,078 | 8,000 | 27.69 s | 1.40 s | 0.089 ms |
-| 1,000 (cap raised) | 800 | 319,600 | 8,000 | 29.06 s | 1.42 s | 0.091 ms |
+| 250 | 247 | 30,381 | 3,659 | 6.90 s | 0.36 s | 0.227 ms |
+| 400 | 394 | 77,421 | 8,000 | 8.57 s | 0.61 s | 0.111 ms |
+| 600 | 591 | 174,345 | 8,000 | 15.74 s | 1.03 s | 0.090 ms |
+| 800 | 788 | 310,078 | 8,000 | 26.95 s | 1.60 s | 0.087 ms |
+| 1,000 (cap raised) | 982 | 481,671 | 8,000 | 38.32 s | 1.75 s | 0.080 ms |
 
 Pairs are quadratic in sessions; warm runs reuse stored decisions and cost almost
 nothing. The 800-session cap is the largest window at which the 8,000-edge budget
 retains every linked pair — it is set by that measurement, not by intuition.
+Raising the cap to 1,200 sessions and running 982 proves the point the other way:
+the same budget then drops 1,947 links it could have stored.
 Full tables: [`docs/research/evaluation-results.md`](docs/research/evaluation-results.md)
 and [`docs/research/correlation-runtime.md`](docs/research/correlation-runtime.md).
 
@@ -310,8 +312,8 @@ reconciled exactly with the stored count in both runs. Source:
 
 | Check | Result |
 | --- | --- |
-| Backend suite · SQLite | **214 passed** in 104–125 s across runs (ten of them drive Chrome end to end) |
-| Backend suite · PostgreSQL 16 | **214 passed** against a real service database (PostgreSQL 16.15), 214–313 s across runs |
+| Backend suite · SQLite | **216 passed** in 104–125 s across runs (ten of them drive Chrome end to end) |
+| Backend suite · PostgreSQL 16 | **216 passed** against a real service database (PostgreSQL 16.15), 214–313 s across runs |
 | Four API workers, six writers, PostgreSQL 16 | No write errors while correlation ran; accepted events reconciled exactly; p95 18.7 → 24.5 ms and the worst request 43 → 555 ms |
 | Campaign evidence plan and observation metrics | Unit-tested against a seeded campaign; the same test runs on SQLite and PostgreSQL |
 | Static analysis | Ruff clean on `app`, `tests` and `scripts`; `compileall` clean |

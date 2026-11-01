@@ -377,3 +377,73 @@ def test_action_resolutions_are_built_once_and_rebuilt_when_they_change():
     cached = compare(session, peer)
     session._resolutions = None
     assert compare(session, peer) == cached
+
+
+def _flat_session(name: str) -> "object":
+    """A session whose every token would be ubiquitous in a flat corpus."""
+    from app.correlation.features import Session
+
+    session = Session(id=name)
+    session.actions = ["auth:login", "recon:uname", "download:wget"]
+    session.commands = ["uname"]
+    session.categories = Counter({"recon": 2, "download": 1})
+    session.usernames = {"root"}
+    session.clients = {"curl"}
+    session.event_ids = [f"{name}-0" for _ in range(3)]
+    return session
+
+
+def test_corpus_weights_degrade_safely_at_the_edges():
+    """An empty, tiny or fully flat window must not crash or invent evidence."""
+    from app.correlation.features import CorrelationContext
+    from app.correlation.scoring import compare
+
+    # No sessions at all: nothing to discount, and the weight is its floor.
+    empty = CorrelationContext.from_sessions([])
+    assert empty.n_sessions == 0
+    assert empty.specificity(["action"]) == 1.0
+    assert empty.weight("action", "anything") == pytest.approx(1.0)
+
+    # Below CORPUS_MIN_SESSIONS the threshold is the window size, so a token seen
+    # once is still informative rather than being filtered as ubiquitous.
+    tiny = CorrelationContext.from_sessions([_flat_session("only")])
+    assert tiny.informative_threshold == 1
+    assert tiny.is_informative("action", "a1:recon:uname")
+
+    # A window in which every token of every family is ubiquitous: every family
+    # weight falls to zero, which must read as no evidence rather than divide by
+    # zero or, worse, link on agreement about defaults.
+    flat = [_flat_session(f"s{index}") for index in range(12)]
+    context = CorrelationContext.from_sessions(flat)
+    result = compare(flat[0], flat[1], context=context)
+    assert result["score"] == 0.0
+    assert result["decision"] == "not_linked"
+    # The families that carry tokens lose all their weight.  A family with no
+    # tokens at all (targeting here: neither session has an endpoint) keeps its
+    # weight, because absent data is not the same as data that cannot separate.
+    for family in ("behavior", "identity", "toolchain"):
+        assert result["family_weights"][family] == 0.0, family
+    assert result["family_weights"]["targeting"] > 0.0
+
+
+def test_corpus_fingerprint_tracks_the_evidence_it_summarises():
+    """Cached pair decisions are keyed by this hash, so it must move with the data."""
+    from app.correlation.features import CorrelationContext
+
+    sessions = [_flat_session(f"s{index}") for index in range(12)]
+    sessions[0].usernames = {"svc-one"}
+    sessions[1].usernames = {"svc-two"}
+
+    first = CorrelationContext.from_sessions(sessions)
+    second = CorrelationContext.from_sessions(list(sessions))
+    assert first.fingerprint() == second.fingerprint()
+
+    # A new session changes the document frequencies, so its fingerprint and any
+    # decision cached under the old one must be considered stale.
+    extra = _flat_session("s-extra")
+    extra.usernames = {"svc-three"}
+    third = CorrelationContext.from_sessions([*sessions, extra])
+    assert third.fingerprint() != first.fingerprint()
+
+    # The summary is a report, not a key; it may coincide, the fingerprint may not.
+    assert third.n_sessions == first.n_sessions + 1
