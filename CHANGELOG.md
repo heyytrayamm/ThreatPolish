@@ -2,6 +2,34 @@
 
 All notable changes to this project are recorded here. Dates use ISO 8601.
 
+## 2.0.2 — 2026-11-01
+
+The correlation model is unchanged in what it decides; this release makes it
+cheaper to run and harder to make wrong.
+
+### Changed
+
+- A session builds its action sets at one-, two- and three-token resolution once
+  and reuses them for every pair it takes part in. Rebuilding the same n-grams
+  per pair was the largest repeated cost in a run: measured on this host against
+  the same inputs in one process, a pair comparison fell from 294 to 172 µs at 50
+  actions, 674 to 243 µs at 200 and 1,695 to 364 µs at 500. Every recorded metric
+  — precision, recall, F1, cluster recovery, false positives — reproduces exactly
+  across the change.
+
+### Fixed
+
+- A non-finite similarity could reach the family average and be clamped to a
+  perfect score by `max`/`min`, which would read as proof of a relationship.
+  Non-finite component scores and a non-finite total now collapse to zero, so a
+  numeric fault can only under-claim. `tests/test_properties.py` covers NaN and
+  both infinities.
+
+### Added
+
+- `tests/test_properties.py` asserts the resolution cache is reused, rebuilt
+  when the action list changes, and never changes a decision.
+
 ## 2.0.1 — 2026-11-01
 
 A follow-up to the interface release: one deployment defect, the artwork after

@@ -14,7 +14,7 @@
   <img alt="Python 3.12" src="https://img.shields.io/badge/Python-3.12-0b7285?logo=python&amp;logoColor=white" />
   <img alt="React 18" src="https://img.shields.io/badge/React-18-087ea4?logo=react&amp;logoColor=white" />
   <img alt="PostgreSQL 16" src="https://img.shields.io/badge/PostgreSQL-16-31648c?logo=postgresql&amp;logoColor=white" />
-  <img alt="212 tests" src="https://img.shields.io/badge/tests-212%20passing-14b8a6" />
+  <img alt="214 tests" src="https://img.shields.io/badge/tests-214%20passing-14b8a6" />
   <img alt="License: proprietary" src="https://img.shields.io/badge/License-proprietary-6b21a8" />
 </p>
 
@@ -310,8 +310,8 @@ reconciled exactly with the stored count in both runs. Source:
 
 | Check | Result |
 | --- | --- |
-| Backend suite · SQLite | **212 passed** in 105–124 s across runs (ten of them drive Chrome end to end) |
-| Backend suite · PostgreSQL 16 | **212 passed** against a real service database (PostgreSQL 16.15), 214–313 s across runs |
+| Backend suite · SQLite | **214 passed** in 104–125 s across runs (ten of them drive Chrome end to end) |
+| Backend suite · PostgreSQL 16 | **214 passed** against a real service database (PostgreSQL 16.15), 214–313 s across runs |
 | Four API workers, six writers, PostgreSQL 16 | No write errors while correlation ran; accepted events reconciled exactly; p95 18.7 → 24.5 ms and the worst request 43 → 555 ms |
 | Campaign evidence plan and observation metrics | Unit-tested against a seeded campaign; the same test runs on SQLite and PostgreSQL |
 | Static analysis | Ruff clean on `app`, `tests` and `scripts`; `compileall` clean |

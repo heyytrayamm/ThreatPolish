@@ -67,7 +67,7 @@ class CorrelationContext:
             "client": {},
         }
         for session in items:
-            resolutions = action_resolutions(session.actions)
+            resolutions = session.resolutions()
             tokens = {
                 "action": set().union(*resolutions.values()) if resolutions else set(),
                 "command": set(session.commands),
@@ -184,6 +184,25 @@ class Session:
     last_seen: datetime | None = None
     hours: Counter[int] = field(default_factory=Counter)
     interarrivals: list[float] = field(default_factory=list)
+    # Derived once from `actions`; see `resolutions`.  Excluded from equality so
+    # two sessions with the same evidence compare equal either way.
+    _resolutions: dict[str, set[str]] | None = field(
+        default=None, init=False, repr=False, compare=False
+    )
+    _resolutions_for: int = field(default=-1, init=False, repr=False, compare=False)
+
+    def resolutions(self) -> dict[str, set[str]]:
+        """Action sets at every resolution, built once and reused.
+
+        A run compares each session against every other one, and rebuilding the
+        same n-grams for every pair was the largest repeated cost in a full run.
+        The action list only grows while the session is being built, so its
+        length is enough to detect that the cache is stale.
+        """
+        if self._resolutions is None or self._resolutions_for != len(self.actions):
+            self._resolutions = action_resolutions(self.actions)
+            self._resolutions_for = len(self.actions)
+        return self._resolutions
 
     @property
     def duration_seconds(self) -> float:

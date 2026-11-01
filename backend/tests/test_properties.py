@@ -338,3 +338,42 @@ def test_narrow_scope_governs_a_broader_authorization(client, admin_headers):
     assert governing["allow_active"] is False
     # The broader grant still covers hosts it is the only scope for.
     assert find_active_scope("www.example.com")["domain"] == "example.com"
+
+
+def test_a_non_finite_similarity_cannot_be_come_a_perfect_score():
+    """`max`/`min` keep NaN and can clamp it to 1.0, which would read as proof."""
+    from app.correlation.scoring import _component
+
+    for broken in (float("nan"), float("inf"), float("-inf")):
+        component = _component("x", "behavior", 0.1, True, broken, "broken")
+        assert component.score == 0.0, broken
+
+    assert _component("x", "behavior", 0.1, True, 2.5, "high").score == 1.0
+    assert _component("x", "behavior", 0.1, True, -0.5, "low").score == 0.0
+
+
+def test_action_resolutions_are_built_once_and_rebuilt_when_they_change():
+    """Every pair reads the same sets; rebuilding them per pair was the hot path."""
+    from app.correlation.features import Session, action_resolutions
+    from app.correlation.scoring import compare
+
+    session = Session(id="sess-cache")
+    session.actions = ["recon:uname", "download:wget", "privilege:chmod"]
+
+    first = session.resolutions()
+    assert first == action_resolutions(session.actions)
+    assert session.resolutions() is first
+
+    # Appending an action must invalidate the cached sets, not serve stale ones.
+    session.actions.append("lateral:nc")
+    assert session.resolutions() == action_resolutions(session.actions)
+    assert session.resolutions() is not first
+
+    # The cache must not change a decision: the same input scores the same either
+    # way, cached and rebuilt fresh.
+    peer = Session(id="sess-peer")
+    peer.actions = list(session.actions)
+    peer.commands = ["uname", "wget", "chmod", "nc"]
+    cached = compare(session, peer)
+    session._resolutions = None
+    assert compare(session, peer) == cached

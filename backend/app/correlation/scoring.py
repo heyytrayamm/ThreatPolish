@@ -35,7 +35,6 @@ from typing import Any
 from .features import (
     CorrelationContext,
     Session,
-    action_resolutions,
     histogram_similarity,
     jaccard,
     rhythm_similarity,
@@ -82,12 +81,16 @@ class Component:
 def _component(
     name: str, family: str, weight: float, available: bool, score: float, detail: str
 ) -> Component:
+    # A non-finite similarity is not evidence.  Left to max/min it would survive
+    # as NaN or, depending on the comparison order, clamp to a perfect score, so
+    # it is collapsed to zero here instead of reaching the family average.
+    value = max(0.0, min(1.0, score)) if math.isfinite(score) else 0.0
     return Component(
         name=name,
         family=family,
         weight=weight,
         available=available,
-        score=round(max(0.0, min(1.0, score)), 4),
+        score=round(value, 4),
         detail=detail,
     )
 
@@ -149,11 +152,11 @@ def compare(
 
     left_levels = {
         level: _filter_set(values, "action", context)
-        for level, values in action_resolutions(left.actions).items()
+        for level, values in left.resolutions().items()
     }
     right_levels = {
         level: _filter_set(values, "action", context)
-        for level, values in action_resolutions(right.actions).items()
+        for level, values in right.resolutions().items()
     }
     level_weights = {"unigram": 0.45, "bigram": 0.35, "trigram": 0.20}
     level_parts: list[tuple[float, float]] = []
@@ -347,7 +350,8 @@ def compare(
 
     contradictions = _contradictions(left, right, components, support)
     penalty = min(0.35, sum(item["penalty"] for item in contradictions))
-    score = max(0.0, min(1.0, support * math.sqrt(coverage) - penalty))
+    raw_score = support * math.sqrt(coverage) - penalty
+    score = max(0.0, min(1.0, raw_score)) if math.isfinite(raw_score) else 0.0
     confidence = 1.0 / (1.0 + math.exp(-8.0 * (score - 0.5)))
 
     independent = [
