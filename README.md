@@ -1,3 +1,4 @@
+![Uploading Screenshot 2026-11-01 193919.png…]()
 <p align="center">
   <img src="docs/assets/logo.png" alt="ThreatPolish" width="150" />
 </p>
