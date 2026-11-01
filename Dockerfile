@@ -1,4 +1,4 @@
-FROM node:22-slim AS dashboard
+FROM node:26-slim AS dashboard
 
 WORKDIR /build
 COPY frontend/package.json frontend/package-lock.json ./
