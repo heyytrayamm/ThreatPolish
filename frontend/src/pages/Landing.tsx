@@ -211,11 +211,6 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000`;
         <div className="landing-hero-bg-grid" aria-hidden="true" />
         <div className="landing-container">
           <div className="landing-hero-content">
-            <div className="landing-eyebrow">
-              <IconShield size={14} />
-              <span>Evidence-Driven Honeypot &amp; Threat Intelligence Platform</span>
-            </div>
-
             <h1 className="landing-hero-title">
               Attract. Detect. Investigate. Understand.
             </h1>
@@ -1524,15 +1519,15 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000`;
           <div className="footer-bottom-bar">
             <span>&copy; 2026 ThreatPolish Defensive Systems. All rights reserved.</span>
             <div className="footer-bottom-actions">
-              <button type="button" className="link small" onClick={onOpenPrivacy}>
+              <button type="button" className="footer-bottom-link" onClick={onOpenPrivacy}>
                 Privacy
               </button>
-              <span>-</span>
-              <button type="button" className="link small" onClick={onOpenTerms}>
+              <span className="footer-sep" aria-hidden="true">&middot;</span>
+              <button type="button" className="footer-bottom-link" onClick={onOpenTerms}>
                 Terms
               </button>
-              <span>-</span>
-              <button type="button" className="link small" onClick={handleLoginClick}>
+              <span className="footer-sep" aria-hidden="true">&middot;</span>
+              <button type="button" className="footer-bottom-link" onClick={handleLoginClick}>
                 Portal
               </button>
             </div>
