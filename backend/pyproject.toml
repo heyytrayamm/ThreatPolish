@@ -5,7 +5,7 @@ description = "Evidence-guided campaign correlation with uncertainty-aware adapt
 requires-python = ">=3.12"
 license = {text = "Proprietary"}
 dependencies = [
-  "fastapi>=0.141,<0.142",
+  "fastapi>=0.141,<0.163",
   "uvicorn[standard]>=0.53,<0.55",
   "sqlalchemy>=2.0.52,<2.1",
   "pydantic>=2.10,<3",
